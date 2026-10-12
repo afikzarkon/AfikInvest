@@ -16,6 +16,8 @@ import { calculateAmericanStockMetrics, calculatePensionPeriodReturn } from './p
 import { computeBankSavingsFundValue } from './bankSavingsFund';
 import { effectiveDailyChangePercent } from './marketSession';
 import { israeliStockDisplayName, effectiveExchangeForIsraeliStock } from './israeliEtfClassifier';
+import { computeSectorDistribution } from './sectorAnalysis';
+import { sectorLabelHe } from './sectorLabels';
 
 const round2 = (n) => Math.round((n || 0) * 100) / 100;
 
@@ -446,4 +448,119 @@ export const buildPortfolioReportSections = (data = {}) => {
   );
 
   return sections;
+};
+
+// ---------------------------------------------------------------------
+// WHEN THE REPORT IS TRUE FOR
+// ---------------------------------------------------------------------
+//
+// A printed report outlives the screen it came from, so it has to say
+// what moment its figures describe - and that is not always the moment it
+// was printed. Share prices are as of the last price refresh; provident
+// fund values are as of the statements they were typed in from, which can
+// be weeks older. Both are stated, so nobody reads a September statement
+// as today's balance.
+
+// dd/mm/yyyy, the way dates are written in Israel. Takes 'YYYY-MM-DD'.
+export const formatReportDate = (isoDate) => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(isoDate || ''));
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : '';
+};
+
+// "dd/mm/yyyy בשעה HH:MM" in Israel time, whatever the device's own zone.
+export const formatReportDateTime = (instant) => {
+  const date = instant instanceof Date ? instant : new Date(instant);
+  if (Number.isNaN(date.getTime())) return '';
+  const parts = {};
+  new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Jerusalem',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23'
+  })
+    .formatToParts(date)
+    .forEach((p) => {
+      parts[p.type] = p.value;
+    });
+  // "בשעה" between the two, not a space: a date and a time side by side in
+  // a Hebrew line can be read in either order, and the hyphen of "ל-"
+  // ends up looking attached to the time.
+  return `${parts.day}/${parts.month}/${parts.year} בשעה ${parts.hour}:${parts.minute}`;
+};
+
+const statementDate = (fund) => String((fund && (fund.currentValueDate || fund.updateDate)) || '').slice(0, 10);
+
+// { asOf, prices, statements, generated } - display strings for the cover.
+//   pricesAsOf: when prices were last refreshed live (null: only the
+//   prices saved with the portfolio were available).
+export const buildReportAsOf = ({ generatedAt = new Date(), pricesAsOf = null, pensionFunds = [] } = {}) => {
+  const generated = formatReportDateTime(generatedAt);
+  const live = pricesAsOf ? formatReportDateTime(pricesAsOf) : '';
+  const dates = (pensionFunds || [])
+    .filter((f) => Number(f.currentValue ?? f.amount) > 0)
+    .map(statementDate)
+    .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+    .sort();
+  let statements = '';
+  if (dates.length) {
+    const first = formatReportDate(dates[0]);
+    const last = formatReportDate(dates[dates.length - 1]);
+    statements = first === last ? `קופות גמל לפי דוחות מ-${last}` : `קופות גמל לפי דוחות מ-${first} עד ${last}`;
+  }
+  return {
+    asOf: `נכון ל-${live || generated}`,
+    prices: live ? `מחירי שוק מ-${live}` : 'מחירי שוק: האחרונים שנשמרו',
+    statements,
+    generated: `הופק ${generated}`
+  };
+};
+
+// ---------------------------------------------------------------------
+// THE DISTRIBUTION CHARTS
+// ---------------------------------------------------------------------
+//
+// The same two splits the analysis page draws as donuts: by asset class,
+// and by sector. Slices with no value are left out - a 0% wedge is
+// invisible and its legend row is noise.
+
+const ALLOCATION_SLICES = [
+  ['israeli', 'בורסה ישראלית', 'capitalIsraeliILS'],
+  ['american', 'בורסה אמריקאית', 'capitalAmericanILS'],
+  ['pension', 'קופות גמל', 'capitalPensionILS'],
+  ['cashFunds', 'קרנות כספיות', 'capitalCashFundsILS'],
+  ['bank', 'עו"ש', 'capitalBankILS'],
+  ['bankSavings', 'קופת חיסכון בבנק', 'capitalBankSavingsILS']
+];
+
+const withPercents = (slices) => {
+  const total = slices.reduce((sum, s) => sum + s.value, 0);
+  return slices.map((s) => ({ ...s, percent: total > 0 ? round2((s.value / total) * 100) : 0 }));
+};
+
+// By asset class, from the same summary figures as the report's
+// "מצב ההון" section, so the chart and the table beside it agree.
+export const buildAllocationSlices = (summary) => {
+  if (!summary) return [];
+  return withPercents(
+    ALLOCATION_SLICES.map(([key, label, field]) => ({ key, label, value: round2(summary[field]) })).filter((s) => s.value > 0)
+  );
+};
+
+// More sectors than this and the small ones are merged into "אחר": a
+// donut with fifteen slivers cannot be read, and neither can its legend.
+export const MAX_SECTOR_SLICES = 8;
+
+// By sector, over the shares only (a provident fund or a bank balance has
+// no sector) - the same calculation as the analysis page's sector donut.
+export const buildSectorSlices = ({ americanStocks = [], israeliStocks = [], sectorBySymbol = {} } = {}) => {
+  const { sectors } = computeSectorDistribution(americanStocks, sectorBySymbol, israeliStocks);
+  const positive = sectors.filter((s) => s.value > 0);
+  const kept = positive.length > MAX_SECTOR_SLICES ? positive.slice(0, MAX_SECTOR_SLICES - 1) : positive;
+  const slices = kept.map((s) => ({ key: s.sectorKey, label: sectorLabelHe(s.sectorKey), value: round2(s.value) }));
+  const rest = positive.slice(kept.length).reduce((sum, s) => sum + s.value, 0);
+  if (rest > 0) slices.push({ key: '__other__', label: 'אחר', value: round2(rest) });
+  return withPercents(slices);
 };

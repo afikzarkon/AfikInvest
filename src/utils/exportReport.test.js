@@ -76,6 +76,12 @@ describe('toPdfDisplayText', () => {
     expect(toPdfDisplayText('S&P 500 מדד')).toBe('דדמ S&P 500');
   });
 
+  test('a hyphen after a Hebrew prefix letter stays with the letter, not with the number', () => {
+    expect(toPdfDisplayText('נכון ל-12/10/2026')).toBe('12/10/2026-ל ןוכנ');
+    expect(toPdfDisplayText('מדד S&P 500')).toBe('S&P 500 דדמ');
+    expect(toPdfDisplayText('ESPP פאלו אלטו')).toBe('וטלא ולאפ ESPP');
+  });
+
   test('converts a non-string input to its string form before checking for Hebrew', () => {
     expect(toPdfDisplayText(null)).toBe('null');
     expect(toPdfDisplayText(undefined)).toBe('undefined');
@@ -148,3 +154,4 @@ describe('buildPortfolioPdfDoc', () => {
     expect(doc.getFontList().Alef).toBeDefined();
   });
 });
+

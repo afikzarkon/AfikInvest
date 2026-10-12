@@ -19,8 +19,12 @@ import {
   buildBankBalancesExportRows,
   buildBankSavingsFundsExportRows,
   buildHeadlineMetrics,
-  buildPortfolioReportSections
+  buildPortfolioReportSections,
+  buildReportAsOf,
+  buildAllocationSlices,
+  buildSectorSlices
 } from './exportData';
+import { getChartTheme } from './chartTheme';
 
 const todayFileStamp = () => israelToday();
 
@@ -80,37 +84,47 @@ function registerHebrewFont(doc) {
   doc.setFont('Alef');
 }
 
-// jsPDF has no real bidi support, and jspdf-autotable bypasses even
-// jsPDF's own (limited) R2L/align handling entirely: for a right-aligned
-// cell it computes the X position itself and calls doc.text(text, x, y)
-// with no options at all, so nothing ever reorders the characters. A raw
-// Hebrew string ends up drawn in storage order (first-typed character
-// leftmost) - mirror-reversed for a Hebrew reader. Confirmed against a
-// real exported PDF (a user reported garbled/backwards text) and verified
-// character-by-character with a Hebrew-alphabet test string before this
-// fix, and after.
+// jsPDF SECOND-GUESSES EVERY STRING IT IS GIVEN.
 //
-// jsPDF's own R2L/isInputRtl options turned out to be a dead end too -
-// they're a blunt whole-string reversal, not true per-run bidi
-// segmentation, so they mangle embedded dates/tickers/numbers just as
-// badly (confirmed: "2023-01-15" came back as "51-10-3202").
+// Its bidi plugin hooks every text() call - autoTable's included - and by
+// default reads the string as "visual left-to-right" and converts it to
+// logical order. For a string that is already in visual order (which is
+// what toPdfDisplayText below produces) that conversion reverses every
+// Latin and digit run inside it: "StockView" was printed as "weiVkcotS",
+// "0.27%" as "%72.0" and "ESPP" as "PPSE". Decoding the glyph order in the
+// generated PDF showed it - the text handed to jsPDF was right, and this
+// pass is what broke it.
 //
-// Fix: reorder strings into VISUAL order ourselves before handing them to
-// jsPDF, so plain LTR placement produces the correct result.
+// Declaring the input AND the output visual makes that pass a no-op, so
+// the characters are drawn exactly in the order this file decided. Done
+// by wrapping the instance's text() because autoTable calls it with no
+// options of its own.
+function drawTextAsGiven(doc) {
+  const text = doc.text;
+  doc.text = function textInGivenOrder(value, x, y, options, transform) {
+    const visual = Object.assign({}, options, { isInputVisual: true, isOutputVisual: true });
+    return text.call(this, value, x, y, visual, transform);
+  };
+}
+
+// A PDF draws glyphs left to right in the order it is given them, with no
+// notion of a right-to-left paragraph. So every string is put into VISUAL
+// order here, before it reaches jsPDF, and jsPDF is told to leave it alone
+// (drawTextAsGiven above). jsPDF's own R2L options are no substitute - a
+// blunt whole-string reversal that turned "2023-01-15" into "51-10-3202".
 //
-// This used to reverse the whole string, on the assumption that no export
-// string mixes Hebrew with digits or Latin. Plenty do - the cover's
-// "הופק בתאריך 2026-10-12", the footer's "הופק ב-StockView", the
-// disclaimer's "(Beta)", the tile notes ("12.5% משוקלל") and every
-// "name (security id)" cell - and a whole-string reversal printed those
-// as "21-01-6202", "weiVkcotS" and "ateB". So this is a small RTL-paragraph
-// reordering (the parts of the Unicode Bidi Algorithm these strings
-// exercise):
+// A whole-string reversal is wrong for any string that mixes Hebrew with
+// digits or Latin, and plenty do - the cover's date, the footer's
+// "הופק ב-StockView", the disclaimer's "(Beta)", the tile notes
+// ("12.5% משוקלל"), "מדד S&P 500" and every "name (security id)" cell.
+// So this is a small RTL-paragraph reordering (the parts of the Unicode
+// Bidi Algorithm these strings exercise):
 //   - Latin letters and digits form left-to-right runs, kept in order;
 //   - a neutral (space, '-', '.', ',', '/', ':', '&', ...) between two of
 //     them belongs to that run ("2026-10-12", "1,234.56", "S&P 500");
 //   - %, ₪ and $ next to a digit, and a +/- sign right before one, belong
-//     to the number ("12.5%", "-1.72");
+//     to the number ("12.5%", "-1.72") - except a hyphen right after a
+//     Hebrew letter, which is a prefix's ("נכון ל-12/10/2026");
 //   - everything else takes the paragraph's right-to-left direction;
 //   - the runs are laid out in reverse order, and each RTL run is reversed
 //     with its paired brackets mirrored (rule L4), so "(₪)" stays "(₪)".
@@ -134,7 +148,11 @@ function resolveDirections(chars) {
     const prevDigit = i > 0 && DIGIT.test(chars[i - 1]);
     const nextDigit = i + 1 < chars.length && DIGIT.test(chars[i + 1]);
     if (NUMBER_TERMINATORS.has(ch) && (prevDigit || nextDigit)) return 'L';
-    if ((ch === '-' || ch === '+') && nextDigit) return 'L';
+    // A hyphen straight after a Hebrew letter is the prefix's ("ל-12/10",
+    // "מ-31/08") and stays with it; anywhere else before a digit it is the
+    // number's sign.
+    const afterHebrew = i > 0 && strong[i - 1] === 'R';
+    if ((ch === '-' || ch === '+') && nextDigit && !afterHebrew) return 'L';
     return nearest(i - 1, -1) === 'L' && nearest(i + 1, 1) === 'L' ? 'L' : 'R';
   });
 }
@@ -206,12 +224,12 @@ const formatAmount = (value) => {
 
 // Cells arrive from exportData.js already rounded; this only decides how
 // they are typeset. Numbers get thousands separators (an eight-digit
-// shekel figure is unreadable without them), everything else passes
-// through the bidi fix.
+// shekel figure is unreadable without them). Text stays in logical order
+// here - drawDetailTable puts it into visual order line by line.
 const formatCell = (value) => {
   if (value === null || value === undefined || value === '') return '—';
   if (typeof value === 'number') return formatAmount(value);
-  return toPdfDisplayText(value);
+  return String(value);
 };
 
 // Which columns hold figures, decided once per table from its first row
@@ -224,19 +242,24 @@ const numericColumns = (rows, headers) =>
 // PAGE FURNITURE
 // ---------------------------------------------------------------------
 
-// The band across the top of the first page: what this document is, whose
-// it is, and when it was taken. A report that outlives the screen it came
-// from has to carry its own date.
-function drawCoverHeader(doc, generatedAt) {
+// The band across the top of the first page: what this document is, and
+// the moment its figures are true for. A report that outlives the screen
+// it came from has to carry its own date - and say which figures are
+// older than that date and where they come from (see buildReportAsOf).
+function drawCoverHeader(doc, asOf) {
   doc.setFillColor(...ACCENT);
-  doc.rect(0, 0, PAGE_WIDTH, 34, 'F');
+  doc.rect(0, 0, PAGE_WIDTH, 36, 'F');
 
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(20);
-  doc.text(toPdfDisplayText('דוח תיק השקעות'), RIGHT, 15, { align: 'right' });
+  doc.text(toPdfDisplayText('דוח תיק השקעות'), RIGHT, 14, { align: 'right' });
 
-  doc.setFontSize(9.5);
-  doc.text(toPdfDisplayText(`הופק בתאריך ${generatedAt}`), RIGHT, 23, { align: 'right' });
+  doc.setFontSize(11);
+  doc.text(toPdfDisplayText(asOf.asOf), RIGHT, 22, { align: 'right' });
+
+  doc.setFontSize(8);
+  const basis = [asOf.prices, asOf.statements, asOf.generated].filter(Boolean).join(' · ');
+  doc.text(toPdfDisplayText(basis), RIGHT, 29, { align: 'right' });
 
   // The product name stays Latin and stays on its own text() call - see
   // toPdfDisplayText's note on why a mixed-script string is not safe here.
@@ -277,7 +300,7 @@ function stampFooters(doc) {
 // remembering to compare it against the page height at each one is what
 // made the old layout clip titles at the bottom edge.
 function createFlow(doc) {
-  let y = 44;
+  let y = 46;
   return {
     get y() {
       return y;
@@ -426,8 +449,19 @@ function drawDetailTable(doc, flow, rows) {
   autoTable(doc, {
     startY: flow.y,
     margin: { left: MARGIN, right: MARGIN, bottom: 20 },
-    head: [order.map((index) => toPdfDisplayText(headers[index]))],
+    head: [order.map((index) => headers[index])],
     body: rows.map((row) => order.map((index) => formatCell(row[headers[index]]))),
+    // A long name wraps onto several lines, and the wrap has to be decided
+    // on the text as it is READ: reordering first and wrapping after put
+    // the end of a name on its first line. So autoTable gets the logical
+    // text, measures and splits it, and each line is put into visual order
+    // just before it is drawn. A cell drawn twice (the header row repeats
+    // on every page) is converted once - its converted lines are marked.
+    willDrawCell: ({ cell }) => {
+      if (cell.text === cell.visualLines) return;
+      cell.visualLines = cell.text.map(toPdfDisplayText);
+      cell.text = cell.visualLines;
+    },
     theme: 'plain',
     // jspdf-autotable defaults header cells to fontStyle 'bold', which
     // silently falls back to a non-Hebrew font since only the 'normal'
@@ -466,6 +500,108 @@ function drawDetailTable(doc, flow, rows) {
   });
 
   flow.y = doc.lastAutoTable.finalY + 8;
+}
+
+// ---------------------------------------------------------------------
+// THE DISTRIBUTION DONUTS
+// ---------------------------------------------------------------------
+//
+// The analysis page's two donuts - by asset class and by sector - side by
+// side, each with its legend under it. Same palette as the app's light
+// theme, so a slice is the same colour on paper as on screen.
+
+const hexToRgb = (hex) => {
+  const n = parseInt(String(hex).replace('#', ''), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+};
+const SLICE_COLORS = getChartTheme('light').categorical.map(hexToRgb);
+
+const DONUT_RADIUS = 17;
+const DONUT_HOLE = 0.56;
+const LEGEND_ROW = 5.2;
+const CHART_GAP = 8;
+
+// One wedge, as a filled polygon: jsPDF has no arc primitive, and at this
+// size a point every two degrees is indistinguishable from a curve.
+function drawWedge(doc, cx, cy, radius, startAngle, endAngle) {
+  const steps = Math.max(2, Math.ceil(((endAngle - startAngle) * 180) / Math.PI / 2));
+  const points = [[cx, cy]];
+  for (let i = 0; i <= steps; i += 1) {
+    const angle = startAngle + ((endAngle - startAngle) * i) / steps;
+    points.push([cx + radius * Math.cos(angle), cy + radius * Math.sin(angle)]);
+  }
+  const deltas = points.slice(1).map(([x, y], i) => [x - points[i][0], y - points[i][1]]);
+  doc.lines(deltas, cx, cy, [1, 1], 'F', true);
+}
+
+function drawDonut(doc, cx, cy, slices) {
+  const total = slices.reduce((sum, s) => sum + s.value, 0);
+  if (slices.length === 1) {
+    doc.setFillColor(...SLICE_COLORS[0]);
+    doc.circle(cx, cy, DONUT_RADIUS, 'F');
+  } else {
+    // From twelve o'clock, clockwise (y grows downwards on the page).
+    let angle = -Math.PI / 2;
+    slices.forEach((slice, index) => {
+      const sweep = (slice.value / total) * Math.PI * 2;
+      doc.setFillColor(...SLICE_COLORS[index % SLICE_COLORS.length]);
+      drawWedge(doc, cx, cy, DONUT_RADIUS, angle, angle + sweep);
+      angle += sweep;
+    });
+  }
+  doc.setFillColor(255, 255, 255);
+  doc.circle(cx, cy, DONUT_RADIUS * DONUT_HOLE, 'F');
+}
+
+const chartHeight = (chart) => 12 + DONUT_RADIUS * 2 + 6 + chart.slices.length * LEGEND_ROW;
+
+// A legend row, right to left: swatch and name, then the share and the
+// value against the column's left edge, where the figures line up.
+function drawLegendRow(doc, right, left, y, slice, color) {
+  doc.setFillColor(...color);
+  doc.rect(right - 3, y - 2.6, 3, 3, 'F');
+
+  doc.setFontSize(8);
+  doc.setTextColor(...INK);
+  doc.text(toPdfDisplayText(slice.label), right - 5, y, { align: 'right' });
+  doc.text(`${slice.percent.toFixed(1)}%`, left + 30, y, { align: 'right' });
+
+  doc.setTextColor(...MUTED);
+  doc.text(`${Math.round(slice.value).toLocaleString('en-US')} ₪`, left, y, { align: 'left' });
+}
+
+function drawDistributionCharts(doc, flow, charts) {
+  const drawn = charts.filter((chart) => chart.slices.length > 0);
+  if (!drawn.length) return;
+  const columnWidth = (CONTENT_WIDTH - CHART_GAP) / 2;
+  const height = Math.max(...drawn.map(chartHeight));
+
+  drawSectionHeading(doc, flow, 'פיזור התיק', height);
+  const top = flow.y + 2;
+
+  drawn.forEach((chart, index) => {
+    // The first chart in the right-hand column, where a Hebrew reader starts.
+    const right = RIGHT - index * (columnWidth + CHART_GAP);
+    const left = right - columnWidth;
+
+    doc.setFontSize(10);
+    doc.setTextColor(...INK);
+    doc.text(toPdfDisplayText(chart.title), right, top + 3, { align: 'right' });
+    doc.setFontSize(7.5);
+    doc.setTextColor(...MUTED);
+    doc.text(toPdfDisplayText(chart.note), right, top + 8, { align: 'right' });
+
+    const cy = top + 12 + DONUT_RADIUS;
+    drawDonut(doc, left + columnWidth / 2, cy, chart.slices);
+
+    chart.slices.forEach((slice, i) => {
+      const y = cy + DONUT_RADIUS + 8 + i * LEGEND_ROW;
+      drawLegendRow(doc, right, left, y, slice, SLICE_COLORS[i % SLICE_COLORS.length]);
+    });
+  });
+
+  doc.setTextColor(...INK);
+  flow.y = top + height + 6;
 }
 
 function drawEmptyNote(doc, flow, note) {
@@ -514,12 +650,33 @@ function drawDisclaimer(doc, flow) {
 export function buildPortfolioPdfDoc(data) {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   registerHebrewFont(doc);
+  drawTextAsGiven(doc);
 
-  drawCoverHeader(doc, todayFileStamp());
+  drawCoverHeader(
+    doc,
+    buildReportAsOf({
+      generatedAt: data.generatedAt || new Date(),
+      pricesAsOf: data.pricesAsOf || null,
+      pensionFunds: data.pensionFunds
+    })
+  );
 
   const flow = createFlow(doc);
 
   drawHeadlineTiles(doc, flow, buildHeadlineMetrics(data.summary));
+
+  drawDistributionCharts(doc, flow, [
+    { title: 'לפי אפיק', note: 'כל הנכסים', slices: buildAllocationSlices(data.summary) },
+    {
+      title: 'לפי סקטור',
+      note: 'מניות בלבד - ישראל וארה"ב',
+      slices: buildSectorSlices({
+        americanStocks: data.americanStocks,
+        israeliStocks: data.israeliStocks,
+        sectorBySymbol: data.sectorBySymbol
+      })
+    }
+  ]);
 
   buildPortfolioReportSections(data).forEach((section) => {
     // A SECTION IS ONE BLOCK, and the page break is decided once, here.

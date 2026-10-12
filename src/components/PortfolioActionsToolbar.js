@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import PageToolbar, { ToolbarButton, ToolbarPrimaryButton, ToolbarStatus } from './PageToolbar';
+import { loadStockSectors } from '../hooks/useStockSectors';
 
 // The controls that act on the portfolio itself - add, save, edit mode,
 // extra columns, export - plus the save/price status line.
@@ -66,8 +67,13 @@ function PortfolioActionsToolbar({
   const handleExportPdf = async () => {
     setExportError('');
     try {
-      const { downloadPortfolioPdf } = await import('../utils/exportReport');
-      downloadPortfolioPdf(exportPortfolioData);
+      // The report's sector donut needs each US ticker's sector, which only
+      // the analysis page loads; and its cover says when prices were taken.
+      const [{ downloadPortfolioPdf }, sectorBySymbol] = await Promise.all([
+        import('../utils/exportReport'),
+        loadStockSectors((exportPortfolioData.americanStocks || []).map((s) => s.stockName))
+      ]);
+      downloadPortfolioPdf({ ...exportPortfolioData, sectorBySymbol, pricesAsOf: pricesLastRefreshAt });
     } catch {
       setExportError('שגיאה בייצוא ל-PDF, נסה שוב');
     }

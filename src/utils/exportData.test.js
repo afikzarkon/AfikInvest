@@ -7,8 +7,72 @@ import {
   buildBankSavingsFundsExportRows,
   buildSummaryExportRows,
   buildHeadlineMetrics,
-  buildPortfolioReportSections
+  buildPortfolioReportSections,
+  buildReportAsOf,
+  buildAllocationSlices,
+  buildSectorSlices,
+  formatReportDateTime,
+  MAX_SECTOR_SLICES
 } from './exportData';
+
+describe('when the report is true for', () => {
+  test('dates and times are written the Israeli way, in Israel time', () => {
+    // 21:30 UTC is already the next day in Israel.
+    expect(formatReportDateTime(new Date('2026-10-12T21:30:00Z'))).toBe('13/10/2026 בשעה 00:30');
+  });
+
+  test('the as-of moment is the last price refresh; fund statements are stated separately', () => {
+    const asOf = buildReportAsOf({
+      generatedAt: new Date('2026-10-12T15:42:00Z'),
+      pricesAsOf: new Date('2026-10-12T15:30:00Z'),
+      pensionFunds: [
+        { currentValue: 100, currentValueDate: '2026-09-30' },
+        { currentValue: 100, currentValueDate: '2026-08-31' },
+        { currentValue: 0, currentValueDate: '2020-01-01' }
+      ]
+    });
+    expect(asOf).toEqual({
+      asOf: 'נכון ל-12/10/2026 בשעה 18:30',
+      prices: 'מחירי שוק מ-12/10/2026 בשעה 18:30',
+      statements: 'קופות גמל לפי דוחות מ-31/08/2026 עד 30/09/2026',
+      generated: 'הופק 12/10/2026 בשעה 18:42'
+    });
+  });
+
+  test('without a live price refresh it says the prices are the saved ones', () => {
+    const asOf = buildReportAsOf({ generatedAt: new Date('2026-10-12T15:42:00Z') });
+    expect(asOf.asOf).toBe('נכון ל-12/10/2026 בשעה 18:42');
+    expect(asOf.prices).toBe('מחירי שוק: האחרונים שנשמרו');
+    expect(asOf.statements).toBe('');
+  });
+});
+
+describe('the distribution charts', () => {
+  test('by asset class: the non-empty classes, with shares that add up to 100', () => {
+    const slices = buildAllocationSlices({ capitalIsraeliILS: 300, capitalAmericanILS: 500, capitalPensionILS: 200, capitalBankILS: 0 });
+    expect(slices.map((s) => [s.label, s.percent])).toEqual([
+      ['בורסה ישראלית', 30],
+      ['בורסה אמריקאית', 50],
+      ['קופות גמל', 20]
+    ]);
+    expect(buildAllocationSlices(null)).toEqual([]);
+  });
+
+  test('by sector: shares only, small sectors merged into "אחר"', () => {
+    const americanStocks = Array.from({ length: MAX_SECTOR_SLICES + 2 }, (_, i) => ({
+      stockName: `S${i}`,
+      quantity: 1,
+      currentPrice: 100 - i,
+      currentExchangeRate: 1
+    }));
+    const sectorBySymbol = Object.fromEntries(americanStocks.map((s, i) => [s.stockName, { sector: `Sector${i}` }]));
+    const slices = buildSectorSlices({ americanStocks, sectorBySymbol });
+    expect(slices).toHaveLength(MAX_SECTOR_SLICES);
+    expect(slices[slices.length - 1].label).toBe('אחר');
+    expect(slices.reduce((sum, s) => sum + s.percent, 0)).toBeCloseTo(100, 0);
+    expect(buildSectorSlices({})).toEqual([]);
+  });
+});
 
 describe('buildIsraeliStocksExportRows', () => {
   test('computes purchase/current/profit from currentPrice as already stored (₪, not agorot)', () => {

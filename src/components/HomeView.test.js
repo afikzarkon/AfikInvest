@@ -201,8 +201,10 @@ test('shows export buttons for a populated portfolio and wires them to downloadP
   // splitting - see the comment in HomeView.js), which resolves on a later
   // microtask than a plain sync call would, so the spies aren't called yet
   // synchronously after fireEvent.click.
+  // The PDF also gets the stocks' sectors (for its sector donut) and the
+  // time prices were last refreshed (for its "נכון ל-" line).
   await waitFor(() => {
-    expect(pdfSpy).toHaveBeenCalledWith(exportPortfolioData);
+    expect(pdfSpy).toHaveBeenCalledWith({ ...exportPortfolioData, sectorBySymbol: expect.any(Object), pricesAsOf: null });
     expect(excelSpy).toHaveBeenCalledWith(exportPortfolioData);
   });
 
