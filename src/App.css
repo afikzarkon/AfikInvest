@@ -7550,6 +7550,52 @@ select {
   outline-offset: 2px;
 }
 
+/* The one entry form (AssetEntryModal.js) - the same overlay and pane as the
+   beta notice, but dismissible and scrollable: it is a form, not a warning. */
+.asset-entry-modal {
+  width: min(560px, 100%);
+}
+
+.asset-entry-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 24px 10px;
+  border-bottom: 1px solid var(--sw-border);
+}
+
+.asset-entry-close {
+  border: none;
+  background: transparent;
+  color: var(--sw-text-muted);
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: var(--sw-radius);
+}
+
+.asset-entry-close:hover,
+.asset-entry-close:focus-visible {
+  color: var(--sw-text);
+  background: var(--sw-surface-2);
+}
+
+.asset-entry-body {
+  padding: 16px 24px 22px;
+  max-height: min(78vh, 900px);
+  overflow-y: auto;
+}
+
+@media (max-width: 720px) {
+  .asset-entry-header,
+  .asset-entry-body {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
+
 /* The standing strip. Amber rather than red: this is a condition of use,
    not an error that has happened. */
 .beta-banner {

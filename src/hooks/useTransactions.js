@@ -114,5 +114,34 @@ export function useTransactions(user, authHeader) {
     []
   );
 
-  return { transactions, loading, error, preview, record, remove };
+  // Edits a recorded transaction: the server undoes it and applies the
+  // corrected one atomically (PUT /api/transactions/:id), so an edit the
+  // ledger refuses leaves both the ledger and the portfolio as they were.
+  const update = useCallback(
+    async (id, tx) => {
+      try {
+        const r = await fetch(apiUrl(`/api/transactions/${encodeURIComponent(id)}`), {
+          method: 'PUT',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json', ...authHeader() },
+          body: JSON.stringify(tx)
+        });
+        if (!r.ok) return { ok: false, error: await readError(r) };
+        const d = await r.json();
+        setTransactions((prev) =>
+          prev
+            .filter((t) => t.id !== id)
+            .concat([d.transaction])
+            .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+        );
+        return { ok: true, transaction: d.transaction, portfolio: d.portfolio };
+      } catch {
+        return { ok: false, error: 'שגיאת רשת' };
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+
+  return { transactions, loading, error, preview, record, update, remove };
 }

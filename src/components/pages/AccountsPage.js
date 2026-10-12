@@ -31,6 +31,7 @@ function AccountsPage({
   handleKeyDown,
   handleDelete,
   onOpenLedgerEntry,
+  onDeleteTransaction,
   ...toolbarProps
 }) {
   return (
@@ -63,6 +64,7 @@ function AccountsPage({
         formatPriceWithSign={formatPriceWithSign}
         handleDelete={handleDelete}
         onOpenLedgerEntry={onOpenLedgerEntry}
+        onDeleteTransaction={onDeleteTransaction}
       />
     </AssetPageLayout>
   );

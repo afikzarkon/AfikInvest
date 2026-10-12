@@ -16,6 +16,7 @@ const { buildReportModel, monthFlowsFingerprint, estimateUnrecordedDividends, us
 const { renderReportHtml, monthLabel } = require('./reportHtml');
 const { buildHoldingsIndex } = require('../holdingsIndex');
 const { dateInTimeZone } = require('../marketCalendar');
+const { liquidBalanceOn } = require('../../shared/liquidBalance');
 
 const DEBOUNCE_MS = 10 * 60 * 1000;
 // The typed-in account categories a monthly sync is about.
@@ -33,6 +34,7 @@ const num = (v) => {
 // with the portfolio.
 function breakdownFromPortfolio(portfolio, asOf = new Date()) {
   const p = portfolio || {};
+  const asOfDay = dateInTimeZone(asOf, "Asia/Jerusalem");
   const stockItems = (lots, market) => {
     const bySymbol = new Map();
     (lots || []).forEach((lot) => {
@@ -51,8 +53,9 @@ function breakdownFromPortfolio(portfolio, asOf = new Date()) {
     israeli: stockItems(p.israeliStocks, 'israeli'),
     american: stockItems(p.americanStocks, 'american'),
     pension: (p.pensionFunds || []).map((f) => ({ key: f.fundName || `pension-${f.id}`, label: f.fundName || 'קופת גמל', value: num(f.currentValue != null ? f.currentValue : f.amount) })),
-    cashFunds: (p.cashFunds || []).map((f) => ({ key: f.fundName || `cash-${f.id}`, label: f.fundName || 'קרן כספית', value: num(f.amount) })),
-    bank: (p.bankBalances || []).map((b, i, all) => ({ key: `bank-${i + 1}`, label: all.length > 1 ? `עו"ש #${i + 1}` : 'עו"ש', value: num(b.amount) })),
+    // Recorded balance + the ledger movements since it (shared/liquidBalance.js).
+    cashFunds: (p.cashFunds || []).map((f) => ({ key: f.fundName || `cash-${f.id}`, label: f.fundName || 'קרן כספית', value: liquidBalanceOn(f, asOfDay) })),
+    bank: (p.bankBalances || []).map((b, i, all) => ({ key: `bank-${i + 1}`, label: all.length > 1 ? `עו"ש #${i + 1}` : 'עו"ש', value: liquidBalanceOn(b, asOfDay) })),
     bankSavings: (p.bankSavingsFunds || []).map((f) => ({
       key: f.fundName || `bank-savings-${f.id}`,
       label: f.fundName || 'קופת חיסכון בבנק',

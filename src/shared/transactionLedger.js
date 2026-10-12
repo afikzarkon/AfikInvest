@@ -73,6 +73,10 @@ const LOT_DETAIL_KEYS = [
   'isForeignETF'
 ];
 
+// The fields a DEPOSIT that OPENS an account may set on it (see
+// normalizeTransaction's newAccount). Anything else is ignored.
+const NEW_ACCOUNT_KEYS = ['fundName', 'securityId', 'investmentTrack', 'interestRate', 'isLinkedToIndex'];
+
 const EPSILON = 1e-9;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -136,7 +140,11 @@ function normalizeTransaction(input, { today } = {}) {
   const isStockClass = Object.prototype.hasOwnProperty.call(STOCK_CLASSES, assetClass);
   const isAccountClass = Object.prototype.hasOwnProperty.call(ACCOUNT_CLASSES, assetClass);
 
-  const assetId = normalizeSymbol(assetClass, tx.assetId);
+  // A DEPOSIT may open the account it goes into ({ newAccount: {...} }),
+  // so creating an account is a ledger entry like any other - recorded,
+  // listed in the history, and undone by deleting it.
+  const opensAccount = String(tx.type || '').toUpperCase() === 'DEPOSIT' && tx.newAccount && typeof tx.newAccount === 'object';
+  const assetId = opensAccount ? 'new' : normalizeSymbol(assetClass, tx.assetId);
   if (!assetId) fail('assetId is required');
 
   const fees = tx.fees === undefined || tx.fees === null || tx.fees === '' ? 0 : num(tx.fees);
@@ -160,6 +168,7 @@ function normalizeTransaction(input, { today } = {}) {
     lotMethod: null,
     specificLots: null,
     lotDetails: null,
+    newAccount: null,
     note
   };
 
@@ -224,6 +233,24 @@ function normalizeTransaction(input, { today } = {}) {
     const amount = num(tx.amount);
     if (!(amount > 0)) fail('amount must be positive');
     out.amount = amount;
+  }
+
+  if (opensAccount) {
+    const details = {};
+    NEW_ACCOUNT_KEYS.forEach((key) => {
+      if (tx.newAccount[key] !== undefined) details[key] = tx.newAccount[key];
+    });
+    if (details.fundName !== undefined) details.fundName = String(details.fundName).trim();
+    if (details.securityId !== undefined) details.securityId = String(details.securityId).trim();
+    if (details.interestRate !== undefined) {
+      const rate = num(details.interestRate);
+      if (!(rate >= 0)) fail('interestRate must be zero or positive');
+      details.interestRate = rate;
+    }
+    if (details.isLinkedToIndex !== undefined) details.isLinkedToIndex = Boolean(details.isLinkedToIndex);
+    if ((assetClass === 'pension' || assetClass === 'bankSavings') && !details.fundName) fail('a new fund needs a fundName');
+    if (assetClass === 'cashFunds' && !details.securityId) fail('a new money-market fund needs a securityId');
+    out.newAccount = details;
   }
 
   return out;
@@ -374,6 +401,29 @@ function applyTransaction(portfolio, tx, { newLotId } = {}) {
     return { portfolio: next, transaction: applied };
   }
 
+  if (tx.type === 'DEPOSIT' && tx.newAccount) {
+    // Opens the account with this deposit as its first ledger entry. A
+    // value-tracked account starts out worth what was paid in (the same
+    // starting point the old add form gave it); bank savings derive their
+    // value from the deposits alone.
+    const key = ACCOUNT_CLASSES[tx.assetClass];
+    const accountId = newLotId !== undefined && newLotId !== null ? newLotId : Date.now();
+    const deposit = { date: tx.date, amount: tx.amount, txId: tx.id };
+    const account = tx.assetClass === 'bankSavings'
+      ? Object.assign({ id: accountId, fundName: '', investmentTrack: '', interestRate: 0, isLinkedToIndex: false }, tx.newAccount, { deposits: [deposit] })
+      : Object.assign(
+          { id: accountId },
+          tx.assetClass === 'bank' ? { updateDate: tx.date } : { fundName: '' },
+          tx.newAccount,
+          { currentValue: tx.amount, currentValueDate: tx.date, previousValue: 0, previousValueDate: '', amount: tx.amount, deposits: [deposit] }
+        );
+    next[key].push(account);
+    applied.assetId = String(accountId);
+    applied.createdAccountId = accountId;
+    applied.amountILS = tx.amount;
+    return { portfolio: next, transaction: applied };
+  }
+
   if (tx.type === 'DEPOSIT' || tx.type === 'WITHDRAWAL') {
     const key = ACCOUNT_CLASSES[tx.assetClass];
     const account = next[key].find((a) => String(a.id) === String(tx.assetId));
@@ -429,6 +479,13 @@ function revertTransaction(portfolio, tx) {
     const account = next[key].find((a) => String(a.id) === String(tx.assetId));
     if (account && Array.isArray(account.deposits)) {
       account.deposits = account.deposits.filter((d) => d.txId !== tx.id);
+    }
+    // The deposit that opened the account: with nothing else recorded on it
+    // since, undoing it removes the account it created. Once other entries
+    // exist the account stays - deleting the opening deposit is still
+    // allowed, the account just keeps its later history.
+    if (account && tx.createdAccountId !== undefined && tx.createdAccountId !== null && (account.deposits || []).length === 0) {
+      next[key] = next[key].filter((a) => String(a.id) !== String(tx.createdAccountId));
     }
     return next;
   }

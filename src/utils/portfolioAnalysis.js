@@ -7,7 +7,8 @@ import { calculateAmericanStockMetrics } from './portfolioMath';
 import { normalizeIsraeliPrice, toNum } from './formatters';
 import { computeBankSavingsFundValue } from './bankSavingsFund';
 import { effectiveExchangeForIsraeliStock } from './israeliEtfClassifier';
-import { effectiveDailyChangePercent } from './marketSession';
+import { effectiveDailyChangePercent, israelToday } from './marketSession';
+import { liquidBalanceOn } from '../shared/liquidBalance';
 
 export const calculatePortfolioAnalysis = (
   israeliStocks,
@@ -52,8 +53,10 @@ export const calculatePortfolioAnalysis = (
     (sum, item) => sum + toNum(item.currentValue != null ? item.currentValue : item.amount),
     0
   );
-  const cashFundsTotalValueILS = cashFunds.reduce((sum, item) => sum + toNum(item.amount), 0);
-  const bankTotalValueILS = bankBalances.reduce((sum, item) => sum + toNum(item.amount), 0);
+  // Recorded balance + the ledger movements since it (see shared/liquidBalance.js).
+  const today = israelToday();
+  const cashFundsTotalValueILS = cashFunds.reduce((sum, item) => sum + liquidBalanceOn(item, today), 0);
+  const bankTotalValueILS = bankBalances.reduce((sum, item) => sum + liquidBalanceOn(item, today), 0);
   const bankSavingsTotalValueILS = bankSavingsFunds.reduce(
     (sum, fund) => sum + toNum(computeBankSavingsFundValue(fund)),
     0

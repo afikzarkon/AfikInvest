@@ -82,6 +82,10 @@ function txToRow(userId, tx) {
   const details = {
     allocations: tx.allocations || undefined,
     createdLotId: tx.createdLotId !== undefined ? tx.createdLotId : undefined,
+    // The account a DEPOSIT opened (so deleting it can remove the account),
+    // and what it was opened with (so editing it can open it the same way).
+    createdAccountId: tx.createdAccountId !== undefined ? tx.createdAccountId : undefined,
+    newAccount: tx.newAccount || undefined,
     specificLots: tx.specificLots || undefined,
     lotDetails: tx.lotDetails || undefined
   };
@@ -140,6 +144,8 @@ function rowToTx(row) {
   };
   if (details.allocations) tx.allocations = details.allocations;
   if (details.createdLotId !== undefined) tx.createdLotId = details.createdLotId;
+  if (details.createdAccountId !== undefined) tx.createdAccountId = details.createdAccountId;
+  if (details.newAccount) tx.newAccount = details.newAccount;
   if (details.specificLots) tx.specificLots = details.specificLots;
   if (details.lotDetails) tx.lotDetails = details.lotDetails;
   return tx;

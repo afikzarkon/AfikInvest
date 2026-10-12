@@ -4,6 +4,7 @@ import { calculatePensionRealGainTax, calculateBankSavingsFundTax, monthKeyFromD
 import { calculateLedgerPeriodReturn, hasAmbiguousLedgerPeriod } from '../utils/portfolioMath';
 import { computeBankSavingsFundValue } from '../utils/bankSavingsFund';
 import { todayISO } from '../utils/portfolioDates';
+import { liquidBalanceOn, movementsSinceLastBalance } from '../shared/liquidBalance';
 
 // The four ledger-backed account tables: provident funds, money-market
 // funds, current accounts and bank savings.
@@ -96,10 +97,13 @@ function FinancialAccountsTables({
   formatDate,
   formatPriceWithSign,
   handleDelete,
-  // Opens the add form pointed at one account (see App.js's
-  // handleRecordTransaction). Optional - without it the ledgers are
+  // Opens the entry form pointed at one account (see App.js's
+  // handleOpenLedgerEntry). Optional - without it the ledgers are
   // read-only, as they always were.
-  onOpenLedgerEntry
+  onOpenLedgerEntry,
+  // Deletes a ledger row recorded through the transactions ledger, so the
+  // row and its history line go together (see deleteDeposit).
+  onDeleteTransaction
 }) {
   const formatPercent = (value) => {
     if (value === null || value === undefined || Number.isNaN(value)) {
@@ -158,10 +162,40 @@ function FinancialAccountsTables({
     }
     finishInlineEdit();
   };
-  const deleteDeposit = (fund, depositIndex, exchange) => {
+  // A row recorded through the ledger carries its transaction's id: it is
+  // deleted THROUGH the ledger, so the history line and whatever the
+  // transaction did go with it. Removing only the row here used to leave
+  // the transaction listed in the history with nothing behind it. Rows
+  // from before the ledger (no txId) are still removed directly.
+  const deleteDeposit = async (fund, depositIndex, exchange) => {
     const deposits = Array.isArray(fund.deposits) ? fund.deposits : [];
+    const row = deposits[depositIndex];
+    if (row && row.txId && onDeleteTransaction) {
+      if (!window.confirm('למחוק את התנועה? היא תימחק גם מיומן העסקאות.')) return;
+      const result = await onDeleteTransaction(row.txId);
+      if (result && !result.ok) window.alert(result.error || 'המחיקה נכשלה');
+      return;
+    }
     const updatedDeposits = deposits.filter((_, i) => i !== depositIndex);
     handleInlineEdit(fund.id, 'deposits', updatedDeposits, exchange);
+  };
+
+  // A current account's or money-market fund's balance: the recorded one
+  // plus the movements recorded since (shared/liquidBalance.js), saying so
+  // when the two differ.
+  const renderLiquidBalance = (item) => {
+    const today = todayISO();
+    const since = movementsSinceLastBalance(item, today);
+    return (
+      <>
+        {`${formatPriceWithSign(liquidBalanceOn(item, today))} ₪`}
+        {since !== 0 && (
+          <small className="form-help" style={{ display: 'block' }}>
+            {`כולל ${since > 0 ? '+' : ''}${formatPriceWithSign(since)} ₪ תנועות מאז העדכון`}
+          </small>
+        )}
+      </>
+    );
   };
 
   const [expandedBankSavingsFunds, setExpandedBankSavingsFunds] = useState({});
@@ -170,6 +204,10 @@ function FinancialAccountsTables({
   };
   const deleteBankSavingsDeposit = (fund, depositIndex) => {
     const deposits = Array.isArray(fund.deposits) ? fund.deposits : [];
+    if (deposits[depositIndex] && deposits[depositIndex].txId && onDeleteTransaction) {
+      deleteDeposit(fund, depositIndex, 'bank_savings');
+      return;
+    }
     const updatedDeposits = deposits.filter((_, i) => i !== depositIndex);
     handleInlineEdit(fund.id, 'deposits', updatedDeposits, 'bank_savings');
   };
@@ -373,7 +411,7 @@ function FinancialAccountsTables({
                         </td>
                       )}
                     </tr>
-                    {isExpanded && renderRecordTransactionRow('pension', item, (showAdditionalData ? 15 : 9) + (isEditMode ? 1 : 0), '+ רישום הפקדה לקופה')}
+                    {isExpanded && renderRecordTransactionRow('pension', item, (showAdditionalData ? 15 : 9) + (isEditMode ? 1 : 0), '+ רישום פעולה (הפקדה / משיכה / עדכון שווי)')}
                     {isExpanded && deposits.length === 0 && (
                       <tr className={`${isEditMode ? 'editable-row' : ''} detail-row`}>
                         <td style={{ paddingLeft: '20px' }} colSpan={(showAdditionalData ? 15 : 9) + (isEditMode ? 1 : 0)}>אין הפקדות רשומות</td>
@@ -432,7 +470,6 @@ function FinancialAccountsTables({
               <tbody>
                 {cashFunds.map(item => {
                   const deposits = Array.isArray(item.deposits) ? item.deposits : [];
-                  const currentValue = item.currentValue ?? item.amount ?? 0;
                   const previousValue = item.previousValue ?? 0;
                   const periodReturn = calculateLedgerPeriodReturn(item);
                   const periodReturnPercent = previousValue > 0 ? periodReturn.percent : null;
@@ -498,7 +535,7 @@ function FinancialAccountsTables({
                                 onKeyDown={(e) => { if (e.key === 'Enter') commitValueEdit(item, 'cash_fund'); }}
                               />
                             </div>
-                          ) : `${formatPriceWithSign(currentValue)} ₪`}
+                          ) : renderLiquidBalance(item)}
                         </td>
                         <td data-label={CASH_COL.currentDate}>{item.currentValueDate ? formatDate(item.currentValueDate) : '-'}</td>
                         {/* previousValue/previousValueDate הן תצוגה בלבד בכוונה - ראו
@@ -524,7 +561,7 @@ function FinancialAccountsTables({
                           </td>
                         )}
                       </tr>
-                      {isExpanded && renderRecordTransactionRow('cash_fund', item, (showAdditionalData ? 8 : 7) + (isEditMode ? 1 : 0), '+ רישום הפקדה/משיכה')}
+                      {isExpanded && renderRecordTransactionRow('cash_fund', item, (showAdditionalData ? 8 : 7) + (isEditMode ? 1 : 0), '+ רישום פעולה (הפקדה / משיכה / עדכון שווי)')}
                       {isExpanded && deposits.length === 0 && (
                         <tr className={`${isEditMode ? 'editable-row' : ''} detail-row`}>
                           <td style={{ paddingLeft: '20px' }} colSpan={(showAdditionalData ? 8 : 7) + (isEditMode ? 1 : 0)}>אין הפקדות/משיכות רשומות</td>
@@ -571,7 +608,6 @@ function FinancialAccountsTables({
               <tbody>
                 {bankBalances.map(item => {
                   const deposits = Array.isArray(item.deposits) ? item.deposits : [];
-                  const currentValue = item.currentValue ?? item.amount ?? 0;
                   const previousValue = item.previousValue ?? 0;
                   const periodReturn = calculateLedgerPeriodReturn(item);
                   const periodReturnPercent = previousValue > 0 ? periodReturn.percent : null;
@@ -613,7 +649,7 @@ function FinancialAccountsTables({
                                 onKeyDown={(e) => { if (e.key === 'Enter') commitValueEdit(item, 'bank'); }}
                               />
                             </div>
-                          ) : `${formatPriceWithSign(currentValue)} ₪`}
+                          ) : renderLiquidBalance(item)}
                         </td>
                         <td data-label={BANK_COL.currentDate}>{item.currentValueDate ? formatDate(item.currentValueDate) : '-'}</td>
                         <td data-label={BANK_COL.previous}>{`${formatPriceWithSign(previousValue)} ₪`}</td>
@@ -637,7 +673,7 @@ function FinancialAccountsTables({
                           </td>
                         )}
                       </tr>
-                      {isExpanded && renderRecordTransactionRow('bank', item, (showAdditionalData ? 6 : 5) + (isEditMode ? 1 : 0), '+ רישום הפקדה/משיכה')}
+                      {isExpanded && renderRecordTransactionRow('bank', item, (showAdditionalData ? 6 : 5) + (isEditMode ? 1 : 0), '+ רישום פעולה (הפקדה / משיכה / עדכון שווי)')}
                       {isExpanded && deposits.length === 0 && (
                         <tr className={`${isEditMode ? 'editable-row' : ''} detail-row`}>
                           <td style={{ paddingLeft: '20px' }} colSpan={(showAdditionalData ? 6 : 5) + (isEditMode ? 1 : 0)}>אין הפקדות/משיכות רשומות</td>
@@ -774,7 +810,7 @@ function FinancialAccountsTables({
                         </td>
                       )}
                     </tr>
-                    {isExpanded && renderRecordTransactionRow('bank_savings', item, (showAdditionalData ? 9 : 7) + (isEditMode ? 1 : 0), '+ רישום הפקדה לקופה')}
+                    {isExpanded && renderRecordTransactionRow('bank_savings', item, (showAdditionalData ? 9 : 7) + (isEditMode ? 1 : 0), '+ רישום הפקדה / משיכה')}
                     {isExpanded && deposits.length === 0 && (
                       <tr className={`${isEditMode ? 'editable-row' : ''} detail-row`}>
                         <td style={{ paddingLeft: '20px' }} colSpan={(showAdditionalData ? 9 : 7) + (isEditMode ? 1 : 0)}>אין הפקדות רשומות</td>

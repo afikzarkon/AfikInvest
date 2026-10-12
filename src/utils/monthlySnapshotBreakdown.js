@@ -13,6 +13,8 @@
 // formulas portfolioAnalysis.js uses for its own category totals.
 import { toNum } from './formatters';
 import { computeBankSavingsFundValue } from './bankSavingsFund';
+import { liquidBalanceOn } from '../shared/liquidBalance';
+import { israelToday } from './marketSession';
 
 export function buildItemizedMonthlyBreakdown(analysis, pensionFunds, cashFunds, bankBalances, bankSavingsFunds = []) {
   const israeli = [];
@@ -32,16 +34,18 @@ export function buildItemizedMonthlyBreakdown(analysis, pensionFunds, cashFunds,
     value: toNum(item.currentValue != null ? item.currentValue : item.amount)
   }));
 
+  // Liquid accounts: recorded balance + the ledger movements since it.
+  const today = israelToday();
   const cashFundsItems = (cashFunds || []).map((item) => ({
     key: item.fundName || `cash-${item.id}`,
     label: item.fundName || 'קרן כספית',
-    value: toNum(item.amount)
+    value: liquidBalanceOn(item, today)
   }));
 
   const bank = (bankBalances || []).map((item, index) => ({
     key: `bank-${index + 1}`,
     label: bankBalances.length > 1 ? `עו"ש #${index + 1}` : 'עו"ש',
-    value: toNum(item.amount)
+    value: liquidBalanceOn(item, today)
   }));
 
   const bankSavings = (bankSavingsFunds || []).map((item) => ({

@@ -8,6 +8,7 @@ import { normalizeIsraeliPrice } from './formatters';
 import { calculateStockRealGainTax, calculatePensionRealGainTax, calculateBankSavingsFundTax, monthKeyFromDate } from './cpiTax';
 import { computeBankSavingsFundValue } from './bankSavingsFund';
 import { effectiveDailyChangePercent, israelToday, marketSessionState } from './marketSession';
+import { liquidBalanceOn } from '../shared/liquidBalance';
 
 // cpi = { currentIndex, indexByMonth } - אופציונלי. כל עוד המדד לא נטען
 // (או שהמשיכה נכשלה), נופלים חזרה לחישוב מס שטוח על הרווח הנומינלי
@@ -165,7 +166,8 @@ export const calculatePortfolioSummary = (
   const americanTaxILS = americanSummary.totalTaxILS;
 
   // Total capital by category
-  const cashFundsTotalILS = cashFunds.reduce((sum, item) => sum + (item.amount || 0), 0);
+  // Recorded balance + the ledger movements since it (see shared/liquidBalance.js).
+  const cashFundsTotalILS = cashFunds.reduce((sum, item) => sum + liquidBalanceOn(item, today), 0);
   // סך ההשקעה בקופות גמל נגזר תמיד מפנקס ההפקדות (deposits) - בדיוק
   // כמו "סה\"כ רכישה" במניות שנגזר מרשימת הרכישות, לא שדה שמתעדכן ידנית.
   const pensionInitialInvestmentILS = pensionFunds.reduce((sum, item) => {
@@ -271,7 +273,7 @@ export const calculatePortfolioSummary = (
   const totalRealGainILS =
     israeliSummary.totalRealGainILS + americanSummary.totalRealGainILS + pensionRealGainILS + bankSavingsRealGainILS;
   const totalInflationaryGainILS = israeliSummary.totalInflationaryGainILS + americanSummary.totalCurrencyExemptGainILS + pensionInflationaryGainILS;
-  const bankBalancesTotalILS = bankBalances.reduce((sum, item) => sum + (item.amount || 0), 0);
+  const bankBalancesTotalILS = bankBalances.reduce((sum, item) => sum + liquidBalanceOn(item, today), 0);
   const capitalIsraeliILS = israeliSummary.totalCurrentValueILS;
   const capitalAmericanILS = americanSummary.totalCurrentValueILS;
   const capitalTotalILS =
