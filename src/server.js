@@ -21,7 +21,6 @@ const { mountTransactionRoutes } = require('./server/transactionRoutes');
 const { mountAlertRoutes } = require('./server/alertRoutes');
 const { mountInternalJobRoutes } = require('./server/internalJobRoutes');
 const { mountPreferenceRoutes } = require('./server/preferenceRoutes');
-const { mountMonthlySyncRoutes } = require('./server/monthlySyncRoutes');
 const { mountValuationRoutes } = require('./server/valuationRoutes');
 const { createValuationService, createDefaultSources } = require('./server/valuationService');
 
@@ -44,19 +43,16 @@ mountValuationRoutes(app, { valuation: createValuationService({ sources: createD
 const PORT = Number(process.env.PORT) || 5000;
 
 bootstrapServices()
-  .then(({ store, features, marketData, reports, runner }) => {
+  .then(({ store, features, marketData, runner }) => {
     mountAuthRoutes(app, store);
-    mountPortfolioRoutes(app, store, { onSaved: (userId) => reports.onPortfolioSaved(userId) });
+    mountPortfolioRoutes(app, store);
     mountSnapshotRoutes(app, store);
     mountMonthlySnapshotRoutes(app, store);
     mountRebalanceRoutes(app, store);
-    mountTransactionRoutes(app, store, {
-      onChanged: (userId, tx) => reports.onPortfolioSaved(userId, { months: tx && tx.date ? [tx.date.slice(0, 7)] : [] })
-    });
+    mountTransactionRoutes(app, store);
     mountAlertRoutes(app, { store, features, marketData });
     mountInternalJobRoutes(app, { features, runner });
     mountPreferenceRoutes(app, { features });
-    mountMonthlySyncRoutes(app, { reports, features });
     // Drains due jobs while the process is up; the external scheduler covers
     // the time the host is asleep. JOBS_POLL=0 turns the poller off - e.g.
     // when a separate worker (src/worker.js) runs the jobs instead.

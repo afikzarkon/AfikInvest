@@ -51,34 +51,6 @@ const SCHEMA = [
     updated_at TEXT NOT NULL,
     PRIMARY KEY (user_id, namespace)
   )`,
-  `CREATE TABLE IF NOT EXISTS monthly_sync_status (
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    month TEXT NOT NULL,
-    state TEXT NOT NULL,
-    excluded_accounts TEXT NOT NULL,
-    fingerprint TEXT,
-    version INTEGER NOT NULL DEFAULT 0,
-    completed_at TEXT,
-    completed_by TEXT,
-    updated_at TEXT NOT NULL,
-    PRIMARY KEY (user_id, month)
-  )`,
-  `CREATE TABLE IF NOT EXISTS reports (
-    id TEXT PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    month TEXT NOT NULL,
-    version INTEGER NOT NULL,
-    status TEXT NOT NULL,
-    storage_key TEXT,
-    bytes INTEGER,
-    data_hash TEXT,
-    reused INTEGER NOT NULL DEFAULT 0,
-    error TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    UNIQUE (user_id, month, version)
-  )`,
-  'CREATE INDEX IF NOT EXISTS reports_user_idx ON reports (user_id, month)',
   `CREATE TABLE IF NOT EXISTS jobs (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -135,23 +107,6 @@ function rowToEvent(row) {
     confidence: row.confidence === null || row.confidence === undefined ? null : Number(row.confidence),
     source: row.source,
     fetchedAt: row.fetched_at
-  };
-}
-
-function rowToReport(row) {
-  return {
-    id: row.id,
-    userId: Number(row.user_id),
-    month: row.month,
-    version: Number(row.version),
-    status: row.status,
-    storageKey: row.storage_key || null,
-    bytes: row.bytes === null || row.bytes === undefined ? null : Number(row.bytes),
-    dataHash: row.data_hash || null,
-    reused: Boolean(Number(row.reused)),
-    error: row.error || null,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at
   };
 }
 
@@ -316,82 +271,6 @@ async function initFeatureStore(store) {
       );
     },
 
-    // ----- monthly sync status -----
-    async getSyncStatus(userId, month) {
-      const row = await sql.get('SELECT * FROM monthly_sync_status WHERE user_id = ? AND month = ?', [userId, month]);
-      if (!row) return null;
-      return {
-        month: row.month,
-        state: row.state,
-        excluded: parseJson(row.excluded_accounts, []),
-        fingerprint: row.fingerprint || null,
-        version: Number(row.version),
-        completedAt: row.completed_at || null,
-        completedBy: row.completed_by || null,
-        updatedAt: row.updated_at
-      };
-    },
-    async saveSyncStatus(userId, month, status) {
-      await sql.run(
-        `INSERT INTO monthly_sync_status (user_id, month, state, excluded_accounts, fingerprint, version, completed_at, completed_by, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT (user_id, month) DO UPDATE SET
-           state = excluded.state, excluded_accounts = excluded.excluded_accounts, fingerprint = excluded.fingerprint,
-           version = excluded.version, completed_at = excluded.completed_at, completed_by = excluded.completed_by,
-           updated_at = excluded.updated_at`,
-        [
-          userId,
-          month,
-          status.state,
-          JSON.stringify(status.excluded || []),
-          status.fingerprint || null,
-          status.version || 0,
-          status.completedAt || null,
-          status.completedBy || null,
-          nowIso()
-        ]
-      );
-    },
-
-    // ----- reports -----
-    async upsertReport(report) {
-      const ts = nowIso();
-      await sql.run(
-        `INSERT INTO reports (id, user_id, month, version, status, storage_key, bytes, data_hash, reused, error, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT (user_id, month, version) DO UPDATE SET
-           status = excluded.status, storage_key = excluded.storage_key, bytes = excluded.bytes,
-           data_hash = excluded.data_hash, reused = excluded.reused, error = excluded.error, updated_at = excluded.updated_at`,
-        [
-          report.id || crypto.randomUUID(),
-          report.userId,
-          report.month,
-          report.version,
-          report.status,
-          report.storageKey || null,
-          report.bytes === undefined ? null : report.bytes,
-          report.dataHash || null,
-          report.reused ? 1 : 0,
-          report.error || null,
-          ts,
-          ts
-        ]
-      );
-      return this.getReportByVersion(report.userId, report.month, report.version);
-    },
-    async getReportByVersion(userId, month, version) {
-      const row = await sql.get('SELECT * FROM reports WHERE user_id = ? AND month = ? AND version = ?', [userId, month, version]);
-      return row ? rowToReport(row) : null;
-    },
-    async getReport(userId, id) {
-      const row = await sql.get('SELECT * FROM reports WHERE user_id = ? AND id = ?', [userId, id]);
-      return row ? rowToReport(row) : null;
-    },
-    async listReports(userId) {
-      const rows = await sql.all('SELECT * FROM reports WHERE user_id = ? ORDER BY month DESC, version DESC', [userId]);
-      return rows.map(rowToReport);
-    },
-
     // ----- job queue -----
     // Returns the job; with an idempotency key that already exists, returns
     // the existing job instead of creating a second one.
@@ -421,7 +300,7 @@ async function initFeatureStore(store) {
       const row = await sql.get('SELECT * FROM jobs WHERE idempotency_key = ?', [idempotencyKey]);
       return row ? rowToJob(row) : null;
     },
-    // Moves a still-queued job's run time (the report debounce).
+    // Moves a still-queued job's run time.
     async rescheduleJob(id, runAfter) {
       const r = await sql.run("UPDATE jobs SET run_after = ?, updated_at = ? WHERE id = ? AND status = 'queued'", [
         runAfter,

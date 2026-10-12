@@ -17,7 +17,6 @@ import { useRebalanceTargets } from './hooks/useRebalanceTargets';
 import { useTransactions } from './hooks/useTransactions';
 import { useAlerts } from './hooks/useAlerts';
 import { usePreferences } from './hooks/usePreferences';
-import { useMonthlySync } from './hooks/useMonthlySync';
 import { useTheme } from './hooks/useTheme';
 import { monthKeyFromDate } from './utils/cpiTax';
 import { useRoute } from './hooks/useRoute';
@@ -52,7 +51,6 @@ const BankSavingsPage = lazy(() => import('./components/pages/BankSavingsPage'))
 const TransactionsView = lazy(() => import('./components/TransactionsView'));
 const AlertsView = lazy(() => import('./components/AlertsView'));
 const RecommendationsView = lazy(() => import('./components/RecommendationsView'));
-const ReportsView = lazy(() => import('./components/ReportsView'));
 const ValuationView = lazy(() => import('./components/ValuationView'));
 
 const LEGACY_KEYS = [
@@ -385,24 +383,6 @@ function App() {
   } = useAlerts(user, authHeader);
 
   const { value: recommendationPrefs, save: saveRecommendationPrefs } = usePreferences(user, authHeader, 'recommendations');
-  const { value: reportPrefs, save: saveReportPrefs } = usePreferences(user, authHeader, 'reports');
-  const monthlySync = useMonthlySync(user, authHeader);
-
-  // The sync state moves on the server after every save, so the page reads
-  // it fresh each time it is opened.
-  const reloadMonthlySync = monthlySync.reload;
-  const monthlySyncMonth = monthlySync.month;
-  useEffect(() => {
-    if (activePage === 'reports' && user) reloadMonthlySync(monthlySyncMonth || undefined);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activePage, user]);
-
-  // "Finished monthly update": the server builds the month's checkpoint from
-  // the portfolio it has stored, so unsaved edits are saved first.
-  const handleCompleteMonth = async () => {
-    if (hasUnsavedChanges && !(await savePortfolio())) throw new Error('יש שינויים שלא נשמרו והשמירה נכשלה');
-    return monthlySync.complete();
-  };
 
   const adoptServerPortfolio = (portfolio) => {
     if (!portfolio) return;
@@ -802,24 +782,6 @@ function App() {
 
       case 'valuation':
         return <ValuationView americanStocks={americanStocks} />;
-
-      case 'reports':
-        return (
-          <ReportsView
-            status={monthlySync.status}
-            reports={monthlySync.reports}
-            error={monthlySync.error}
-            onSelectMonth={monthlySync.selectMonth}
-            onSetExcluded={monthlySync.setExcluded}
-            onComplete={handleCompleteMonth}
-            onRegenerate={monthlySync.regenerate}
-            onDownload={monthlySync.download}
-            emailOnReady={Boolean(reportPrefs && reportPrefs.emailOnReady)}
-            onToggleEmail={(on) => saveReportPrefs({ emailOnReady: on })}
-            emailEnabled={monthlySync.emailEnabled}
-            onEmailReport={monthlySync.emailReport}
-          />
-        );
 
       case 'recommendations':
         return (

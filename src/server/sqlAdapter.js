@@ -1,5 +1,5 @@
 // One small query interface over both databases, so the stores added for
-// alerts, the event calendar, jobs and reports are written ONCE instead of
+// alerts, the event calendar and jobs are written ONCE instead of
 // twice (the original dataStore.js keeps its two hand-written copies).
 //
 // SQL is written with `?` placeholders and portable syntax (TEXT columns,

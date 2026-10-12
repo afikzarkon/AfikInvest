@@ -64,13 +64,6 @@ export const ROUTES = [
     icon: 'bell'
   },
   {
-    key: 'reports',
-    path: '/reports',
-    label: 'דוחות חודשיים',
-    hint: 'עדכון חודשי ודוח PDF',
-    icon: 'report'
-  },
-  {
     key: 'valuation',
     path: '/valuation',
     label: 'הערכת שווי',
@@ -109,7 +102,7 @@ export const ROUTES = [
 // separating them from the overview and the tools keeps each group short
 // enough to read at a glance.
 export const NAV_GROUPS = [
-  { label: 'סקירה', keys: ['home', 'analytics', 'alerts', 'monthly-tracker', 'reports'] },
+  { label: 'סקירה', keys: ['home', 'analytics', 'alerts', 'monthly-tracker'] },
   {
     label: 'נכסים',
     keys: ['israeli-stocks', 'us-stocks', 'provident-funds', 'cash-and-checking', 'bank-savings']

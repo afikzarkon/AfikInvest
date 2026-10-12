@@ -12,8 +12,8 @@ services:
       - key: PUPPETEER_CACHE_DIR
         value: /opt/render/.cache/puppeteer
 
-# Optional: run background jobs (alert scans, monthly PDF reports) in a separate
-# process so Chrome never competes with the API for memory. Render background
+# Optional: run background jobs (alert scans, event calendar) in a separate
+# process so they never compete with the API for memory. Render background
 # workers need a paid plan. If you enable this, also set JOBS_POLL=0 on the web
 # service above so only the worker polls the job queue.
 #

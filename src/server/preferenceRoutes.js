@@ -15,12 +15,6 @@ function numberIn(value, lo, hi, name) {
 }
 
 const VALIDATORS = {
-  reports(input) {
-    const src = input && typeof input === 'object' ? input : {};
-    const out = {};
-    if (src.emailOnReady !== undefined) out.emailOnReady = Boolean(src.emailOnReady);
-    return out;
-  },
   recommendations(input) {
     const src = input && typeof input === 'object' ? input : {};
     const out = {};

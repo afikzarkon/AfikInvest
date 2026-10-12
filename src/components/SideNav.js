@@ -61,12 +61,6 @@ const ICONS = {
       <path d="m5 8-3 6a3 3 0 0 0 6 0L5 8Zm14 0-3 6a3 3 0 0 0 6 0l-3-6Z" />
     </>
   ),
-  report: (
-    <>
-      <path d="M7 3h7l4 4v14H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" />
-      <path d="M14 3v4h4M9 17v-3m3 3v-5m3 5v-2" />
-    </>
-  ),
   compass: (
     <>
       <circle cx="12" cy="12" r="9" />

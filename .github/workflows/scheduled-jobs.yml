@@ -20,7 +20,7 @@ on:
     - cron: '37 21 * * 1-5'
     # Event calendar refresh + reminders, early morning daily.
     - cron: '13 5 * * *'
-    # Drain anything else that is due (e.g. monthly reports) hourly.
+    # Drain anything else that is due (e.g. a retry after a failure) hourly.
     - cron: '47 * * * *'
   workflow_dispatch:
     inputs:

@@ -12,7 +12,7 @@ const crypto = require('crypto');
 const SCHEDULABLE = {
   'anomaly.scan': { dailyKey: true },
   'calendar.refresh': { dailyKey: true },
-  // Only drains the queue (e.g. reports whose debounce has expired).
+  // Only drains the queue (anything already due, e.g. a retry after a failure).
   drain: { enqueue: false }
 };
 

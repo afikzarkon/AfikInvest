@@ -505,6 +505,8 @@ export function runRecommendationEngine(ctx: PortfolioContext, rules: Rule[]) {
 
 ## 3. Automated Monthly PDF Report Generator
 
+> **Removed (October 2026).** This module was built and then taken out of the product: the monthly sync, the server-rendered PDF, report storage and the report e-mail no longer exist. The section is kept as a record of the design. The monthly tracker (`monthlySnapshotRoutes.js`, `MonthlyTrackerView.js`) and the client-side Excel/PDF export (`exportReport.js`) are separate and remain.
+
 ### 3.1 Event-driven trigger ("monthly sync complete")
 
 The report is generated when the user's **manual** assets are up to date for the month, not on a fixed calendar date. Manual assets are provident, pension, and study funds (`pension`), money-market funds (`cashFunds`), bank balances (`bank`), and bank savings (`bankSavings`).
@@ -862,5 +864,5 @@ All four steps plus the Step 0 ledger are implemented. Where the build differs f
 | Scheduling | `.github/workflows/scheduled-jobs.yml`, `server/internalJobRoutes.js`, `src/worker.js` | Needs the `STOCKVIEW_API_URL` and `CRON_SECRET` repository secrets, and `CRON_SECRET` on the server. |
 | Exact TWR / MWR | `utils/performanceReturns.js`, analytics page | Exact TWR ignores the difference between a sale's fill price and that day's close. |
 | Recommendations | `utils/recommendationEngine.js`, `/recommendations` | **Deviation:** computed in the browser (where CPI and holdings already live) rather than `GET /api/recommendations`. Preferences are stored via `/api/preferences/recommendations`. |
-| Monthly report | `server/report/*`, `/reports` | The HTML is built with template strings rather than React SSR, since the server is not transpiled. Storage is Supabase when configured, otherwise local disk. E-mail via Resend is opt-in. |
+| Monthly report | - | **Removed** (October 2026). See the note at the top of §3. |
 | Valuation | `shared/valuationMultiples.js`, `utils/dcfValuation.js`, `server/fundamentals.js`, `/valuation` | Statements come from Yahoo's timeseries (about 4-5 years) or FMP with `FMP_API_KEY`. The sector benchmark is the median of Yahoo's peer list. **US symbols only.** |

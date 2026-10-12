@@ -1,6 +1,6 @@
 // Optional standalone job worker: runs the background job queue (anomaly
-// scans, calendar refreshes, monthly PDF reports) in its own process, so
-// Chrome's memory use during report rendering never competes with the API.
+// scans, calendar refreshes) in its own process, so the scans never compete
+// with the API for memory.
 //
 // Use it on a host that offers a background-worker process (e.g. a Render
 // Background Worker on a paid plan - see render.yaml), and set JOBS_POLL=0

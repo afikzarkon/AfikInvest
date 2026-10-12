@@ -20,9 +20,7 @@ function requireAuth(req, res, next) {
   }
 }
 
-// onSaved(userId): called after every successful save, without delaying the
-// response (it drives the monthly-sync state - see report/reportService.js).
-function mountPortfolioRoutes(app, store, { onSaved = null } = {}) {
+function mountPortfolioRoutes(app, store) {
   app.get('/api/portfolio', requireAuth, async (req, res) => {
     try {
       const raw = await store.getPortfolioPayload(req.user.id);
@@ -56,11 +54,6 @@ function mountPortfolioRoutes(app, store, { onSaved = null } = {}) {
       };
       const payload = JSON.stringify(snapshot);
       await store.upsertPortfolio(req.user.id, payload);
-      if (onSaved) {
-        Promise.resolve()
-          .then(() => onSaved(req.user.id))
-          .catch((err) => console.error('[portfolio] onSaved hook failed', err && err.message));
-      }
       return res.json({ ok: true });
     } catch {
       return res.status(500).json({ error: 'שגיאת שרת' });
