@@ -249,15 +249,35 @@ async function fetchPeerSymbols(symbol, { get = axios.get } = {}) {
   return parsePeers(res.data);
 }
 
-// A peer's current multiples from its quote summary. P/FCF uses Yahoo's
-// own free-cash-flow figure (levered FCF), so the peer benchmark for it is
-// approximate - the page says so.
-function peerMultiples(summary) {
+// A peer's trailing-twelve-month free cash flow from its STATEMENTS
+// (operating cash flow + capex), the same basis the subject company's own
+// P/FCF is computed on. One timeseries request; null when Yahoo has none.
+async function fetchTrailingFreeCashFlow(symbol, { get = crumbGet } = {}) {
+  const period2 = Math.floor(Date.now() / 1000);
+  const period1 = period2 - 2 * 365 * 86400;
+  const path = `/ws/fundamentals-timeseries/v1/finance/timeseries/${encodeURIComponent(symbol)}`;
+  const params = { type: 'trailingFreeCashFlow', period1, period2, merge: false, padTimeSeries: true, lang: 'en-US' };
+  const res = await get(`https://query2.finance.yahoo.com${path}`, { params, timeout: 15000, headers: YAHOO_HEADERS });
+  const rows = parseYahooTimeseries(res.data, 'trailing').filter((r) => Number.isFinite(r.freeCashFlow));
+  return rows.length ? rows[rows.length - 1].freeCashFlow : null;
+}
+
+// A peer's current multiples from its quote summary, and P/FCF from its
+// statement-basis TTM free cash flow (fetchTrailingFreeCashFlow).
+//
+// P/FCF used to divide by quoteSummary's financialData.freeCashflow, which
+// is Yahoo's LEVERED free cash flow - a different, much smaller figure for
+// most large companies. Against Apple's statement-basis 36x that put the
+// "sector median" at 240x (Microsoft 240x, Amazon 879x) and reported Apple
+// as 85% cheaper than its peers. Without a statement figure the peer is
+// left out of the P/FCF median rather than measured on the wrong basis; a
+// negative FCF leaves the multiple undefined, as everywhere else.
+function peerMultiples(summary, trailingFreeCashFlow = null) {
   const cap = summary.marketCap;
   return {
     PE: summary.trailingPE,
     PS: summary.priceToSales,
-    PFCF: Number.isFinite(cap) && summary.freeCashflow > 0 ? cap / summary.freeCashflow : null
+    PFCF: Number.isFinite(cap) && trailingFreeCashFlow > 0 ? cap / trailingFreeCashFlow : null
   };
 }
 
@@ -286,5 +306,6 @@ module.exports = {
   parsePeers,
   fetchPeerSymbols,
   peerMultiples,
+  fetchTrailingFreeCashFlow,
   fetchRiskFreeRate
 };

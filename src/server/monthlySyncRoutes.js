@@ -5,17 +5,24 @@
 //   POST /api/monthly-sync/:month/regenerate       a new report version now (debounced)
 //   GET  /api/reports                              -> { reports }
 //   GET  /api/reports/:id/download                 -> the PDF (redirect to a 60s signed URL, or the bytes)
+//   POST /api/reports/:id/email                    -> mail that report's link to the user now
 const { requireAuth } = require('./requireAuth');
 const { targetMonthFor, isValidMonth } = require('../shared/monthlySync');
+const { dateInTimeZone } = require('./marketCalendar');
 
 function mountMonthlySyncRoutes(app, { reports, features, now = () => new Date() }) {
+  // Israel's calendar, not UTC's: just after midnight on the 1st the UTC
+  // month is still the previous one, which refused the month that had just
+  // started as "in the future".
+  const todayIL = () => dateInTimeZone(now(), 'Asia/Jerusalem');
+
   const monthParam = (req, res) => {
     const month = req.params.month;
     if (!isValidMonth(month)) {
       res.status(400).json({ error: 'month must be YYYY-MM' });
       return null;
     }
-    if (month > now().toISOString().slice(0, 7)) {
+    if (month > todayIL().slice(0, 7)) {
       res.status(400).json({ error: 'month cannot be in the future' });
       return null;
     }
@@ -23,7 +30,7 @@ function mountMonthlySyncRoutes(app, { reports, features, now = () => new Date()
   };
 
   app.get('/api/monthly-sync', requireAuth, async (req, res) => {
-    const month = req.query.month || targetMonthFor(now().toISOString().slice(0, 10));
+    const month = req.query.month || targetMonthFor(todayIL());
     if (!isValidMonth(month)) return res.status(400).json({ error: 'month must be YYYY-MM' });
     try {
       return res.json(await reports.getStatus(req.user.id, month));
@@ -69,9 +76,24 @@ function mountMonthlySyncRoutes(app, { reports, features, now = () => new Date()
 
   app.get('/api/reports', requireAuth, async (req, res) => {
     try {
-      return res.json({ reports: await features.listReports(req.user.id) });
+      return res.json({
+        reports: await features.listReports(req.user.id),
+        // So the page only offers e-mail when the server can actually send it.
+        email: reports.emailStatus ? reports.emailStatus() : { enabled: false }
+      });
     } catch (err) {
       return res.status(500).json({ error: 'שגיאת שרת' });
+    }
+  });
+
+  app.post('/api/reports/:id/email', requireAuth, async (req, res) => {
+    try {
+      return res.json({ ok: true, ...(await reports.emailReport(req.user.id, String(req.params.id))) });
+    } catch (err) {
+      if (err && err.code === 'EMAIL_DISABLED') return res.status(503).json({ error: err.message });
+      if (err && err.code === 'NOT_FOUND') return res.status(404).json({ error: err.message });
+      console.error('[reports] email failed', err && err.message);
+      return res.status(502).json({ error: `שליחת המייל נכשלה: ${(err && err.message) || 'שגיאה'}` });
     }
   });
 

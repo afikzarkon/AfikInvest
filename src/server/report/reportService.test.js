@@ -213,6 +213,22 @@ describe.each(STORE_FACTORIES)('monthly report flow (%s)', (_name, makeStore) =>
     expect(notifier.reportReady).toHaveBeenCalledWith(expect.objectContaining({ to: 'r@x.com', month: '2026-08', version: 1, link: null }));
   });
 
+  test('emailReport mails a ready report on request, only to its owner, and refuses when e-mail is off', async () => {
+    notifier.enabled = true;
+    await save(portfolio('2026-09-03'));
+    advance(11);
+    await drain();
+    notifier.reportReady.mockClear();
+    const [report] = await features.listReports(userId);
+    await expect(service.emailReport(userId, report.id)).resolves.toMatchObject({ to: 'r@x.com', month: '2026-08', version: 1 });
+    expect(notifier.reportReady).toHaveBeenCalledWith(expect.objectContaining({ to: 'r@x.com', month: '2026-08' }));
+    const { id: other } = await store.insertUser('o@x.com', 'h');
+    await expect(service.emailReport(other, report.id)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    notifier.enabled = false;
+    await expect(service.emailReport(userId, report.id)).rejects.toMatchObject({ code: 'EMAIL_DISABLED' });
+    expect(service.emailStatus()).toEqual({ enabled: false });
+  });
+
   test('download is only for the owner and only when ready', async () => {
     await save(portfolio('2026-09-03'));
     advance(11);
@@ -251,4 +267,17 @@ test('the e-mail notifier is off without configuration and sends a link, never t
   expect(body.html).toContain('https://app.example/reports');
   expect(body.attachments).toBeUndefined();
   expect(config.headers.Authorization).toBe('Bearer k');
+});
+
+// axios's own message ("status code 403") hides the reason Resend gives.
+test("a refused send reports Resend's own reason", async () => {
+  const post = jest.fn(async () => {
+    const err = new Error('Request failed with status code 403');
+    err.response = { status: 403, data: { name: 'validation_error', message: 'The example.com domain is not verified.' } };
+    throw err;
+  });
+  const n = createEmailNotifier({ RESEND_API_KEY: 'k', REPORT_EMAIL_FROM: 'a@example.com' }, { post });
+  await expect(n.reportReady({ to: 'u@x.com', monthLabel: 'x', version: 1, link: null })).rejects.toThrow(
+    'Resend 403 failed: The example.com domain is not verified.'
+  );
 });

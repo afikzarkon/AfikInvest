@@ -48,7 +48,11 @@ function ReportsView({
   onRegenerate,
   onDownload,
   emailOnReady = false,
-  onToggleEmail
+  onToggleEmail,
+  // Whether the server is configured to send mail; without it the opt-in
+  // could never fire, so it is shown as unavailable instead.
+  emailEnabled = false,
+  onEmailReport
 }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState(null);
@@ -173,7 +177,15 @@ function ReportsView({
 
               <div className="analysis-section">
                 <h2 className="section-title">הדוחות של {monthLabel(status.month)}</h2>
-                <ReportList reports={monthReports} onDownload={(r) => run(() => onDownload(r))} />
+                <ReportList
+                  reports={monthReports}
+                  onDownload={(r) => run(() => onDownload(r))}
+                  onEmail={emailEnabled && onEmailReport ? (r) => run(async () => {
+                    const to = await onEmailReport(r);
+                    setMessage({ ok: true, text: `קישור לדוח נשלח אל ${to}` });
+                  }) : null}
+                  busy={busy}
+                />
                 {status.state === 'COMPLETE' && (
                   <button type="button" className="benchmark-toggle-button" disabled={busy} onClick={() => run(onRegenerate, 'גרסה חדשה תיווצר בעוד כ-10 דקות')}>
                     יצירת גרסה חדשה
@@ -184,15 +196,33 @@ function ReportsView({
               {otherReports.length > 0 && (
                 <div className="analysis-section">
                   <h2 className="section-title">דוחות קודמים</h2>
-                  <ReportList reports={otherReports} onDownload={(r) => run(() => onDownload(r))} />
+                  <ReportList
+                    reports={otherReports}
+                    onDownload={(r) => run(() => onDownload(r))}
+                    onEmail={emailEnabled && onEmailReport ? (r) => run(async () => {
+                      const to = await onEmailReport(r);
+                      setMessage({ ok: true, text: `קישור לדוח נשלח אל ${to}` });
+                    }) : null}
+                    busy={busy}
+                  />
                 </div>
               )}
 
               <div className="analysis-section">
                 <label className="form-group-checkbox">
-                  <input type="checkbox" checked={emailOnReady} onChange={(e) => run(() => onToggleEmail(e.target.checked))} />
+                  <input
+                    type="checkbox"
+                    checked={emailEnabled && emailOnReady}
+                    disabled={!emailEnabled}
+                    onChange={(e) => run(() => onToggleEmail(e.target.checked))}
+                  />
                   לשלוח לי מייל עם קישור כשהדוח מוכן
                 </label>
+                {!emailEnabled && (
+                  <p className="section-subtitle">
+                    שליחת מיילים לא הוגדרה בשרת עדיין (נדרשים RESEND_API_KEY ו-REPORT_EMAIL_FROM), ולכן לא יישלח מייל.
+                  </p>
+                )}
               </div>
             </>
           )}
@@ -202,7 +232,7 @@ function ReportsView({
   );
 }
 
-function ReportList({ reports, onDownload }) {
+function ReportList({ reports, onDownload, onEmail = null, busy = false }) {
   if (!reports.length) return <p className="history-empty-note">עדיין אין דוחות.</p>;
   return (
     <div className="stocks-table-container">
@@ -221,12 +251,20 @@ function ReportList({ reports, onDownload }) {
             <tr key={r.id}>
               <td>{monthLabel(r.month)}</td>
               <td>{r.version}</td>
-              <td>{r.status === 'ready' ? 'מוכן' : r.status === 'failed' ? 'נכשל' : 'בהכנה'}</td>
+              <td title={r.status === 'failed' && r.error ? r.error : undefined}>
+                {r.status === 'ready' ? 'מוכן' : r.status === 'failed' ? 'נכשל' : 'בהכנה'}
+                {r.status === 'failed' && r.error && <div className="section-subtitle">{r.error}</div>}
+              </td>
               <td>{String(r.updatedAt || '').slice(0, 10)}</td>
               <td>
                 {r.status === 'ready' && (
                   <button type="button" className="benchmark-toggle-button" onClick={() => onDownload(r)}>
                     הורדת PDF
+                  </button>
+                )}
+                {r.status === 'ready' && onEmail && (
+                  <button type="button" className="benchmark-toggle-button" disabled={busy} onClick={() => onEmail(r)}>
+                    שליחה למייל
                   </button>
                 )}
               </td>

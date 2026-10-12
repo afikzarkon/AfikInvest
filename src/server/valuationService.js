@@ -61,7 +61,11 @@ function createValuationService({ sources, now = () => new Date(), logger = cons
           const out = [];
           for (const peer of symbols) {
             try {
-              out.push(Object.assign({ symbol: peer }, sources.peerMultiples(await sources.summary(peer))));
+              const [peerSummary, peerFcf] = await Promise.all([
+                sources.summary(peer),
+                sources.peerFreeCashFlow ? sources.peerFreeCashFlow(peer).catch(() => null) : Promise.resolve(null)
+              ]);
+              out.push(Object.assign({ symbol: peer }, sources.peerMultiples(peerSummary, peerFcf)));
             } catch (err) {
               logger.warn && logger.warn('[valuation] peer failed', peer, err && err.message);
             }
@@ -178,6 +182,7 @@ function createDefaultSources(env = process.env) {
     monthlyPrices: (symbol) => f.fetchMonthlyPrices(symbol),
     peerSymbols: (symbol) => f.fetchPeerSymbols(symbol),
     peerMultiples: f.peerMultiples,
+    peerFreeCashFlow: (symbol) => f.fetchTrailingFreeCashFlow(symbol),
     riskFreeRate: () => f.fetchRiskFreeRate()
   };
 }

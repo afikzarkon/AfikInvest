@@ -342,7 +342,8 @@ function createReportService({
           await notifier.reportReady({ to: email, month, monthLabel: monthLabel(month), version, link });
         }
       } catch (err) {
-        logger.error('[reports] email failed', err && err.message);
+        // The report itself is ready either way; the mail is a courtesy.
+        logger.error('[reports] email failed', { userId, month, version, error: err && err.message });
       }
       return { reportId: report.id, version, reused, bytes };
     } catch (err) {
@@ -357,6 +358,35 @@ function createReportService({
     return { report, target: await storage.downloadTarget(report.storageKey, 60) };
   }
 
+  // Mails a READY report's link to the user's own address, now - the
+  // "send to my e-mail" action on the reports page. Unlike the automatic
+  // mail on render, a failure here is the answer to the request, so it is
+  // thrown (with the provider's own reason) rather than only logged.
+  async function emailReport(userId, reportId) {
+    if (!notifier.enabled) {
+      const err = new Error('שליחת מייל לא הוגדרה בשרת (RESEND_API_KEY / REPORT_EMAIL_FROM)');
+      err.code = 'EMAIL_DISABLED';
+      throw err;
+    }
+    const report = await features.getReport(userId, reportId);
+    if (!report || report.status !== 'ready' || !report.storageKey) {
+      const err = new Error('הדוח לא נמצא או שעדיין לא מוכן');
+      err.code = 'NOT_FOUND';
+      throw err;
+    }
+    const to = await userEmail(userId);
+    if (!to) {
+      const err = new Error('לא נמצאה כתובת מייל לחשבון');
+      err.code = 'NOT_FOUND';
+      throw err;
+    }
+    const link = storage.signedUrl ? await storage.signedUrl(report.storageKey, 7 * 24 * 3600) : null;
+    await notifier.reportReady({ to, month: report.month, monthLabel: monthLabel(report.month), version: report.version, link });
+    return { to, month: report.month, version: report.version };
+  }
+
+  const emailStatus = () => ({ enabled: Boolean(notifier.enabled) });
+
   // A fresh version on demand (e.g. after fixing a snapshot).
   async function regenerate(userId, month) {
     const status = await currentStatus(userId, month);
@@ -364,7 +394,18 @@ function createReportService({
     return scheduleReport(userId, month, status);
   }
 
-  return { onPortfolioSaved, completeMonth, getStatus, setExcluded, renderReport, downloadTarget, regenerate, scheduleReport };
+  return {
+    onPortfolioSaved,
+    completeMonth,
+    getStatus,
+    setExcluded,
+    renderReport,
+    downloadTarget,
+    regenerate,
+    scheduleReport,
+    emailReport,
+    emailStatus
+  };
 }
 
 // Optional e-mail on report ready via Resend (https://resend.com), when
@@ -385,7 +426,18 @@ function createEmailNotifier(env = process.env, { post } = {}) {
         <p>הדוח החודשי של StockView ל${label} (גרסה ${version}) מוכן.</p>
         ${href ? `<p><a href="${href}">להורדת הדוח</a>${link ? ' (הקישור בתוקף 7 ימים)' : ''}</p>` : '<p>אפשר להוריד אותו מעמוד הדוחות באפליקציה.</p>'}
       </div>`;
-      await send('https://api.resend.com/emails', { from, to, subject: `StockView - דוח חודשי ${label}`, html }, { headers: { Authorization: `Bearer ${apiKey}` }, timeout: 15000 });
+      try {
+        await send('https://api.resend.com/emails', { from, to, subject: `StockView - דוח חודשי ${label}`, html }, { headers: { Authorization: `Bearer ${apiKey}` }, timeout: 15000 });
+      } catch (err) {
+        // axios only says "Request failed with status code 403"; Resend's
+        // body says WHY (an unverified sending domain, a test key that can
+        // only mail its own address, ...), which is the part worth logging.
+        const status = err && err.response && err.response.status;
+        const reason = err && err.response && err.response.data && (err.response.data.message || err.response.data.name);
+        const wrapped = new Error(`Resend ${status || 'request'} failed${reason ? `: ${reason}` : `: ${err && err.message}`}`);
+        wrapped.status = status;
+        throw wrapped;
+      }
     }
   };
 }

@@ -10,6 +10,9 @@ export function useMonthlySync(user, authHeader) {
   const [status, setStatus] = useState(null);
   const [reports, setReports] = useState([]);
   const [error, setError] = useState('');
+  // Whether the server can send report e-mails at all (see
+  // server/monthlySyncRoutes.js's GET /api/reports).
+  const [emailEnabled, setEmailEnabled] = useState(false);
 
   const request = useCallback(
     async (path, options = {}) => {
@@ -34,6 +37,7 @@ export function useMonthlySync(user, authHeader) {
         setStatus(s);
         setMonth(s.month);
         setReports(r.reports || []);
+        setEmailEnabled(Boolean(r.email && r.email.enabled));
         setError('');
       } catch (err) {
         setError(err.message);
@@ -94,5 +98,28 @@ export function useMonthlySync(user, authHeader) {
     []
   );
 
-  return { month, status, reports, error, reload, selectMonth, setExcluded, complete, regenerate, download };
+  // "Send to my e-mail" for one ready report. Resolves to the address it
+  // went to; throws the server's reason otherwise.
+  const emailReport = useCallback(
+    async (report) => {
+      const d = await request(`/api/reports/${encodeURIComponent(report.id)}/email`, { method: 'POST' });
+      return d.to;
+    },
+    [request]
+  );
+
+  return {
+    month,
+    status,
+    reports,
+    error,
+    emailEnabled,
+    reload,
+    selectMonth,
+    setExcluded,
+    complete,
+    regenerate,
+    download,
+    emailReport
+  };
 }

@@ -80,8 +80,11 @@ test('parses the valuation quote summary (plain or wrapped numbers)', () => {
     assetProfile: { sector: 'Technology', industry: 'Consumer Electronics' }
   });
   expect(s).toMatchObject({ name: 'Apple Inc.', price: 230, marketCap: 3.5e12, beta: 1.2, analystGrowth5y: 0.11, sector: 'Technology', financialCurrency: 'USD' });
-  expect(peerMultiples(s)).toEqual({ PE: 35, PS: 9, PFCF: 35 });
-  expect(peerMultiples({ marketCap: 1, freeCashflow: -1 }).PFCF).toBeNull();
+  // P/FCF comes from the statement-basis TTM free cash flow passed in, not
+  // from quoteSummary's levered freeCashflow.
+  expect(peerMultiples(s, s.marketCap / 35)).toEqual({ PE: 35, PS: 9, PFCF: 35 });
+  expect(peerMultiples(s).PFCF).toBeNull();
+  expect(peerMultiples({ marketCap: 1, freeCashflow: 1 }, -1).PFCF).toBeNull();
 });
 
 test('monthly chart: month-end dates, split events, duplicate month deduped', () => {

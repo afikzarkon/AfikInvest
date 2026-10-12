@@ -15,12 +15,20 @@ async function bootstrapServices() {
   const store = await initDataStore();
   const features = await initFeatureStore(store);
   const marketData = createMarketData();
+  const notifier = createEmailNotifier();
+  // Said once at startup: an unset key makes every report e-mail a silent
+  // no-op, which otherwise looks exactly like mail that never arrived.
+  console.log(
+    notifier.enabled
+      ? '[reports] e-mail via Resend is enabled'
+      : '[reports] e-mail is DISABLED - set RESEND_API_KEY and REPORT_EMAIL_FROM to send report mails'
+  );
   const reports = createReportService({
     store,
     features,
     storage: createReportStorage(),
     renderer: createPdfRenderer(),
-    notifier: createEmailNotifier(),
+    notifier,
     getUsdRate: async (date) => {
       const r = await fetchYahooHistoricalRateForDate('USDILS=X', date);
       return r ? r.rate : null;

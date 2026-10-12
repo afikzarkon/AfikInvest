@@ -143,3 +143,30 @@ describe('partial failures', () => {
     }
   });
 });
+
+// A peer's P/FCF is measured on the same statement basis as the subject's -
+// its TTM free cash flow from the statements source - not on the levered
+// figure in its quote summary.
+test("passes each peer's statement-basis free cash flow to peerMultiples", async () => {
+  const seen = [];
+  const src = sources({
+    peerFreeCashFlow: jest.fn(async (symbol) => (symbol === 'P1' ? 5e9 : null)),
+    peerMultiples: (s, fcf) => {
+      if (s.marketCap === undefined) throw new Error('bad peer');
+      seen.push(fcf);
+      return { PE: s.trailingPE, PS: s.priceToSales, PFCF: fcf > 0 ? s.marketCap / fcf : null };
+    }
+  });
+  src.summary.mockImplementation(async (symbol) =>
+    symbol === 'BAD'
+      ? {}
+      : symbol === 'X'
+        ? { name: 'X Corp', currency: 'USD', financialCurrency: 'USD', price: 100, marketCap: 1000, sharesOutstanding: 10 }
+        : { marketCap: 500, trailingPE: 10, priceToSales: 1, freeCashflow: 50 }
+  );
+  const svc = createValuationService({ sources: src, now, logger: { warn() {} } });
+  await svc.getValuation('X');
+  expect(src.peerFreeCashFlow).toHaveBeenCalledWith('P1');
+  expect(seen).toContain(5e9);
+  expect(seen).toContain(null);
+});

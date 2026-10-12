@@ -1356,6 +1356,8 @@ function App() {
             onDownload={monthlySync.download}
             emailOnReady={Boolean(reportPrefs && reportPrefs.emailOnReady)}
             onToggleEmail={(on) => saveReportPrefs({ emailOnReady: on })}
+            emailEnabled={monthlySync.emailEnabled}
+            onEmailReport={monthlySync.emailReport}
           />
         );
 

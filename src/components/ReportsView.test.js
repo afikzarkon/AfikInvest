@@ -76,7 +76,30 @@ test('lists this month and earlier reports with download', async () => {
 });
 
 test('e-mail opt-in', async () => {
-  const props = renderView();
+  const props = renderView({ emailEnabled: true });
   fireEvent.click(screen.getByLabelText('לשלוח לי מייל עם קישור כשהדוח מוכן'));
   await waitFor(() => expect(props.onToggleEmail).toHaveBeenCalledWith(true));
+});
+
+// An opt-in the server can never act on used to look like a working one.
+test('without server e-mail configuration the opt-in is disabled and says why, and there is no send button', () => {
+  renderView({ emailEnabled: false, emailOnReady: true, onEmailReport: jest.fn() });
+  const box = screen.getByLabelText('לשלוח לי מייל עם קישור כשהדוח מוכן');
+  expect(box).toBeDisabled();
+  expect(box).not.toBeChecked();
+  expect(screen.getByText(/שליחת מיילים לא הוגדרה בשרת/)).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'שליחה למייל' })).toBeNull();
+});
+
+test('"send to my e-mail" sends that report and says where it went', async () => {
+  const onEmailReport = jest.fn().mockResolvedValue('me@x.com');
+  renderView({ emailEnabled: true, onEmailReport });
+  fireEvent.click(screen.getAllByRole('button', { name: 'שליחה למייל' })[0]);
+  await waitFor(() => expect(onEmailReport).toHaveBeenCalledWith(reports[0]));
+  expect(await screen.findByText('קישור לדוח נשלח אל me@x.com')).toBeInTheDocument();
+});
+
+test('a failed report shows why', () => {
+  renderView({ reports: [{ id: 'f', month: '2026-08', version: 1, status: 'failed', error: 'chrome crashed', updatedAt: '' }] });
+  expect(screen.getByText('chrome crashed')).toBeInTheDocument();
 });
