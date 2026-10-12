@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PageToolbar from './PageToolbar';
 import BetaBanner from './BetaBanner';
 import { useHistoricalPortfolioValue } from '../hooks/useHistoricalPortfolioValue';
@@ -10,12 +10,20 @@ import {
   MONTHLY_CATEGORY_KEYS,
   MONTHLY_CATEGORY_LABELS_HE,
   AUTO_DERIVED_CATEGORIES,
-  MANUAL_ENTRY_CATEGORIES
+  MANUAL_ENTRY_CATEGORIES,
+  snapshotAsOfDate
 } from '../utils/monthlySnapshotComparison';
+import {
+  asOfRange,
+  composeAsOfBreakdown,
+  defaultAsOfDate,
+  isValidAsOfDate,
+  pensionStatementsAtDate,
+  STATEMENT_TOLERANCE_DAYS
+} from '../utils/snapshotAsOf';
 import {
   computePortfolioInceptionDate,
   formatMonthLabel,
-  monthEndDate,
   todayISO
 } from '../utils/portfolioDates';
 
@@ -90,6 +98,9 @@ function MonthlyTrackerView({
   // Recorded sales: a past month is valued with the units that were still
   // held then, even if they have been sold since.
   transactions = EMPTY_TRANSACTIONS,
+  // Today's itemized figures (App.js's snapshotBreakdown) - what a
+  // checkpoint valid for TODAY holds. Earlier dates are rebuilt from history.
+  liveBreakdown = null,
   monthlySnapshots = [],
   monthlySnapshotsLoading = false,
   onSaveMonthlySnapshot,
@@ -334,23 +345,36 @@ function MonthlyTrackerView({
   // It returns null when the historical prices for that date haven't been
   // fetched yet, so the caller can say so instead of writing a row of
   // zeroes over the user's data.
-  const buildAutoBreakdownForMonth = useCallback(
-    (monthKey) => {
-      const date = monthEndDate(monthKey, todayDate);
-      if (!date) return null;
-      const breakdown = historicalBreakdownAtDate(date);
-      const isEmpty = MONTHLY_CATEGORY_KEYS.every((key) => (breakdown[key] || []).length === 0);
-      return isEmpty ? null : breakdown;
-    },
-    [historicalBreakdownAtDate, todayDate]
+  //
+  // EVERYTHING IS VALUED ON THE CHECKPOINT'S AS-OF DATE - the day its
+  // figures are true for, picked by the user (see utils/snapshotAsOf.js):
+  // today's live figures for today, the historical breakdown for any earlier
+  // day, and in both cases the checking/money-market balances synced from
+  // their deposit/withdrawal ledgers up to that day.
+  const accountHoldings = useMemo(
+    () => ({ cashFunds, bankBalances, bankSavingsFunds }),
+    [cashFunds, bankBalances, bankSavingsFunds]
+  );
+  const buildBreakdownAt = useCallback(
+    (asOfDate) =>
+      composeAsOfBreakdown({
+        asOfDate,
+        today: todayDate,
+        liveBreakdown,
+        historicalBreakdownAtDate,
+        holdings: accountHoldings
+      }),
+    [todayDate, liveBreakdown, historicalBreakdownAtDate, accountHoldings]
   );
 
   const [autoFillMessage, setAutoFillMessage] = useState('');
+  const NO_HISTORY_YET = 'אין עדיין נתונים היסטוריים לתאריך הזה - נסו שוב לאחר שהנתונים ההיסטוריים נטענו.';
 
   const handleAutoFillEditedMonth = () => {
-    const breakdown = buildAutoBreakdownForMonth(editingMonth);
+    const asOfDate = editDraftAsOfDate || defaultAsOfDate(editingMonth, todayDate);
+    const breakdown = buildBreakdownAt(asOfDate);
     if (!breakdown) {
-      setAutoFillMessage('לא נמצאו נתונים היסטוריים לחודש הזה - נסו שוב לאחר שהגרף "ביצועי התיק לאורך זמן" נטען.');
+      setAutoFillMessage(NO_HISTORY_YET);
       return;
     }
     setAutoFillMessage('');
@@ -358,7 +382,7 @@ function MonthlyTrackerView({
     // auto-filled rows are editable afterwards exactly like typed ones.
     setEditDraftBreakdown(buildDraftFromBreakdown(breakdown));
     // The figures now describe the date they were valued at.
-    setEditDraftAsOfDate(monthEndDate(editingMonth, todayDate));
+    setEditDraftAsOfDate(asOfDate);
   };
 
   const handleEditCashFlowChange = (categoryKey, rawValue) => {
@@ -420,6 +444,7 @@ function MonthlyTrackerView({
   // could only ever introduce a number that disagrees with the main tables.
   const [showManualAddForm, setShowManualAddForm] = useState(false);
   const [manualAddMonth, setManualAddMonth] = useState('');
+  const [manualAddAsOfDate, setManualAddAsOfDate] = useState('');
   const emptyManualItems = () => MANUAL_ENTRY_CATEGORIES.reduce((acc, key) => ({ ...acc, [key]: [] }), {});
   const [manualAddItems, setManualAddItems] = useState(emptyManualItems);
   const [manualAddCashFlows, setManualAddCashFlows] = useState(emptyCashFlows);
@@ -428,6 +453,7 @@ function MonthlyTrackerView({
   const openManualAddForm = () => {
     setShowManualAddForm(true);
     setManualAddMonth('');
+    setManualAddAsOfDate('');
     setManualAddItems(emptyManualItems());
     setManualAddCashFlows(emptyCashFlows());
     setAutoFillMessage('');
@@ -457,9 +483,14 @@ function MonthlyTrackerView({
   // The derived half of the backfill form: recomputed whenever the chosen
   // month changes, never stored in state, so it can't drift from the main
   // tables it comes from.
+  const handleManualAddMonthChange = (month) => {
+    setManualAddMonth(month);
+    // A new month starts at its default as-of date (its last day, or today).
+    setManualAddAsOfDate(defaultAsOfDate(month, todayDate) || '');
+  };
   const manualAddAutoBreakdown = useMemo(
-    () => (manualAddMonth ? buildAutoBreakdownForMonth(manualAddMonth) : null),
-    [manualAddMonth, buildAutoBreakdownForMonth]
+    () => (manualAddMonth && isValidAsOfDate(manualAddMonth, manualAddAsOfDate, todayDate) ? buildBreakdownAt(manualAddAsOfDate) : null),
+    [manualAddMonth, manualAddAsOfDate, todayDate, buildBreakdownAt]
   );
 
   const manualAddAutoTotal = AUTO_DERIVED_CATEGORIES.reduce(
@@ -471,13 +502,7 @@ function MonthlyTrackerView({
   // Prefills the liquid rows from the account ledgers, as a starting point
   // the user can then correct - unlike the derived categories above, these
   // stay editable.
-  const handleAutoFillManualAdd = () => {
-    const breakdown = buildAutoBreakdownForMonth(manualAddMonth);
-    if (!breakdown) {
-      setAutoFillMessage('לא נמצאו נתונים היסטוריים לחודש הזה - נסו שוב לאחר שהגרף "ביצועי התיק לאורך זמן" נטען.');
-      return;
-    }
-    setAutoFillMessage('');
+  const fillManualItemsFrom = (breakdown) =>
     setManualAddItems(
       MANUAL_ENTRY_CATEGORIES.reduce((acc, key) => {
         acc[key] = (breakdown[key] || []).map((item) => {
@@ -487,7 +512,29 @@ function MonthlyTrackerView({
         return acc;
       }, {})
     );
+
+  const handleAutoFillManualAdd = () => {
+    if (!manualAddAutoBreakdown) {
+      setAutoFillMessage(NO_HISTORY_YET);
+      return;
+    }
+    setAutoFillMessage('');
+    fillManualItemsFrom(manualAddAutoBreakdown);
   };
+
+  // The liquid rows sync THEMSELVES whenever the as-of date (or the data
+  // behind it) changes - computed from the ledgers up to that day, still
+  // editable afterwards. Keyed so a re-render with the same date doesn't
+  // wipe out a correction the user has typed.
+  const lastAutoSyncKeyRef = useRef('');
+  useEffect(() => {
+    if (!showManualAddForm || !manualAddAutoBreakdown) return;
+    const key = `${manualAddMonth}|${manualAddAsOfDate}`;
+    if (lastAutoSyncKeyRef.current === key) return;
+    lastAutoSyncKeyRef.current = key;
+    fillManualItemsFrom(manualAddAutoBreakdown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showManualAddForm, manualAddMonth, manualAddAsOfDate, manualAddAutoBreakdown]);
 
   const manualAddMonthAlreadySaved = !!manualAddMonth && monthlySnapshots.some((s) => s.month === manualAddMonth);
   const manualAddManualTotal = MANUAL_ENTRY_CATEGORIES.reduce((sum, key) => {
@@ -501,6 +548,7 @@ function MonthlyTrackerView({
 
   const handleSubmitManualAdd = async () => {
     if (!onAddManualMonthlySnapshot || !manualAddMonth || manualAddMonthAlreadySaved) return;
+    if (!isValidAsOfDate(manualAddMonth, manualAddAsOfDate, todayDate)) return;
     const breakdown = {};
     // Derived categories go in exactly as computed.
     AUTO_DERIVED_CATEGORIES.forEach((key) => {
@@ -512,9 +560,9 @@ function MonthlyTrackerView({
         .filter((it) => it.key && Number.isFinite(it.value));
     });
     breakdown.cashFlows = parseCashFlows(manualAddCashFlows);
-    // Valid for the date the derived rows were valued at - the month's last
-    // day, or today for the month in progress - not "some time that month".
-    breakdown.asOfDate = monthEndDate(manualAddMonth, todayDate);
+    // Valid for the date the user picked, which is the date every row above
+    // was valued at - not "some time that month".
+    breakdown.asOfDate = manualAddAsOfDate;
     const ok = await onAddManualMonthlySnapshot(manualAddMonth, manualAddTotal, breakdown);
     if (ok) setShowManualAddForm(false);
   };
@@ -524,6 +572,8 @@ function MonthlyTrackerView({
   // table - not to be confused with editingMonth's "ערוך" flow, which
   // corrects an already-saved past month).
   const [saveCashFlows, setSaveCashFlows] = useState(emptyCashFlows);
+  const [saveAsOfDate, setSaveAsOfDate] = useState(todayDate);
+  const [saveAsOfMessage, setSaveAsOfMessage] = useState('');
   const handleSaveCashFlowChange = (categoryKey, rawValue) => {
     setSaveCashFlows((prev) => ({ ...prev, [categoryKey]: rawValue }));
   };
@@ -534,7 +584,19 @@ function MonthlyTrackerView({
     // through here too, under whatever is declared in the form now.
     const existing = monthlySnapshots.find((snap) => snap.month === currentMonthKey);
     const legacy = extractLegacyCashFlows(existing?.breakdown?.cashFlows);
-    onSaveMonthlySnapshot({ ...legacy, ...parseCashFlows(saveCashFlows) });
+    if (!isValidAsOfDate(currentMonthKey, saveAsOfDate, todayDate)) {
+      setSaveAsOfMessage('תאריך "נכון ל" חייב להיות בתוך החודש הנוכחי ולא בעתיד.');
+      return;
+    }
+    // The figures for the chosen day: today's live ones, or the day's
+    // historical ones - never today's figures labelled with another date.
+    const breakdown = buildBreakdownAt(saveAsOfDate);
+    if (!breakdown) {
+      setSaveAsOfMessage(NO_HISTORY_YET);
+      return;
+    }
+    setSaveAsOfMessage('');
+    onSaveMonthlySnapshot({ ...legacy, ...parseCashFlows(saveCashFlows) }, { asOfDate: saveAsOfDate, breakdown });
     setSaveCashFlows(emptyCashFlows());
   };
 
@@ -547,6 +609,74 @@ function MonthlyTrackerView({
     const [y, m, d] = date.split('-');
     return `נכון ל-${d}/${m}/${y}`;
   };
+  const formatDay = (iso) => {
+    if (!iso) return '—';
+    const [y, m, d] = iso.split('-');
+    return `${d}/${m}/${y}`;
+  };
+
+  const renderAsOfInput = (idPrefix, month, value, onChange) => {
+    const range = month ? asOfRange(month, todayDate) : null;
+    return (
+      <div className="rebalance-input-item" style={{ maxWidth: 220 }}>
+        <label htmlFor={`${idPrefix}-as-of`}>הנתונים נכונים לתאריך</label>
+        <input
+          id={`${idPrefix}-as-of`}
+          type="date"
+          className="monthly-select"
+          min={range ? range.min : undefined}
+          max={range ? range.max : undefined}
+          value={value || ''}
+          disabled={!range}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      </div>
+    );
+  };
+
+  // For each provident fund: is the figure on this date backed by a
+  // statement FOR this date, or carried across from an earlier/later one?
+  const STATEMENT_TEXT = {
+    match: (s) => `תואם - דוח מ-${formatDay(s.statementDate)}`,
+    earlier: (s) =>
+      `דוח מוקדם יותר (${formatDay(s.statementDate)}, ${Math.abs(s.days)} ימים לפני) - השווי הועבר קדימה עם ההפקדות מאז, בלי תשואה שאחרי הדוח`,
+    later: (s) =>
+      `דוח מאוחר יותר (${formatDay(s.statementDate)}, ${s.days} ימים אחרי) - השווי חושב אחורה בניכוי ההפקדות, וכולל תשואה שאחרי התאריך`,
+    none: () => 'אין דוח שווי רשום - השווי הוא סכום ההפקדות בלבד'
+  };
+  const renderPensionStatements = (asOfDate) => {
+    if (!asOfDate || pensionFunds.length === 0) return null;
+    const statuses = pensionStatementsAtDate(pensionFunds, asOfDate);
+    const offCount = statuses.filter((s) => s.status !== 'match').length;
+    return (
+      <div className="monthly-manual-category" role="status">
+        <div className="monthly-manual-category-header">
+          <span>
+            קופות גמל מול תאריך {formatDay(asOfDate)}
+            {offCount > 0 ? ` · ${offCount} לא תואמות` : ' · כולן תואמות'}
+          </span>
+        </div>
+        {statuses.map((s) => (
+          <div
+            key={s.key}
+            className={`monthly-history-item-row${s.status === 'match' ? '' : ' monthly-item-placeholder'}`}
+          >
+            <span className="monthly-item-label">
+              {s.status === 'match' ? '✓' : '⚠'} {s.name}
+            </span>
+            <span>{STATEMENT_TEXT[s.status](s)}</span>
+          </div>
+        ))}
+        {offCount > 0 && (
+          <p className="monthly-cashflow-hint">
+            דוח נחשב תואם אם הוא עד {STATEMENT_TOLERANCE_DAYS} ימים מהתאריך. לעדכון: עדכנו את שווי הקופה בטבלה לפי
+            הדוח הרלוונטי, ואז שמרו שוב.
+          </p>
+        )}
+      </div>
+    );
+  };
+
   const formatMoneyCell = (v) => (v != null ? `${formatPriceWithSign(v)} ₪` : '—');
   const formatPercentCell = (v) => (v != null ? `${v >= 0 ? '+' : ''}${v.toFixed(1)}%` : '—');
   const percentCellClass = (v) => (v == null ? '' : v >= 0 ? 'profit-positive' : 'profit-negative');
@@ -633,6 +763,12 @@ function MonthlyTrackerView({
               )}
             </div>
           </div>
+          {renderAsOfInput('save', currentMonthKey, saveAsOfDate, (v) => {
+            setSaveAsOfDate(v);
+            setSaveAsOfMessage('');
+          })}
+          {saveAsOfMessage && <p className="history-empty-note">{saveAsOfMessage}</p>}
+          {renderPensionStatements(saveAsOfDate)}
           {renderCashFlowInputs(saveCashFlows, handleSaveCashFlowChange, 'save')}
           {saveMonthlyError && <p className="history-empty-note">{saveMonthlyError}</p>}
           {addManualError && <p className="history-empty-note">{addManualError}</p>}
@@ -647,9 +783,11 @@ function MonthlyTrackerView({
                   className="monthly-select"
                   max={currentMonthKey}
                   value={manualAddMonth}
-                  onChange={(e) => setManualAddMonth(e.target.value)}
+                  onChange={(e) => handleManualAddMonthChange(e.target.value)}
                 />
               </div>
+              {manualAddMonth && renderAsOfInput('manual-add', manualAddMonth, manualAddAsOfDate, setManualAddAsOfDate)}
+              {manualAddMonth && renderPensionStatements(manualAddAsOfDate)}
               {manualAddMonthAlreadySaved && (
                 <p className="history-empty-note">
                   כבר קיימת שמירה לחודש זה - ניתן לערוך אותה למטה בהיסטוריית השמירות
@@ -666,9 +804,7 @@ function MonthlyTrackerView({
                 {!manualAddMonth ? (
                   <p className="history-empty-note">בחרו חודש כדי לראות את הנתונים שיימשכו אוטומטית.</p>
                 ) : !manualAddAutoBreakdown ? (
-                  <p className="history-empty-note">
-                    לא נמצאו נתונים היסטוריים לחודש הזה - נסו שוב לאחר שהגרף "ביצועי התיק לאורך זמן" נטען.
-                  </p>
+                  <p className="history-empty-note">{NO_HISTORY_YET}</p>
                 ) : (
                   AUTO_DERIVED_CATEGORIES.map((catKey) => {
                     const rows = manualAddAutoBreakdown[catKey] || [];
@@ -826,6 +962,17 @@ function MonthlyTrackerView({
                     </div>
                   </div>
 
+                  {baseMonthlySnapshot && compareMonthlySnapshot && (() => {
+                    const from = snapshotAsOfDate(baseMonthlySnapshot);
+                    const to = snapshotAsOfDate(compareMonthlySnapshot);
+                    const days = Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000);
+                    return (
+                      <p className="monthly-status-text" role="note">
+                        התקופה הנמדדת: {formatDay(from)} ← {formatDay(to)} ({days} ימים). הפקדות ומשיכות שבין שני התאריכים
+                        מנוטרלות מהתשואה.
+                      </p>
+                    );
+                  })()}
                   <div className="stocks-table-container">
                     <table className="analysis-table">
                       <thead>
@@ -1083,6 +1230,14 @@ function MonthlyTrackerView({
                         {isEditingThis && autoFillMessage && (
                           <p className="history-empty-note">{autoFillMessage}</p>
                         )}
+                        {isEditingThis &&
+                          renderAsOfInput('edit', historySnapshot.month, editDraftAsOfDate, setEditDraftAsOfDate)}
+                        {isEditingThis && (
+                          <p className="monthly-cashflow-hint">
+                            שינוי התאריך לא משנה את הסכומים לבד - לחצו "מלא אוטומטית" כדי לחשב אותם מחדש לתאריך שנבחר.
+                          </p>
+                        )}
+                        {isEditingThis && renderPensionStatements(editDraftAsOfDate || defaultAsOfDate(historySnapshot.month, todayDate))}
                         {isEditingThis && renderCashFlowInputs(editDraftCashFlows, handleEditCashFlowChange, 'edit')}
                       </div>
                     </div>

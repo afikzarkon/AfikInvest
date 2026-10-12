@@ -141,3 +141,26 @@ describe('cash-flow fixes', () => {
     expect(m.summary.netCapitalAddedILS).toBeCloseTo(buildReportModel(base()).summary.netCapitalAddedILS, 10);
   });
 });
+
+// The period runs between the two checkpoints' own as-of dates.
+test('measures between the as-of dates: a deposit after the July checkpoint but still in July is inside the period', () => {
+  const input = base();
+  input.snapshots[0].breakdown.asOfDate = '2026-07-10';
+  input.snapshots[1].breakdown.asOfDate = '2026-08-10';
+  const m = buildReportModel(input);
+  expect(m.period).toEqual({ from: '2026-07-10', to: '2026-08-10', days: 31, asOfRecorded: true });
+  // The July 15 pension deposit is now in the period; the August 15 one and
+  // the August 12 dividend are after the closing checkpoint.
+  expect(m.cashFlow.depositsILS).toBe(2000);
+  expect(m.cashFlow.dividends).toEqual([]);
+  expect(m.summary.netCapitalAddedILS).toBeCloseTo(2000 + 1000, 6);
+  expect(m.summary.returnPct).toBeCloseTo(
+    modifiedDietz(185000, 187000, [{ date: '2026-07-15', amount: 2000 }, { date: '2026-08-05', amount: 1000 }], '2026-07-10', '2026-08-10'),
+    10
+  );
+});
+
+test('an undated checkpoint is read as valid at its month end', () => {
+  const m = buildReportModel(base());
+  expect(m.period).toEqual({ from: '2026-07-31', to: '2026-08-31', days: 31, asOfRecorded: false });
+});

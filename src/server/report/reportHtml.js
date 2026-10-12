@@ -151,6 +151,15 @@ function renderReportHtml(model, { fontBase64 = loadAlefBase64() } = {}) {
     )
     .join('');
 
+  // The two days the figures are measured between - the checkpoints' own
+  // as-of dates, not month boundaries.
+  const day = (iso) => (iso ? iso.split('-').reverse().join('/') : '—');
+  const periodNote = model.period
+    ? `התקופה הנמדדת: ${day(model.period.from)} - ${day(model.period.to)} (${model.period.days} ימים)${
+        model.period.asOfRecorded ? '' : ' - תאריך השמירה המדויק לא נרשם, ולכן נלקח סוף החודש'
+      }.`
+    : '';
+
   const prevNote = !model.previousMonth
     ? 'אין חודש קודם שמור להשוואה.'
     : model.previousIsAdjacent
@@ -216,6 +225,7 @@ th { color: #6b7280; font-weight: 600; background: #f8fafc; }
     <tr><td>שינוי מתנועת שוק</td><td class="${tone(s.marketChangeILS)}">${num(fmtSigned(s.marketChangeILS))}</td></tr>
     <tr><td>הון נטו שנוסף (הפקדות וקניות פחות מכירות, משיכות ודיבידנדים)</td><td>${num(fmtSigned(s.netCapitalAddedILS))}</td></tr>
   </table>
+  ${periodNote ? `<p class="note">${escapeHtml(periodNote)}</p>` : ''}
   ${prevNote ? `<p class="note">${prevNote}</p>` : ''}
 </section>
 

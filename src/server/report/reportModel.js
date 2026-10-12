@@ -11,6 +11,12 @@
 //     negative) - sale proceeds - dividends paid out + the flows the user
 //     declared by hand for the liquid accounts when saving the month.
 //   * Monthly return = Modified Dietz on net worth with those dated flows.
+//   * THE PERIOD runs from the previous checkpoint's as-of date to this
+//     one's (breakdown.asOfDate - the day each checkpoint's figures are true
+//     for), not from calendar month boundaries: a checkpoint taken on Aug 6
+//     and one on Sep 5 measure Aug 6 -> Sep 5, and a deposit on Aug 20 is
+//     inside it. A checkpoint saved before as-of dates existed is read as
+//     valid at its month's last day.
 const { closedLotSlices, ledgerCashFlows, realizedLots } = require('../../shared/transactionLedger');
 const { previousMonth, monthEnd, nextMonth } = require('../../shared/monthlySync');
 
@@ -53,11 +59,33 @@ function categoryTotals(breakdown) {
   return out;
 }
 
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const inMonth = (date, month) => typeof date === 'string' && date.slice(0, 7) === month;
 
-// Every external flow dated inside `month`, attributed to a category and
-// an item key (the same keys the snapshot breakdown uses).
-function flowsForMonth({ portfolio, transactions, snapshot, month }) {
+// The day a checkpoint's figures are true for (see the header).
+function snapshotAsOf(snapshot) {
+  const recorded = snapshot && ((snapshot.breakdown && snapshot.breakdown.asOfDate) || snapshot.asOfDate);
+  if (typeof recorded === 'string' && DATE_RE.test(recorded)) return recorded;
+  return snapshot && snapshot.month ? monthEnd(snapshot.month) : null;
+}
+
+// (from, to]: a flow dated on the opening checkpoint's day is already in its
+// value; one on the closing day is inside the period.
+const inPeriod = (date, from, to) => typeof date === 'string' && date > from && date <= to;
+
+const midpoint = (from, to) => {
+  const a = Date.parse(`${from}T00:00:00Z`);
+  const b = Date.parse(`${to}T00:00:00Z`);
+  return new Date(a + Math.round((b - a) / 2 / 86400000) * 86400000).toISOString().slice(0, 10);
+};
+
+// The calendar month as a period, for callers with no checkpoints to hand.
+const monthPeriod = (month) => ({ from: monthEnd(previousMonth(month)), to: monthEnd(month) });
+
+// Every external flow dated inside the period (from, to], attributed to a
+// category and an item key (the same keys the snapshot breakdown uses).
+function flowsForPeriod({ portfolio, transactions, snapshot, from, to }) {
+  const inRange = (date) => inPeriod(date, from, to);
   const flows = [];
   const p = portfolio || {};
   const slices = closedLotSlices(transactions);
@@ -65,7 +93,7 @@ function flowsForMonth({ portfolio, transactions, snapshot, month }) {
 
   ['israeli', 'american'].forEach((market) => {
     lots(market).forEach((lot) => {
-      if (!inMonth(lot.purchaseDate, month)) return;
+      if (!inRange(lot.purchaseDate)) return;
       const rate = market === 'american' ? num(lot.exchangeRate) : 1;
       const amount = num(lot.purchasePrice) * num(lot.quantity) * rate;
       if (amount) flows.push({ date: lot.purchaseDate, amount, category: market, itemKey: String(lot.stockName).trim(), kind: 'PURCHASE' });
@@ -73,7 +101,7 @@ function flowsForMonth({ portfolio, transactions, snapshot, month }) {
   });
 
   (transactions || [])
-    .filter((tx) => (tx.type === 'SELL' || tx.type === 'DIVIDEND') && inMonth(tx.date, month))
+    .filter((tx) => (tx.type === 'SELL' || tx.type === 'DIVIDEND') && inRange(tx.date))
     .forEach((tx) => {
       const [flow] = ledgerCashFlows([tx]);
       if (flow) flows.push({ date: flow.date, amount: flow.amount, category: tx.assetClass, itemKey: String(tx.assetId), kind: tx.type === 'SELL' ? 'SALE' : 'DIVIDEND' });
@@ -82,7 +110,7 @@ function flowsForMonth({ portfolio, transactions, snapshot, month }) {
   [['pensionFunds', 'pension', 'pension'], ['cashFunds', 'cashFunds', 'cash'], ['bankSavingsFunds', 'bankSavings', 'bank-savings']].forEach(([key, category, prefix]) => {
     (p[key] || []).forEach((account) => {
       (account.deposits || []).forEach((d) => {
-        if (!inMonth(d.date, month) || !num(d.amount)) return;
+        if (!inRange(d.date) || !num(d.amount)) return;
         flows.push({
           date: d.date,
           amount: num(d.amount),
@@ -100,7 +128,7 @@ function flowsForMonth({ portfolio, transactions, snapshot, month }) {
   // changes are not flows (see portfolioCashFlows.js).
   (p.bankBalances || []).forEach((account, index) => {
     (account.deposits || []).forEach((d) => {
-      if (!d || !d.txId || !inMonth(d.date, month) || !num(d.amount)) return;
+      if (!d || !d.txId || !inRange(d.date) || !num(d.amount)) return;
       flows.push({
         date: d.date,
         amount: num(d.amount),
@@ -112,13 +140,20 @@ function flowsForMonth({ portfolio, transactions, snapshot, month }) {
   });
 
   // Flows the user declared by hand when saving the month (liquid accounts).
+  // Their timing within the period is unknown, so they sit at its middle -
+  // the standard Modified Dietz assumption, as on the tracker page.
   const declared = (snapshot && snapshot.breakdown && snapshot.breakdown.cashFlows) || {};
   Object.keys(declared).forEach((category) => {
     const amount = num(declared[category]);
-    if (amount) flows.push({ date: monthEnd(month), amount, category, itemKey: null, kind: 'DECLARED' });
+    if (amount) flows.push({ date: midpoint(from, to), amount, category, itemKey: null, kind: 'DECLARED' });
   });
 
   return flows.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+}
+
+function flowsForMonth({ portfolio, transactions, snapshot, month }) {
+  const { from, to } = monthPeriod(month);
+  return flowsForPeriod({ portfolio, transactions, snapshot, from, to });
 }
 
 // A short fingerprint of everything that moves the month's cash-flow
@@ -175,11 +210,13 @@ function buildReportModel({
 
   const netWorth = num(current.totalValueILS);
   const prevNetWorth = previous ? num(previous.totalValueILS) : null;
-  const flows = flowsForMonth({ portfolio, transactions, snapshot: current, month });
+  // From the previous checkpoint's as-of date to this one's.
+  const periodStart = previous ? snapshotAsOf(previous) : monthPeriod(month).from;
+  const periodEnd = snapshotAsOf(current);
+  const flows = flowsForPeriod({ portfolio, transactions, snapshot: current, from: periodStart, to: periodEnd });
   const netCapitalAdded = flows.reduce((s, f) => s + f.amount, 0);
   const change = prevNetWorth === null ? null : netWorth - prevNetWorth;
-  const periodStart = previous ? monthEnd(previous.month) : `${month}-01`;
-  const returnPct = prevNetWorth === null ? null : modifiedDietz(prevNetWorth, netWorth, flows, periodStart, monthEnd(month));
+  const returnPct = prevNetWorth === null ? null : modifiedDietz(prevNetWorth, netWorth, flows, periodStart, periodEnd);
 
   // Allocation
   const totals = categoryTotals(current.breakdown);
@@ -227,7 +264,7 @@ function buildReportModel({
 
   // Cash flows
   const dividends = (transactions || [])
-    .filter((tx) => tx.type === 'DIVIDEND' && inMonth(tx.date, month))
+    .filter((tx) => tx.type === 'DIVIDEND' && inPeriod(tx.date, periodStart, periodEnd))
     .map((tx) => ({
       date: tx.date,
       symbol: tx.assetId,
@@ -251,7 +288,7 @@ function buildReportModel({
     };
   });
   const sumKind = (kind) => flows.filter((f) => f.kind === kind).reduce((s, f) => s + f.amount, 0);
-  const realized = realizedLots(transactions).filter((r) => inMonth(r.saleDate, month));
+  const realized = realizedLots(transactions).filter((r) => inPeriod(r.saleDate, periodStart, periodEnd));
 
   const nextM = nextMonth(month);
   const upcomingEvents = (events || []).filter((e) => e.eventDate >= `${nextM}-01` && e.eventDate <= monthEnd(nextM));
@@ -263,6 +300,13 @@ function buildReportModel({
     userEmail,
     previousMonth: previous ? previous.month : null,
     previousIsAdjacent: previous ? previous.month === prevKey : false,
+    // The dates the figures are measured between (see the header).
+    period: {
+      from: periodStart,
+      to: periodEnd,
+      days: Math.round((Date.parse(`${periodEnd}T00:00:00Z`) - Date.parse(`${periodStart}T00:00:00Z`)) / 86400000),
+      asOfRecorded: Boolean(current.breakdown && current.breakdown.asOfDate)
+    },
     summary: {
       netWorthILS: netWorth,
       prevNetWorthILS: prevNetWorth,

@@ -336,14 +336,24 @@ function App() {
   // (see utils/monthlySnapshotComparison.js). Merged into snapshotBreakdown
   // under a reserved `cashFlows` key, right alongside the itemized
   // per-category data - no separate storage needed.
-  const handleSaveMonthlySnapshot = (cashFlows) => {
+  //
+  // asOfDate/breakdown come from the tracker's "נכון לתאריך" picker: the
+  // figures for that day (see utils/snapshotAsOf.js), which the comparison
+  // then measures from. Without them it is today's live figures, as before.
+  // The total is the sum of the rows actually saved, so the two can never
+  // disagree.
+  const handleSaveMonthlySnapshot = (cashFlows, { asOfDate = null, breakdown = null } = {}) => {
     if (!portfolioReady) return;
-    const ok = window.confirm(
-      'שימו לב: על מנת שהנתונים יהיו רלוונטיים ומדויקים עבור המעקב, מומלץ לבצע את השמירה תמיד בתאריך קבוע בחודש (לדוגמה, ב-10 לחודש).'
-    );
+    const day = asOfDate ? asOfDate.split('-').reverse().join('/') : 'היום';
+    const ok = window.confirm(`השמירה החודשית תתעד את התיק כפי שהיה נכון ל-${day}. להמשיך?`);
     if (!ok) return;
-    const breakdownWithCashFlows = { ...snapshotBreakdown, cashFlows: cashFlows || {} };
-    saveMonthlySnapshot(analysis.summaryMetrics.overallTotalValueILS, breakdownWithCashFlows);
+    const rows = breakdown || snapshotBreakdown;
+    const total = ['israeli', 'american', 'pension', 'cashFunds', 'bank', 'bankSavings'].reduce(
+      (sum, key) => sum + (Array.isArray(rows[key]) ? rows[key].reduce((s, item) => s + (Number(item.value) || 0), 0) : 0),
+      0
+    );
+    const withMeta = { ...rows, cashFlows: cashFlows || {}, ...(asOfDate ? { asOfDate } : {}) };
+    saveMonthlySnapshot(breakdown ? total : analysis.summaryMetrics.overallTotalValueILS, withMeta);
   };
 
 
@@ -1310,6 +1320,7 @@ function App() {
           <MonthlyTrackerView
             {...holdings}
             transactions={transactions}
+            liveBreakdown={snapshotBreakdown}
             formatPriceWithSign={formatPriceWithSign}
             monthlySnapshots={monthlySnapshots}
             monthlySnapshotsLoading={monthlySnapshotsLoading}

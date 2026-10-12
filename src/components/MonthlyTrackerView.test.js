@@ -1,5 +1,6 @@
 import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import MonthlyTrackerView from './MonthlyTrackerView';
+import { todayISO } from '../utils/portfolioDates';
 
 // The monthly tracker used to be a section of PortfolioAnalysisView, and
 // these tests moved here with it when it became its own page. They assert
@@ -38,6 +39,9 @@ function makeProps(overrides = {}) {
     // would make an auto-fill succeed on ledger rows alone and hide the
     // "no historical prices for this month" path these tests cover. The
     // page itself is given them; a test that wants them passes them.
+    // Today's figures, as App.js passes them - what a checkpoint valid for
+    // today holds.
+    liveBreakdown: { israeli: [{ key: 'TEVA', label: 'TEVA', value: 3500 }], american: [], pension: [], cashFunds: [], bank: [], bankSavings: [] },
     monthlySnapshots: [],
     monthlySnapshotsLoading: false,
     onSaveMonthlySnapshot: noop,
@@ -120,7 +124,12 @@ test('clicking the save button calls onSaveMonthlySnapshot with an empty cash-fl
   const onSaveMonthlySnapshot = jest.fn();
   const { rerender } = render(<MonthlyTrackerView {...makeProps({ onSaveMonthlySnapshot })} />);
   fireEvent.click(screen.getByText('שמור שמירה חודשית'));
-  expect(onSaveMonthlySnapshot).toHaveBeenCalledWith({});
+  // Second argument: the day the figures are for (today by default) and
+  // the figures themselves.
+  expect(onSaveMonthlySnapshot).toHaveBeenCalledWith(
+    {},
+    expect.objectContaining({ asOfDate: todayISO(), breakdown: expect.objectContaining({ israeli: expect.any(Array) }) })
+  );
 
   rerender(<MonthlyTrackerView {...makeProps({ onSaveMonthlySnapshot, savingMonthly: true })} />);
   expect(screen.getByText('שומר…')).toBeInTheDocument();
@@ -138,7 +147,7 @@ test('a declared cash flow next to the save button is included (parsed to a numb
   render(<MonthlyTrackerView {...makeProps({ onSaveMonthlySnapshot })} />);
   fireEvent.change(document.getElementById('save-cashflow-bank'), { target: { value: '6000' } });
   fireEvent.click(screen.getByText('שמור שמירה חודשית'));
-  expect(onSaveMonthlySnapshot).toHaveBeenCalledWith({ bank: 6000 });
+  expect(onSaveMonthlySnapshot).toHaveBeenCalledWith({ bank: 6000 }, expect.objectContaining({ asOfDate: todayISO() }));
 });
 
 test('shows whether the current month is already saved', () => {
@@ -675,7 +684,7 @@ test('a legacy flow on a liquid category is still editable, and the edit wins ov
 
 test('re-saving the current month also preserves its legacy declared flows', () => {
   const onSaveMonthlySnapshot = jest.fn();
-  const thisMonth = new Date().toISOString().slice(0, 7);
+  const thisMonth = todayISO().slice(0, 7);
   render(
     <MonthlyTrackerView
       {...makeProps({
@@ -696,7 +705,7 @@ test('re-saving the current month also preserves its legacy declared flows', () 
 
   // The legacy American flow survives; the freshly declared bank figure
   // replaces the stored one.
-  expect(onSaveMonthlySnapshot).toHaveBeenCalledWith({ american: 7000, bank: 250 });
+  expect(onSaveMonthlySnapshot).toHaveBeenCalledWith({ american: 7000, bank: 250 }, expect.objectContaining({ asOfDate: todayISO() }));
 });
 
 test('the edit form offers a cash-flow field only for the liquid categories', () => {
@@ -750,7 +759,7 @@ test('auto-fill says so plainly when the historical prices for that month are no
   fireEvent.click(within(card).getByText('⚡ מלא אוטומטית מהטבלאות'));
 
   expect(
-    within(card).getByText(/לא נמצאו נתונים היסטוריים לחודש הזה/)
+    within(card).getByText(/אין עדיין נתונים היסטוריים לתאריך הזה/)
   ).toBeInTheDocument();
   // The saved values are untouched.
   expect(within(card).getByDisplayValue('22000')).toBeInTheDocument();
@@ -941,3 +950,65 @@ function formatMonthLabelForTest(monthKey) {
   const [year, month] = monthKey.split('-').map(Number);
   return new Date(year, month - 1, 1).toLocaleDateString('he-IL', { month: 'long', year: 'numeric' });
 }
+
+// THE EXPLICIT AS-OF DATE
+describe('as-of date', () => {
+beforeEach(() => {
+  global.fetch = jest.fn().mockRejectedValue(new Error('network unavailable in test'));
+});
+afterEach(() => {
+  delete global.fetch;
+});
+
+test('the save form offers an as-of date limited to this month and not past today', () => {
+  render(<MonthlyTrackerView {...makeProps()} />);
+  const input = document.getElementById('save-as-of');
+  const today = todayISO();
+  expect(input).toHaveValue(today);
+  expect(input).toHaveAttribute('min', `${today.slice(0, 7)}-01`);
+  expect(input).toHaveAttribute('max', today);
+});
+
+test("an earlier as-of date is never saved with today's figures - without its history it says so and saves nothing", () => {
+  const onSaveMonthlySnapshot = jest.fn();
+  const today = todayISO();
+  render(<MonthlyTrackerView {...makeProps({ onSaveMonthlySnapshot })} />);
+  // global.fetch rejects in this suite, so there is no history for any
+  // earlier day. (On the 1st of a month there is no earlier day to pick.)
+  if (today.slice(8) === '01') return;
+  fireEvent.change(document.getElementById('save-as-of'), { target: { value: `${today.slice(0, 7)}-01` } });
+  fireEvent.click(screen.getByText('שמור שמירה חודשית'));
+  expect(onSaveMonthlySnapshot).not.toHaveBeenCalled();
+  expect(screen.getByText(/אין עדיין נתונים היסטוריים לתאריך הזה/)).toBeInTheDocument();
+});
+
+test("the current-account and money-market rows are synced from their ledgers up to the as-of date", () => {
+  const onSaveMonthlySnapshot = jest.fn();
+  const today = todayISO();
+  const bank = [{ id: 7, currentValue: 1000, currentValueDate: '2020-01-01', amount: 1000, deposits: [{ date: today, amount: 250 }] }];
+  render(<MonthlyTrackerView {...makeProps({ onSaveMonthlySnapshot, bankBalances: bank })} />);
+  fireEvent.click(screen.getByText('שמור שמירה חודשית'));
+  const [, { breakdown }] = onSaveMonthlySnapshot.mock.calls[0];
+  // The recorded balance plus the movement recorded after it.
+  expect(breakdown.bank).toEqual([{ key: 'bank-1', label: 'עו"ש', value: 1250 }]);
+});
+
+test('each provident fund is checked against the as-of date: a matching statement, or an older one', () => {
+  const today = todayISO();
+  const funds = [
+    { id: 1, fundName: 'גמל א', currentValue: 100, currentValueDate: today, deposits: [] },
+    { id: 2, fundName: 'גמל ב', currentValue: 100, currentValueDate: '2020-01-31', deposits: [] }
+  ];
+  render(<MonthlyTrackerView {...makeProps({ pensionFunds: funds })} />);
+  expect(screen.getByText(/1 לא תואמות/)).toBeInTheDocument();
+  expect(screen.getByText(/תואם - דוח מ-/)).toBeInTheDocument();
+  expect(screen.getByText(/דוח מוקדם יותר \(31\/01\/2020/)).toBeInTheDocument();
+});
+
+test('the comparison names the two as-of dates it measures between', () => {
+  const a = { month: '2026-07', asOfDate: '2026-07-06', totalValueILS: 100, breakdown: { asOfDate: '2026-07-06' } };
+  const b = { month: '2026-08', asOfDate: '2026-08-05', totalValueILS: 110, breakdown: { asOfDate: '2026-08-05' } };
+  render(<MonthlyTrackerView {...makeProps({ monthlySnapshots: [a, b] })} />);
+  expect(screen.getByText(/התקופה הנמדדת: 06\/07\/2026 ← 05\/08\/2026 \(30 ימים\)/)).toBeInTheDocument();
+});
+});

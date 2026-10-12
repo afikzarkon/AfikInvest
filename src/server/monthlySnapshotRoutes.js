@@ -83,9 +83,14 @@ function mountMonthlySnapshotRoutes(app, store) {
         return res.status(400).json({ error: 'totalValueILS לא תקין' });
       }
       const snapshotMonth = currentMonthString();
-      // A live save is valid for today - the server's today, whatever the
-      // client claims.
-      const asOfDate = todayString();
+      // The day the saved figures are true for, as picked on the tracker
+      // ("הנתונים נכונים לתאריך") - inside the current month and not in the
+      // future; today when none (or an invalid one) was sent.
+      const requested = body.breakdown && body.breakdown.asOfDate;
+      const asOfDate =
+        typeof requested === 'string' && DATE_RE.test(requested) && requested.slice(0, 7) === snapshotMonth && requested <= todayString()
+          ? requested
+          : todayString();
       const breakdown = serializeBreakdown(body.breakdown, asOfDate);
 
       await store.upsertMonthlySnapshot(req.user.id, snapshotMonth, totalValueILS, breakdown);
