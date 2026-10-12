@@ -16,14 +16,22 @@
 //   * bank savings funds   - the dated deposit ledger
 //   * money-market funds   - the dated deposit ledger
 //
-// LIMITATION, stated rather than hidden: this app has no sell/withdrawal
-// ledger, so the automatic side only ever sees money going IN. A sale or a
-// withdrawal is invisible here and would still read as a fall in value,
-// i.e. as a loss. That is why the monthly tracker keeps a manual net-flow
-// field for the liquid accounts, and why a current account's balance
-// changes are not treated as flows at all (see below).
+//   * the transactions ledger - sale proceeds and dividends leaving the
+//                            invested positions (negative flows), and the
+//                            purchases of the units a sale closed, which
+//                            arrive here as "closed slices" among the lots
+//                            (see shared/transactionLedger.js)
+//
+// Withdrawals recorded in the ledger are written into the account's own
+// deposit list as negative entries, so they flow through the deposit
+// ledgers above with no special case. A sale or withdrawal that was NOT
+// recorded as a transaction is still invisible and still reads as a loss -
+// which is why the monthly tracker keeps its manual net-flow field for the
+// liquid accounts, and why a current account's balance changes are not
+// treated as flows at all (see below).
 import { toNum } from './formatters';
 import { earliestEvidenceDate, openingBalanceOfLedgerAccount } from './ledgerAccountHistory';
+import { ledgerCashFlows } from '../shared/transactionLedger';
 
 const isDatedFlow = (date) => typeof date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(date);
 
@@ -97,7 +105,14 @@ export const buildPortfolioCashFlows = ({
   // MUST match it: a contribution is netted out of the value change it
   // caused, so a flow recorded at a different rate than the holding was
   // valued at would leave the difference behind as a phantom gain or loss.
-  americanExchangeRate = null
+  americanExchangeRate = null,
+  // The transactions ledger (optional). Only SELL and DIVIDEND rows add
+  // flows here, and only for symbols present in the lots passed in - so a
+  // caller that narrowed the lots to one market segment gets that
+  // segment's sales and nothing else. Pass the lots expanded with their
+  // closed slices, or a sold position's purchase is missing its matching
+  // sale.
+  transactions = null
 } = {}) => {
   const flows = [];
 
@@ -134,6 +149,21 @@ export const buildPortfolioCashFlows = ({
     pushOpeningBalances(flows, pensionFunds);
     pushOpeningBalances(flows, cashFunds);
     pushOpeningBalances(flows, bankBalances);
+  }
+
+  if (Array.isArray(transactions) && transactions.length) {
+    const israeliHeld = new Set((israeliStocks || []).map((lot) => String(lot?.stockName ?? '').trim()));
+    const americanHeld = new Set(
+      (americanStocks || []).map((lot) => String(lot?.stockName ?? '').trim().toUpperCase())
+    );
+    const relevant = transactions.filter((tx) => {
+      if (tx?.assetClass === 'israeli') return israeliHeld.has(String(tx.assetId ?? '').trim());
+      if (tx?.assetClass === 'american') return americanHeld.has(String(tx.assetId ?? '').trim().toUpperCase());
+      return false;
+    });
+    ledgerCashFlows(relevant, { americanExchangeRate: useFixedFx ? americanExchangeRate : null }).forEach((flow) =>
+      flows.push(flow)
+    );
   }
 
   return flows.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));

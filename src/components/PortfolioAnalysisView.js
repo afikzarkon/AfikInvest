@@ -20,6 +20,8 @@ import {
   summarizePartialPoints
 } from '../utils/portfolioStats';
 import { buildPortfolioCashFlows } from '../utils/portfolioCashFlows';
+import { expandHoldingsWithClosedLots } from '../shared/transactionLedger';
+import { computeExactTwr, computeMoneyWeightedReturn } from '../utils/performanceReturns';
 import { buildComparisonSeries, benchmarkPointsInILS } from '../utils/benchmarkComparison';
 import {
   MARKET_SEGMENTS,
@@ -50,6 +52,8 @@ import { useStockSectors } from '../hooks/useStockSectors';
 import { useAnalystRecommendations } from '../hooks/useAnalystRecommendations';
 import { useDividendData } from '../hooks/useDividendData';
 import { useHistoricalPortfolioValue } from '../hooks/useHistoricalPortfolioValue';
+import { useMediaQuery } from '../hooks/useMediaQuery';
+import { layoutSliceCallouts, makeTextMeasurer, wrapLabel } from '../utils/pieCalloutLayout';
 import { formatDate } from '../utils/formatters';
 import {
   computeFirstStockPurchaseDate,
@@ -124,6 +128,8 @@ const NAV_GROUPS = [
 // the page - used to resolve which tab is current.
 const NAV_KEYS = NAV_GROUPS.flatMap((group) => group.items.map((item) => item.key));
 
+const EMPTY_TRANSACTIONS = [];
+
 function PortfolioAnalysisView({
   analysis,
   formatPriceWithSign,
@@ -141,6 +147,10 @@ function PortfolioAnalysisView({
   cashFunds = [],
   bankBalances = [],
   bankSavingsFunds = [],
+  // The transactions ledger. Sales recorded there come back into the
+  // performance history as closed slices (held until the sale date) and
+  // their proceeds as outflows, so a sale is never charted as a loss.
+  transactions = EMPTY_TRANSACTIONS,
   cpi = null,
   rebalanceTargets = null,
   rebalanceTargetsLoading = false,
@@ -155,6 +165,34 @@ function PortfolioAnalysisView({
   const chart = useMemo(() => getChartTheme(theme), [theme]);
   const chartTooltip = useMemo(() => tooltipStyles(theme), [theme]);
   const SECTOR_COLORS = chart.categorical;
+
+  // THE DISTRIBUTION DONUTS ON A PHONE.
+  //
+  // The full callouts (name, amount, share) need ~116px of margin on each
+  // side, which on a phone leaves the ring a few dozen pixels across. So a
+  // narrow screen gets COMPACT callouts instead: name and share only, in
+  // smaller type, on a shorter leader. The amount is still in the legend
+  // card under each chart, whose swatch matches the slice colour.
+  const isNarrowScreen = useMediaQuery('(max-width: 768px)');
+  const donutLayout = useMemo(
+    () =>
+      isNarrowScreen
+        ? {
+            compact: true,
+            height: 300,
+            margin: { top: 16, right: 100, bottom: 16, left: 100 },
+            outerRadius: '90%',
+            innerRadius: '64%'
+          }
+        : {
+            compact: false,
+            height: 360,
+            margin: { top: 20, right: 116, bottom: 20, left: 116 },
+            outerRadius: '58%',
+            innerRadius: '42%'
+          },
+    [isNarrowScreen]
+  );
   // PERFORMANCE OVER TIME - computed on the fly, not read back from saved
   // snapshots.
   //
@@ -270,9 +308,18 @@ function PortfolioAnalysisView({
   const setRequestedFxMode = (mode) =>
     setFxModeBySegment((prev) => ({ ...prev, [marketSegment]: mode }));
 
+  // History, not the current position: the open lots plus the units that
+  // recorded sales closed (shared/transactionLedger.js). Everything below
+  // that values the PAST reads these; anything about what is held NOW keeps
+  // reading israeliStocks/americanStocks directly.
+  const historyStocks = useMemo(
+    () => expandHoldingsWithClosedLots({ israeliStocks, americanStocks }, transactions),
+    [israeliStocks, americanStocks, transactions]
+  );
+
   const segmentHoldings = useMemo(
-    () => selectSegmentHoldings({ israeliStocks, americanStocks }, marketSegment),
-    [israeliStocks, americanStocks, marketSegment]
+    () => selectSegmentHoldings(historyStocks, marketSegment),
+    [historyStocks, marketSegment]
   );
 
   // WHERE "הכל" STARTS.
@@ -410,15 +457,44 @@ function PortfolioAnalysisView({
         includeLedgerOpeningBalances: true,
         // Same rate the holdings are valued at, or the contribution and the
         // value change it caused would not cancel.
-        americanExchangeRate: fixedExchangeRate
+        americanExchangeRate: fixedExchangeRate,
+        // Sale proceeds and dividends of the symbols in this segment.
+        transactions
       }),
-    [segmentHoldings, fixedExchangeRate]
+    [segmentHoldings, fixedExchangeRate, transactions]
   );
 
   const stats = useMemo(
     () => computeStatsFromSeries(buildSeriesFromHistoricalValues(performanceSeries), portfolioCashFlows),
     [performanceSeries, portfolioCashFlows]
   );
+  // The two figures that sit beside the headline TWR (see
+  // utils/performanceReturns.js): the EXACT time-weighted return, which
+  // breaks the chain at every flow date instead of approximating flows
+  // inside weekly samples, and the money-weighted return (XIRR), which
+  // keeps the timing of the money in. Measured over the same span the
+  // chart shows.
+  const exactReturns = useMemo(() => {
+    if (!stats.hasHistory) return null;
+    const options = { americanExchangeRate: fixedExchangeRate };
+    const exactTwr = computeExactTwr({
+      fromDate: stats.firstDate,
+      toDate: stats.lastDate,
+      holdings: segmentHoldings,
+      priceData,
+      cashFlows: portfolioCashFlows,
+      options
+    });
+    const mwr = computeMoneyWeightedReturn({
+      fromDate: stats.firstDate,
+      toDate: stats.lastDate,
+      startValue: stats.series[0].value,
+      endValue: stats.series[stats.series.length - 1].value,
+      cashFlows: portfolioCashFlows
+    });
+    return { exactTwr, mwr };
+  }, [stats, segmentHoldings, priceData, portfolioCashFlows, fixedExchangeRate]);
+
   // Dates that could not be valued in full are left out of the curve
   // rather than drawn as a partial sum (see buildSeriesFromHistoricalValues);
   // this is what lets the page say so, and name the holdings responsible.
@@ -642,14 +718,81 @@ function PortfolioAnalysisView({
   // Slices under 3% are left unlabelled: below that the callouts collide
   // with each other and the chart becomes less readable, not more. Those
   // remain identifiable in the legend underneath, which is why it stays.
-  const renderSliceCallout = useCallback(
-    ({ cx, cy, midAngle, outerRadius, percent, name, value }) => {
+  //
+  // Neighbouring labels are also spread apart vertically (see
+  // utils/pieCalloutLayout.js): several small slices next to each other
+  // would otherwise put their labels at nearly the same height on the rail,
+  // printed through one another. That needs every slice's position, not
+  // just this one's, which is why this is a factory over the chart's values
+  // rather than a plain renderer.
+  //
+  // Long names wrap onto more lines instead of running off the chart: on a
+  // phone there is only ~90px beside the ring, and "קופת חיסכון בבנק" does
+  // not fit on one line in it. The wrap is measured, and every label's
+  // spacing follows the tallest one.
+  const measureCalloutName = useMemo(
+    () => makeTextMeasurer(donutLayout.compact ? 11 : 13, 700),
+    [donutLayout.compact]
+  );
+  const measureCalloutValue = useMemo(() => makeTextMeasurer(12, 500), []);
+  const makeSliceCallout = useCallback(
+    (items) => ({ cx, cy, midAngle, outerRadius, percent, name, value, index }) => {
       if (!percent || percent < 0.03) return null;
       const radian = Math.PI / 180;
       const angle = -midAngle * radian;
       const cos = Math.cos(angle);
       const sin = Math.sin(angle);
-      const isRight = cos >= 0;
+
+      const { compact } = donutLayout;
+      const plotHalf = (donutLayout.height - donutLayout.margin.top - donutLayout.margin.bottom) / 2;
+      const ELBOW_GAP = compact ? 8 : 12; // slice edge -> elbow
+      const RAIL_GAP = compact ? 16 : 34; // ring edge -> rail
+      const TEXT_GAP = compact ? 4 : 6; // rail -> first character
+      const LINE_HEIGHT = compact ? 14 : 17;
+
+      // The room beside the ring, the same on both sides: the margins are
+      // symmetric, so the SVG is 2 * cx wide.
+      const textRoom = cx - outerRadius - RAIL_GAP - TEXT_GAP - 4;
+      const values = items.map((item) => item.value);
+      const total = values.reduce((sum, v) => sum + (v > 0 ? v : 0), 0);
+      // Name lines (bold), then the figures: the share alone on a phone;
+      // amount and share on one line where they fit, or two where not.
+      const linesFor = (label, amount, share) => {
+        const pct = `${(share * 100).toFixed(1)}%`;
+        const amountText = `${formatPriceWithSign(amount)} ₪`;
+        const figures = compact
+          ? [pct]
+          : measureCalloutValue(`${amountText} · ${pct}`) <= textRoom
+          ? [`${amountText} · ${pct}`]
+          : [amountText, pct];
+        return [
+          ...wrapLabel(label, textRoom, measureCalloutName).map((text) => ({ text, bold: true })),
+          ...figures.map((text) => ({ text, bold: false }))
+        ];
+      };
+      const tallest = items.reduce(
+        (most, item) =>
+          total > 0 && item.value / total >= 0.03
+            ? Math.max(most, linesFor(item.name, item.value, item.value / total).length)
+            : most,
+        2
+      );
+      // Half the label block's height, plus room for the glyphs themselves.
+      const blockHalf = ((tallest - 1) / 2) * LINE_HEIGHT + 8;
+
+      const placement = layoutSliceCallouts(values, {
+        cy,
+        outerRadius,
+        paddingAngle: 1,
+        elbowGap: ELBOW_GAP,
+        gap: tallest * LINE_HEIGHT + 8,
+        top: cy - plotHalf + blockHalf,
+        bottom: cy + plotHalf - blockHalf
+      })[index];
+      if (!placement) return null;
+      const { isRight, labelY } = placement;
+
+      const lines = linesFor(name, value, percent);
 
       // THE LABEL RAIL.
       //
@@ -667,9 +810,6 @@ function PortfolioAnalysisView({
       // It also lines the labels up with each other, which is what makes
       // several of them readable as a set rather than as text scattered
       // around a circle.
-      const ELBOW_GAP = 12; // slice edge -> elbow
-      const RAIL_GAP = 34; // ring edge -> rail
-      const TEXT_GAP = 6; // rail -> first character
 
       const startX = cx + outerRadius * cos;
       const startY = cy + outerRadius * sin;
@@ -693,7 +833,7 @@ function PortfolioAnalysisView({
       return (
         <g>
           <polyline
-            points={`${startX},${startY} ${elbowX},${elbowY} ${railX},${elbowY}`}
+            points={`${startX},${startY} ${elbowX},${elbowY} ${railX},${labelY}`}
             stroke={chart.grid}
             strokeWidth={1.2}
             fill="none"
@@ -701,37 +841,33 @@ function PortfolioAnalysisView({
           {/* Marks the slice the label describes - the end of the line the
               reader's eye follows back to check it. */}
           <circle cx={startX} cy={startY} r={2.2} fill={chart.grid} />
-          {/* ONE <text>, TWO <tspan>s - not two <text> elements.
+          {/* One <text> PER LINE, each at its own explicit y, LINE_HEIGHT
+              apart and centred as a block on the label's height.
 
-              As two elements each was centred on its own y, six pixels
-              either side of the elbow. At 13px and 12px their line boxes
-              are about nineteen pixels tall, so thirteen pixels of
-              separation left them overlapping by six - the name and the
-              amount printed through each other on every slice.
-
-              Spacing tspans in `em` makes the gap a property of the type
-              rather than a constant that has to be re-derived whenever a
-              font size changes: 1.45em of the second line's own size is a
-              normal line height, so the two can no longer collide however
-              the sizes are adjusted. */}
-          <text
-            x={textX}
-            y={elbowY}
-            fill={chart.axis}
-            textAnchor={textAnchor}
-            dominantBaseline="central"
-          >
-            <tspan x={textX} dy="-0.35em" fontSize={13} fontWeight={700}>
-              {name}
-            </tspan>
-            <tspan x={textX} dy="1.45em" fontSize={12} fontWeight={500}>
-              {`${formatPriceWithSign(value)} ₪ · ${(percent * 100).toFixed(1)}%`}
-            </tspan>
-          </text>
+              Not one <text> with a <tspan> per line: iOS Safari lays out
+              absolutely positioned tspans inside RTL text as a single run,
+              so it printed the percentage on the name's line and broke
+              the name mid-word ("קופו" / "ת גמל"). Separate elements have
+              no shared run to reorder. */}
+          {lines.map((line, i) => (
+            <text
+              key={i}
+              x={textX}
+              y={labelY + (i - (lines.length - 1) / 2) * LINE_HEIGHT}
+              fill={chart.axis}
+              textAnchor={textAnchor}
+              dominantBaseline="central"
+              direction="rtl"
+              fontSize={compact ? 11 : line.bold ? 13 : 12}
+              fontWeight={line.bold ? 700 : 500}
+            >
+              {line.text}
+            </text>
+          ))}
         </g>
       );
     },
-    [chart.axis, chart.grid, formatPriceWithSign]
+    [chart.axis, chart.grid, formatPriceWithSign, donutLayout, measureCalloutName, measureCalloutValue]
   );
 
   const sectionRefs = useRef({});
@@ -769,6 +905,41 @@ function PortfolioAnalysisView({
     });
     return () => observer.disconnect();
   }, []);
+
+  // The portfolio donut's slices, one per asset class, in the order of the
+  // palette its legend reads its swatches from.
+  const portfolioPieData = [
+    {
+      name: 'בורסה ישראלית',
+      value: analysis.exchangeDistribution.israeli.value,
+      percentage: analysis.exchangeDistribution.israeli.percentage
+    },
+    {
+      name: 'בורסה אמריקאית',
+      value: analysis.exchangeDistribution.american.value,
+      percentage: analysis.exchangeDistribution.american.percentage
+    },
+    {
+      name: 'קופות גמל',
+      value: analysis.exchangeDistribution.pension.value,
+      percentage: analysis.exchangeDistribution.pension.percentage
+    },
+    {
+      name: 'קרנות כספיות',
+      value: analysis.exchangeDistribution.cashFunds.value,
+      percentage: analysis.exchangeDistribution.cashFunds.percentage
+    },
+    {
+      name: 'עו"ש',
+      value: analysis.exchangeDistribution.bank.value,
+      percentage: analysis.exchangeDistribution.bank.percentage
+    },
+    {
+      name: 'קופת חיסכון בבנק',
+      value: analysis.exchangeDistribution.bankSavings.value,
+      percentage: analysis.exchangeDistribution.bankSavings.percentage
+    }
+  ];
 
   return (
     <div className="App">
@@ -1223,6 +1394,49 @@ function PortfolioAnalysisView({
                       תשואה שנתית מתואמת (CAGR) לאורך התקופה שנבחרה, מאותה תשואה מנוטרלת-הפקדות
                     </div>
                   </div>
+                  {exactReturns && (
+                    <>
+                      <div className="distribution-card">
+                        <h3>תשואה משוקללת-זמן מדויקת (TWR)</h3>
+                        <div
+                          className={`distribution-value ${
+                            (exactReturns.exactTwr.percent || 0) >= 0 ? 'profit-positive' : 'profit-negative'
+                          }`}
+                        >
+                          {exactReturns.exactTwr.percent != null && !exactReturns.exactTwr.isPartial
+                            ? `${exactReturns.exactTwr.percent.toFixed(1)}%`
+                            : '—'}
+                        </div>
+                        <div className="distribution-percentage">
+                          שרשור בכל תאריך של הפקדה/רכישה/מכירה ({exactReturns.exactTwr.subPeriods} תת-תקופות), בלי קירוב
+                          {exactReturns.exactTwr.isPartial ? ' - חסרים מחירים לחלק מהתאריכים' : ''}
+                        </div>
+                      </div>
+                      <div className="distribution-card">
+                        <h3>תשואה משוקללת-כסף (MWR / IRR)</h3>
+                        <div
+                          className={`distribution-value ${
+                            (exactReturns.mwr.periodPercent || 0) >= 0 ? 'profit-positive' : 'profit-negative'
+                          }`}
+                        >
+                          {exactReturns.mwr.periodPercent != null
+                            ? `${(exactReturns.mwr.days >= 365 ? exactReturns.mwr.annualPercent : exactReturns.mwr.periodPercent).toFixed(1)}%`
+                            : '—'}
+                        </div>
+                        <div className="distribution-percentage">
+                          {exactReturns.mwr.days >= 365 ? 'בשנה, ' : 'לתקופה, '}
+                          כולל העיתוי של כל שקל שנכנס או יצא.{' '}
+                          {exactReturns.mwr.periodPercent != null &&
+                            exactReturns.exactTwr.percent != null &&
+                            (exactReturns.mwr.periodPercent < exactReturns.exactTwr.percent - 0.5
+                              ? 'נמוכה מה-TWR: הכסף נכנס בעיתוי פחות טוב.'
+                              : exactReturns.mwr.periodPercent > exactReturns.exactTwr.percent + 0.5
+                              ? 'גבוהה מה-TWR: הכסף נכנס בעיתוי טוב.'
+                              : '')}
+                        </div>
+                      </div>
+                    </>
+                  )}
                   <div className="distribution-card">
                     <h3>שווי בתחילת התקופה</h3>
                     <div className="distribution-value">
@@ -1277,52 +1491,21 @@ function PortfolioAnalysisView({
             <h2 className="section-title">גרף עוגה - פיזור התיק</h2>
             <div className="pie-chart-container">
               <div className="pie-chart-wrapper">
-                <ResponsiveContainer width="100%" height={360}>
+                <ResponsiveContainer width="100%" height={donutLayout.height}>
                   {/* The margin is what the callout labels live in - without
                       it they are drawn outside the SVG and simply clipped. */}
-                  <PieChart margin={{ top: 20, right: 116, bottom: 20, left: 116 }} key="pie-chart">
+                  <PieChart margin={donutLayout.margin} key="pie-chart">
                     <Pie
                       key="pie-data"
-                      data={[
-                        {
-                          name: 'בורסה ישראלית',
-                          value: analysis.exchangeDistribution.israeli.value,
-                          percentage: analysis.exchangeDistribution.israeli.percentage
-                        },
-                        {
-                          name: 'בורסה אמריקאית',
-                          value: analysis.exchangeDistribution.american.value,
-                          percentage: analysis.exchangeDistribution.american.percentage
-                        },
-                        {
-                          name: 'קופות גמל',
-                          value: analysis.exchangeDistribution.pension.value,
-                          percentage: analysis.exchangeDistribution.pension.percentage
-                        },
-                        {
-                          name: 'קרנות כספיות',
-                          value: analysis.exchangeDistribution.cashFunds.value,
-                          percentage: analysis.exchangeDistribution.cashFunds.percentage
-                        },
-                        {
-                          name: 'עו"ש',
-                          value: analysis.exchangeDistribution.bank.value,
-                          percentage: analysis.exchangeDistribution.bank.percentage
-                        },
-                        {
-                          name: 'קופת חיסכון בבנק',
-                          value: analysis.exchangeDistribution.bankSavings.value,
-                          percentage: analysis.exchangeDistribution.bankSavings.percentage
-                        }
-                      ]}
+                      data={portfolioPieData}
                       cx="50%"
                       cy="50%"
-                      outerRadius="58%"
-                      innerRadius="42%"
+                      outerRadius={donutLayout.outerRadius}
+                      innerRadius={donutLayout.innerRadius}
                       paddingAngle={1}
                       fill={chart.accent}
                       dataKey="value"
-                      label={renderSliceCallout}
+                      label={makeSliceCallout(portfolioPieData)}
                       labelLine={false}
                       isAnimationActive={false}
                     >
@@ -1335,7 +1518,7 @@ function PortfolioAnalysisView({
 
                 <div className="pie-labels-side">
                   <div className="pie-label-item">
-                    <div className="label-color" style={{ backgroundColor: '#667eea' }}></div>
+                    <div className="label-color" style={{ backgroundColor: chart.categorical[0] }}></div>
                     <div className="label-content">
                       <div className="label-name">בורסה ישראלית</div>
                       <div className="label-value">{formatPriceWithSign(analysis.exchangeDistribution.israeli.value)} ₪</div>
@@ -1343,7 +1526,7 @@ function PortfolioAnalysisView({
                     </div>
                   </div>
                   <div className="pie-label-item">
-                    <div className="label-color" style={{ backgroundColor: '#764ba2' }}></div>
+                    <div className="label-color" style={{ backgroundColor: chart.categorical[1] }}></div>
                     <div className="label-content">
                       <div className="label-name">בורסה אמריקאית</div>
                       <div className="label-value">{formatPriceWithSign(analysis.exchangeDistribution.american.value)} ₪</div>
@@ -1351,7 +1534,7 @@ function PortfolioAnalysisView({
                     </div>
                   </div>
                   <div className="pie-label-item">
-                    <div className="label-color" style={{ backgroundColor: '#16a34a' }}></div>
+                    <div className="label-color" style={{ backgroundColor: chart.categorical[2] }}></div>
                     <div className="label-content">
                       <div className="label-name">קופות גמל</div>
                       <div className="label-value">{formatPriceWithSign(analysis.exchangeDistribution.pension.value)} ₪</div>
@@ -1359,7 +1542,7 @@ function PortfolioAnalysisView({
                     </div>
                   </div>
                   <div className="pie-label-item">
-                    <div className="label-color" style={{ backgroundColor: '#f59e0b' }}></div>
+                    <div className="label-color" style={{ backgroundColor: chart.categorical[3] }}></div>
                     <div className="label-content">
                       <div className="label-name">קרנות כספיות</div>
                       <div className="label-value">{formatPriceWithSign(analysis.exchangeDistribution.cashFunds.value)} ₪</div>
@@ -1367,7 +1550,7 @@ function PortfolioAnalysisView({
                     </div>
                   </div>
                   <div className="pie-label-item">
-                    <div className="label-color" style={{ backgroundColor: '#0ea5e9' }}></div>
+                    <div className="label-color" style={{ backgroundColor: chart.categorical[4] }}></div>
                     <div className="label-content">
                       <div className="label-name">עו"ש</div>
                       <div className="label-value">{formatPriceWithSign(analysis.exchangeDistribution.bank.value)} ₪</div>
@@ -1375,7 +1558,7 @@ function PortfolioAnalysisView({
                     </div>
                   </div>
                   <div className="pie-label-item">
-                    <div className="label-color" style={{ backgroundColor: '#ec4899' }}></div>
+                    <div className="label-color" style={{ backgroundColor: chart.categorical[5] }}></div>
                     <div className="label-content">
                       <div className="label-name">קופת חיסכון בבנק</div>
                       <div className="label-value">{formatPriceWithSign(analysis.exchangeDistribution.bankSavings.value)} ₪</div>
@@ -1399,8 +1582,8 @@ function PortfolioAnalysisView({
               <>
                 <div className="pie-chart-container">
                   <div className="pie-chart-wrapper">
-                    <ResponsiveContainer width="100%" height={360}>
-                      <PieChart margin={{ top: 20, right: 116, bottom: 20, left: 116 }}>
+                    <ResponsiveContainer width="100%" height={donutLayout.height}>
+                      <PieChart margin={donutLayout.margin}>
                         <Pie
                           data={sectorDistribution.sectors.map((s) => ({
                             name: sectorLabelHe(s.sectorKey),
@@ -1408,16 +1591,18 @@ function PortfolioAnalysisView({
                           }))}
                           cx="50%"
                           cy="50%"
-                          outerRadius="58%"
-                          innerRadius="42%"
+                          outerRadius={donutLayout.outerRadius}
+                          innerRadius={donutLayout.innerRadius}
                           paddingAngle={1}
                           dataKey="value"
-                          label={renderSliceCallout}
+                          label={makeSliceCallout(
+                            sectorDistribution.sectors.map((sec) => ({ name: sectorLabelHe(sec.sectorKey), value: sec.value }))
+                          )}
                           labelLine={false}
                           isAnimationActive={false}
                         >
                           {sectorDistribution.sectors.map((s, i) => (
-                            <Cell key={s.sectorKey} fill={SECTOR_COLORS[i % SECTOR_COLORS.length]} />
+                            <Cell key={s.sectorKey} fill={SECTOR_COLORS[i % SECTOR_COLORS.length]} stroke="none" />
                           ))}
                         </Pie>
                         <Tooltip formatter={(value) => [`${formatPriceWithSign(value)} ₪`, 'שווי']} />

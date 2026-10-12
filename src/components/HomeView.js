@@ -31,6 +31,8 @@ function HomeView({
   bankBalances,
   bankSavingsFunds = [],
   onNavigate,
+  onLoadSamplePortfolio,
+  isSamplePortfolio = false,
   ...toolbarProps
 }) {
   const hasAnyData =
@@ -107,6 +109,13 @@ function HomeView({
           />
 
           <BetaBanner />
+
+          {isSamplePortfolio && (
+            <div className="sample-portfolio-note" role="status">
+              זהו תיק לדוגמה עם נתונים בדויים. הוא לא נשמר - אפשר לשמור אותו, לערוך אותו או פשוט
+              לרענן את הדף כדי להתחיל מאפס.
+            </div>
+          )}
 
           {/* The figures the app is opened to see, lifted out of the cards
               below so they aren't buried among detail that is read
@@ -220,6 +229,20 @@ function HomeView({
             <div className="no-data-message">
               <p>עדיין לא נוספו מניות לתיק ההשקעות שלך</p>
               <p>לחץ על הכפתור למעלה כדי להתחיל</p>
+              {/* The fastest way to see what the app does: every page
+                  filled in, without typing anything. */}
+              {onLoadSamplePortfolio && (
+                <div className="sample-portfolio-cta">
+                  <p>רוצים קודם לראות איך זה נראה?</p>
+                  <button
+                    type="button"
+                    className="toolbar-btn-primary"
+                    onClick={onLoadSamplePortfolio}
+                  >
+                    טען תיק לדוגמה
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

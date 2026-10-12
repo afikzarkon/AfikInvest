@@ -340,3 +340,31 @@ test('carries the beta warning on the page itself', () => {
   const { container } = render(<HomeView {...makeProps()} />);
   expect(container.querySelector('.beta-banner')).not.toBeNull();
 });
+
+// An empty portfolio offers the demo portfolio, so a first visit can see
+// every page working without typing anything.
+test('offers to load a sample portfolio when the portfolio is empty', () => {
+  const onLoadSamplePortfolio = jest.fn();
+  const { getByRole } = render(
+    <HomeView
+      {...makeProps({
+        israeliStocks: [],
+        americanStocks: [],
+        pensionFunds: [],
+        cashFunds: [],
+        bankBalances: [],
+        onLoadSamplePortfolio
+      })}
+    />
+  );
+  fireEvent.click(getByRole('button', { name: 'טען תיק לדוגמה' }));
+  expect(onLoadSamplePortfolio).toHaveBeenCalledTimes(1);
+});
+
+test('does not offer the sample portfolio once there is data, and marks a loaded sample', () => {
+  const { queryByRole, getByText } = render(
+    <HomeView {...makeProps({ onLoadSamplePortfolio: noop, isSamplePortfolio: true })} />
+  );
+  expect(queryByRole('button', { name: 'טען תיק לדוגמה' })).toBeNull();
+  expect(getByText(/זהו תיק לדוגמה/)).toBeInTheDocument();
+});

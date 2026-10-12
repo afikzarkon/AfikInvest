@@ -11,3 +11,19 @@ services:
     envVars:
       - key: PUPPETEER_CACHE_DIR
         value: /opt/render/.cache/puppeteer
+
+# Optional: run background jobs (alert scans, monthly PDF reports) in a separate
+# process so Chrome never competes with the API for memory. Render background
+# workers need a paid plan. If you enable this, also set JOBS_POLL=0 on the web
+# service above so only the worker polls the job queue.
+#
+#  - type: worker
+#    name: stockview-worker
+#    env: node
+#    plan: starter
+#    rootDir: .
+#    buildCommand: npm run render:build
+#    startCommand: node src/worker.js
+#    envVars:
+#      - key: PUPPETEER_CACHE_DIR
+#        value: /opt/render/.cache/puppeteer

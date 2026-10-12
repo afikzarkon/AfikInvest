@@ -156,10 +156,19 @@ describe('responsiveness of the new layout', () => {
     const block = CSS.slice(CSS.lastIndexOf('.stocks-table th:first-child,'));
     const rule = block.slice(0, block.indexOf('}'));
     expect(rule).toMatch(/position:\s*sticky/);
-    // Logical, not physical: the first column renders at the right edge
-    // in this RTL document, and that is the edge it must stick to.
-    expect(rule).toMatch(/inset-inline-start:\s*0/);
+    // The first column renders at the right edge of the RTL table, and
+    // that is the edge it must stick to. It is a physical `right`
+    // because the scroller around it is LTR (next test).
+    expect(rule).toMatch(/right:\s*0/);
     expect(rule).toMatch(/z-index/);
+  });
+
+  // iOS WebKit mispositions a horizontally sticky cell inside an RTL
+  // scroll container - the identifier column was drawn off-screen - so
+  // the scroller is LTR and only the table inside it is RTL.
+  test('the table scroller is LTR around an RTL table', () => {
+    expect(CSS).toMatch(/\.table-container\s*\{\s*direction:\s*ltr;\s*\}/);
+    expect(CSS).toMatch(/\.table-container > \.stocks-table\s*\{\s*direction:\s*rtl;\s*\}/);
   });
 
   // A translucent pinned cell shows the rows sliding underneath it,

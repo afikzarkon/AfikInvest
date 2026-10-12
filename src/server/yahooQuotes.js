@@ -454,8 +454,45 @@ async function fetchYahooDividendHistory(symbol, fromDateStr) {
 }
 
 
+// Daily OHLCV bars for the anomaly engine: ~3 months, split-adjusted closes
+// (adjclose when Yahoo provides it, so a split is not read as a crash) and
+// raw volume. [{ date, close, volume }] ascending.
+async function fetchYahooDailyBars(symbol, range = '3mo') {
+  const encoded = encodeURIComponent(symbol);
+  const response = await axios.get(`https://query1.finance.yahoo.com/v8/finance/chart/${encoded}`, {
+    params: { range, interval: '1d' },
+    timeout: 15000,
+    headers: YAHOO_HEADERS
+  });
+  const result = response?.data?.chart?.result?.[0];
+  const timestamps = result?.timestamp;
+  const quote = result?.indicators?.quote?.[0] || {};
+  const adj = result?.indicators?.adjclose?.[0]?.adjclose;
+  if (!Array.isArray(timestamps) || !Array.isArray(quote.close)) throw new Error('missing yahoo chart bars');
+  const bars = [];
+  for (let i = 0; i < timestamps.length; i += 1) {
+    const close = Array.isArray(adj) && Number.isFinite(adj[i]) ? adj[i] : quote.close[i];
+    if (!Number.isFinite(close)) continue;
+    bars.push({
+      date: new Date(timestamps[i] * 1000).toISOString().slice(0, 10),
+      close,
+      volume: Number.isFinite(quote.volume?.[i]) ? quote.volume[i] : 0
+    });
+  }
+  return bars;
+}
+
+// Announced earnings / dividend dates (calendarEvents) plus summaryDetail
+// (dividend rate, ex-date fallback) for the event calendar.
+async function fetchYahooCalendar(symbol) {
+  const result = await fetchYahooQuoteSummary(symbol, 'calendarEvents,summaryDetail');
+  return { calendarEvents: result?.calendarEvents || {}, summaryDetail: result?.summaryDetail || {} };
+}
+
 module.exports = {
   getYahooPayload,
+  fetchYahooDailyBars,
+  fetchYahooCalendar,
   fetchYahooHistoricalCloses,
   fetchYahooHistoricalRateForDate,
   fetchYahooSymbolSearch,
@@ -463,5 +500,7 @@ module.exports = {
   fetchYahooAnalystData,
   fetchYahooDividendSummary,
   fetchYahooDividendHistory,
+  fetchYahooQuoteSummary,
+  fetchYahooWithCrumbRetry,
   unwrapYahooNumber
 };

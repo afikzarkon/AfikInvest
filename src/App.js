@@ -20,6 +20,10 @@ import { useMonthlySnapshots } from './hooks/useMonthlySnapshots';
 import { useAutoSnapshot } from './hooks/useAutoSnapshot';
 import { buildItemizedMonthlyBreakdown } from './utils/monthlySnapshotBreakdown';
 import { useRebalanceTargets } from './hooks/useRebalanceTargets';
+import { useTransactions } from './hooks/useTransactions';
+import { useAlerts } from './hooks/useAlerts';
+import { usePreferences } from './hooks/usePreferences';
+import { useMonthlySync } from './hooks/useMonthlySync';
 import { useTheme } from './hooks/useTheme';
 import { monthKeyFromDate } from './utils/cpiTax';
 import { useRoute } from './hooks/useRoute';
@@ -29,6 +33,7 @@ import AuthView from './components/AuthView';
 import AppShell from './components/AppShell';
 import ThemeToggleButton from './components/ThemeToggleButton';
 import BetaNoticeModal from './components/BetaNoticeModal';
+import { buildSamplePortfolio } from './utils/samplePortfolio';
 
 // ONE CHUNK PER PAGE, fetched when that page is first opened.
 //
@@ -51,6 +56,11 @@ const UsStocksPage = lazy(() => import('./components/pages/UsStocksPage'));
 const ProvidentFundsPage = lazy(() => import('./components/pages/ProvidentFundsPage'));
 const CashAndCheckingPage = lazy(() => import('./components/pages/CashAndCheckingPage'));
 const BankSavingsPage = lazy(() => import('./components/pages/BankSavingsPage'));
+const TransactionsView = lazy(() => import('./components/TransactionsView'));
+const AlertsView = lazy(() => import('./components/AlertsView'));
+const RecommendationsView = lazy(() => import('./components/RecommendationsView'));
+const ReportsView = lazy(() => import('./components/ReportsView'));
+const ValuationView = lazy(() => import('./components/ValuationView'));
 
 const LEGACY_KEYS = [
   'israeliStocks',
@@ -207,6 +217,13 @@ function App() {
   // that outlives the page.
   const [betaNoticeAcknowledged, setBetaNoticeAcknowledged] = useState(false);
 
+  // True while the demo portfolio from the empty home screen is on screen
+  // and not yet saved. It is loaded locally only: nothing reaches the server
+  // unless the user chooses to save it, and until then the automatic
+  // daily/monthly snapshots stay off so demo figures never land in their
+  // history.
+  const [isSamplePortfolio, setIsSamplePortfolio] = useState(false);
+
   const [legacyImportCompleted, setLegacyImportCompleted] = useState(false);
   const [legacyImportLoading, setLegacyImportLoading] = useState(false);
   const [legacyImportBanner, setLegacyImportBanner] = useState('');
@@ -296,7 +313,7 @@ function App() {
   // into the same gate as firstPriceCycleComplete so a snapshot is never
   // captured before the portfolio has actually finished loading either.
   useAutoSnapshot({
-    firstCycleComplete: firstPriceCycleComplete && portfolioReady,
+    firstCycleComplete: firstPriceCycleComplete && portfolioReady && !isSamplePortfolio,
     totalValueILS: analysis.summaryMetrics.overallTotalValueILS,
     breakdown: snapshotBreakdown,
     snapshots,
@@ -362,7 +379,7 @@ function App() {
   // same add form, already pointed at that account - recording a
   // transaction from the table and from the toolbar is one form and one
   // submit path (see utils/assetEntry.js), not two that could drift.
-  const handleRecordTransaction = (itemType, account) => {
+  const handleOpenLedgerEntry = (itemType, account) => {
     setIsEditMode(false);
     setEditingStock(null);
     setFormData({
@@ -383,10 +400,101 @@ function App() {
   const handleLogout = async () => {
     await logout();
     resetPortfolio();
+    setIsSamplePortfolio(false);
     navigate('home');
     setLegacyImportBanner('');
     // Signing back in is a new arrival, so the disclaimer is due again.
     setBetaNoticeAcknowledged(false);
+  };
+
+  const handleLoadSamplePortfolio = () => {
+    replacePortfolio(buildSamplePortfolio());
+    // Unsaved, so the save button offers to keep it - replacePortfolio
+    // itself marks the portfolio as matching the server.
+    setHasUnsavedChanges(true);
+    setIsSamplePortfolio(true);
+  };
+
+  const handleSavePortfolio = async () => {
+    if (await savePortfolio()) setIsSamplePortfolio(false);
+  };
+
+  // The ledger changes the portfolio ON THE SERVER (a sale reduces lots, a
+  // withdrawal adds a ledger entry) in the same database transaction that
+  // stores it. So unsaved edits go first - otherwise the server would apply
+  // the transaction to a stale copy - and the copy the server returns then
+  // replaces the one in memory.
+  const {
+    transactions,
+    loading: transactionsLoading,
+    preview: previewTransaction,
+    record: recordTransaction,
+    remove: removeTransaction
+  } = useTransactions(user, authHeader);
+
+  const {
+    alerts,
+    unreadCount: unreadAlertCount,
+    loading: alertsLoading,
+    markRead: markAlertRead,
+    markAllRead: markAllAlertsRead,
+    loadCalendar,
+    loadSettings: loadAlertSettings,
+    saveSettings: saveAlertSettings,
+    refreshNow: refreshAlertsNow
+  } = useAlerts(user, authHeader);
+
+  const { value: recommendationPrefs, save: saveRecommendationPrefs } = usePreferences(user, authHeader, 'recommendations');
+  const { value: reportPrefs, save: saveReportPrefs } = usePreferences(user, authHeader, 'reports');
+  const monthlySync = useMonthlySync(user, authHeader);
+
+  // The sync state moves on the server after every save, so the page reads
+  // it fresh each time it is opened.
+  const reloadMonthlySync = monthlySync.reload;
+  const monthlySyncMonth = monthlySync.month;
+  useEffect(() => {
+    if (activePage === 'reports' && user) reloadMonthlySync(monthlySyncMonth || undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePage, user]);
+
+  // "Finished monthly update": the server builds the month's checkpoint from
+  // the portfolio it has stored, so unsaved edits are saved first.
+  const handleCompleteMonth = async () => {
+    if (hasUnsavedChanges && !(await savePortfolio())) throw new Error('יש שינויים שלא נשמרו והשמירה נכשלה');
+    return monthlySync.complete();
+  };
+
+  const adoptServerPortfolio = (portfolio) => {
+    if (!portfolio) return;
+    replacePortfolio({
+      ...portfolio,
+      israeliStocks: normalizeIsraeliStocksFromStorage(portfolio.israeliStocks || [])
+    });
+    setIsSamplePortfolio(false);
+  };
+
+  const saveBeforeLedgerChange = async () => {
+    if (!hasUnsavedChanges) return true;
+    return savePortfolio();
+  };
+
+  const handleRecordTransaction = async (tx) => {
+    if (!(await saveBeforeLedgerChange())) return { ok: false, error: 'יש שינויים שלא נשמרו והשמירה נכשלה' };
+    const result = await recordTransaction(tx);
+    if (result.ok) adoptServerPortfolio(result.portfolio);
+    return result;
+  };
+
+  const handlePreviewTransaction = async (tx) => {
+    if (!(await saveBeforeLedgerChange())) return { ok: false, error: 'יש שינויים שלא נשמרו והשמירה נכשלה' };
+    return previewTransaction(tx);
+  };
+
+  const handleDeleteTransaction = async (id) => {
+    if (!(await saveBeforeLedgerChange())) return { ok: false, error: 'יש שינויים שלא נשמרו והשמירה נכשלה' };
+    const result = await removeTransaction(id);
+    if (result.ok) adoptServerPortfolio(result.portfolio);
+    return result;
   };
 
   const handleLegacyImportOnce = async () => {
@@ -1123,7 +1231,7 @@ function App() {
     handleKeyDown,
     handleDelete,
     toggleGroup,
-    onRecordTransaction: handleRecordTransaction
+    onOpenLedgerEntry: handleOpenLedgerEntry
   };
 
   // THE EXPORT IS ALWAYS THE WHOLE PORTFOLIO.
@@ -1146,7 +1254,7 @@ function App() {
     showLegacyImportButton,
     legacyImportLoading,
     handleLegacyImportOnce,
-    savePortfolio,
+    savePortfolio: handleSavePortfolio,
     hasUnsavedChanges,
     saveLoading,
     lastSavedAt,
@@ -1201,6 +1309,7 @@ function App() {
         return (
           <MonthlyTrackerView
             {...holdings}
+            transactions={transactions}
             formatPriceWithSign={formatPriceWithSign}
             monthlySnapshots={monthlySnapshots}
             monthlySnapshotsLoading={monthlySnapshotsLoading}
@@ -1231,10 +1340,74 @@ function App() {
           />
         );
 
+      case 'valuation':
+        return <ValuationView americanStocks={americanStocks} />;
+
+      case 'reports':
+        return (
+          <ReportsView
+            status={monthlySync.status}
+            reports={monthlySync.reports}
+            error={monthlySync.error}
+            onSelectMonth={monthlySync.selectMonth}
+            onSetExcluded={monthlySync.setExcluded}
+            onComplete={handleCompleteMonth}
+            onRegenerate={monthlySync.regenerate}
+            onDownload={monthlySync.download}
+            emailOnReady={Boolean(reportPrefs && reportPrefs.emailOnReady)}
+            onToggleEmail={(on) => saveReportPrefs({ emailOnReady: on })}
+          />
+        );
+
+      case 'recommendations':
+        return (
+          <RecommendationsView
+            {...holdings}
+            analysis={analysis}
+            rebalanceTargets={rebalanceTargets}
+            cpi={cpi}
+            transactions={transactions}
+            savedPrefs={recommendationPrefs}
+            onSavePrefs={saveRecommendationPrefs}
+            formatPriceWithSign={formatPriceWithSign}
+          />
+        );
+
+      case 'alerts':
+        return (
+          <AlertsView
+            alerts={alerts}
+            unreadCount={unreadAlertCount}
+            alertsLoading={alertsLoading}
+            onMarkRead={markAlertRead}
+            onMarkAllRead={markAllAlertsRead}
+            loadCalendar={loadCalendar}
+            loadSettings={loadAlertSettings}
+            saveSettings={saveAlertSettings}
+            refreshNow={refreshAlertsNow}
+            formatPriceWithSign={formatPriceWithSign}
+          />
+        );
+
+      case 'transactions':
+        return (
+          <TransactionsView
+            {...holdings}
+            transactions={transactions}
+            transactionsLoading={transactionsLoading}
+            onRecordTransaction={handleRecordTransaction}
+            onPreviewTransaction={handlePreviewTransaction}
+            onDeleteTransaction={handleDeleteTransaction}
+            cpi={cpi}
+            formatPriceWithSign={formatPriceWithSign}
+          />
+        );
+
       case 'analytics':
         return (
           <PortfolioAnalysisView
             {...holdings}
+            transactions={transactions}
             theme={theme}
             analysis={analysis}
             formatPriceWithSign={formatPriceWithSign}
@@ -1254,6 +1427,8 @@ function App() {
             {...toolbarProps}
             summary={summary}
             onNavigate={navigate}
+            onLoadSamplePortfolio={handleLoadSamplePortfolio}
+            isSamplePortfolio={isSamplePortfolio}
           />
         );
     }
@@ -1274,6 +1449,7 @@ function App() {
         onLogout={handleLogout}
         theme={theme}
         onToggleTheme={toggleTheme}
+        badges={{ alerts: unreadAlertCount }}
       >
         {/* Only the lazily-loaded pages ever suspend; the dashboard is in the
             initial bundle and renders straight through this. */}

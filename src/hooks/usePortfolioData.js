@@ -96,9 +96,10 @@ export function usePortfolioData(user, authHeader) {
     bankSavingsFunds
   });
 
+  // Resolves true once the server has the portfolio, false otherwise.
   const savePortfolio = async () => {
-    if (!userRef.current) return;
-    if (saveLoading) return;
+    if (!userRef.current) return false;
+    if (saveLoading) return false;
     setSaveError('');
     setSaveLoading(true);
     clearPendingSaveTimer();
@@ -116,9 +117,11 @@ export function usePortfolioData(user, authHeader) {
       }
       setHasUnsavedChanges(false);
       setLastSavedAt(new Date());
+      return true;
     } catch (e) {
       setSaveError('שמירה נכשלה. בדוק התחברות/רשת ונסה שוב.');
       console.warn('שמירת תיק — שגיאה', e);
+      return false;
     } finally {
       setSaveLoading(false);
     }

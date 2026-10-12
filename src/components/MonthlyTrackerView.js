@@ -2,6 +2,7 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import PageToolbar from './PageToolbar';
 import BetaBanner from './BetaBanner';
 import { useHistoricalPortfolioValue } from '../hooks/useHistoricalPortfolioValue';
+import { expandHoldingsWithClosedLots } from '../shared/transactionLedger';
 import {
   compareMonthlySnapshots,
   normalizeCategoryItems,
@@ -76,6 +77,8 @@ const extractLegacyCashFlows = (savedCashFlows) => {
   }, {});
 };
 
+const EMPTY_TRANSACTIONS = [];
+
 function MonthlyTrackerView({
   formatPriceWithSign,
   israeliStocks = [],
@@ -84,6 +87,9 @@ function MonthlyTrackerView({
   cashFunds = [],
   bankBalances = [],
   bankSavingsFunds = [],
+  // Recorded sales: a past month is valued with the units that were still
+  // held then, even if they have been sold since.
+  transactions = EMPTY_TRANSACTIONS,
   monthlySnapshots = [],
   monthlySnapshotsLoading = false,
   onSaveMonthlySnapshot,
@@ -100,9 +106,19 @@ function MonthlyTrackerView({
   addManualError = ''
 }) {
   const todayDate = useMemo(() => todayISO(), []);
+  const historyStocks = useMemo(
+    () => expandHoldingsWithClosedLots({ israeliStocks, americanStocks }, transactions),
+    [israeliStocks, americanStocks, transactions]
+  );
   const portfolioInceptionDate = useMemo(
-    () => computePortfolioInceptionDate({ israeliStocks, americanStocks, pensionFunds, bankSavingsFunds }),
-    [israeliStocks, americanStocks, pensionFunds, bankSavingsFunds]
+    () =>
+      computePortfolioInceptionDate({
+        israeliStocks: historyStocks.israeliStocks,
+        americanStocks: historyStocks.americanStocks,
+        pensionFunds,
+        bankSavingsFunds
+      }),
+    [historyStocks, pensionFunds, bankSavingsFunds]
   );
 
   // The auto-fill below values a chosen month from real historical closes,
@@ -116,8 +132,8 @@ function MonthlyTrackerView({
     useHistoricalPortfolioValue({
       fromDate: portfolioInceptionDate,
       toDate: todayDate,
-      israeliStocks,
-      americanStocks,
+      israeliStocks: historyStocks.israeliStocks,
+      americanStocks: historyStocks.americanStocks,
       pensionFunds,
       cashFunds,
       bankBalances,
@@ -145,8 +161,16 @@ function MonthlyTrackerView({
   // mid-period deposit isn't misread as investment growth. See that
   // function's own comment for the categories/limitations.
   const monthlyLiveHoldings = useMemo(
-    () => ({ israeliStocks, americanStocks, pensionFunds, cashFunds, bankBalances, bankSavingsFunds }),
-    [israeliStocks, americanStocks, pensionFunds, cashFunds, bankBalances, bankSavingsFunds]
+    () => ({
+      israeliStocks: historyStocks.israeliStocks,
+      americanStocks: historyStocks.americanStocks,
+      pensionFunds,
+      cashFunds,
+      bankBalances,
+      bankSavingsFunds,
+      transactions
+    }),
+    [historyStocks, pensionFunds, cashFunds, bankBalances, bankSavingsFunds, transactions]
   );
   const monthlyComparisonRows = useMemo(
     () => compareMonthlySnapshots(baseMonthlySnapshot, compareMonthlySnapshot, monthlyLiveHoldings, monthlySnapshots),

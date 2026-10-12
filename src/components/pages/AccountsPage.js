@@ -30,7 +30,7 @@ function AccountsPage({
   finishInlineEdit,
   handleKeyDown,
   handleDelete,
-  onRecordTransaction,
+  onOpenLedgerEntry,
   ...toolbarProps
 }) {
   return (
@@ -62,7 +62,7 @@ function AccountsPage({
         formatDate={formatDate}
         formatPriceWithSign={formatPriceWithSign}
         handleDelete={handleDelete}
-        onRecordTransaction={onRecordTransaction}
+        onOpenLedgerEntry={onOpenLedgerEntry}
       />
     </AssetPageLayout>
   );

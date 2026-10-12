@@ -2,6 +2,38 @@ const { Pool } = require('pg');
 const Database = require('better-sqlite3');
 const fs = require('fs');
 const path = require('path');
+const {
+  TRANSACTIONS_TABLE_SQLITE,
+  TRANSACTIONS_TABLE_PG,
+  COLUMNS: TRANSACTION_COLUMNS,
+  txToRow,
+  rowToTx
+} = require('./transactionRows');
+const { makeSqliteSql, makePgSql } = require('./sqlAdapter');
+
+const emptyPortfolioObject = () => ({
+  israeliStocks: [],
+  americanStocks: [],
+  pensionFunds: [],
+  bankBalances: [],
+  cashFunds: [],
+  bankSavingsFunds: []
+});
+
+function parsePortfolioPayload(raw) {
+  if (!raw) return emptyPortfolioObject();
+  let data;
+  try {
+    data = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  } catch {
+    return emptyPortfolioObject();
+  }
+  const out = emptyPortfolioObject();
+  Object.keys(out).forEach((key) => {
+    out[key] = Array.isArray(data?.[key]) ? data[key] : [];
+  });
+  return out;
+}
 
 const PG_UNIQUE_VIOLATION = '23505';
 
@@ -10,10 +42,14 @@ function getSqlitePath() {
   return path.join(__dirname, '..', '..', 'data', 'stockview.db');
 }
 
-function openSqlite() {
-  const dbPath = getSqlitePath();
-  const dir = path.dirname(dbPath);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+// dbPathOverride: ':memory:' gives the integration tests a throwaway
+// database with the real schema.
+function openSqlite(dbPathOverride) {
+  const dbPath = dbPathOverride || getSqlitePath();
+  if (dbPath !== ':memory:') {
+    const dir = path.dirname(dbPath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  }
   const db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
@@ -53,12 +89,19 @@ function openSqlite() {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
+  db.exec(TRANSACTIONS_TABLE_SQLITE);
   return db;
 }
 
 function sqliteStore(db) {
   return {
     kind: 'sqlite',
+    // Portable query interface used by the newer feature stores
+    // (featureStore.js) - see sqlAdapter.js.
+    sql: makeSqliteSql(db),
+    async listUserIds() {
+      return db.prepare('SELECT id FROM users ORDER BY id').all().map((r) => Number(r.id));
+    },
     async findUserIdByEmail(email) {
       return db.prepare('SELECT id FROM users WHERE email = ?').get(email) || null;
     },
@@ -180,6 +223,49 @@ function sqliteStore(db) {
            targets = excluded.targets,
            updated_at = datetime('now')`
       ).run(userId, targetsJson);
+    },
+    async listTransactions(userId) {
+      return db
+        .prepare('SELECT * FROM transactions WHERE user_id = ? ORDER BY trade_date ASC, created_at ASC, rowid ASC')
+        .all(userId)
+        .map(rowToTx);
+    },
+    async getTransaction(userId, id) {
+      const row = db.prepare('SELECT * FROM transactions WHERE user_id = ? AND id = ?').get(userId, id);
+      return row ? rowToTx(row) : null;
+    },
+    // Reads the portfolio and the ledger, lets `change` decide what to do,
+    // and writes the new portfolio plus the inserted/removed transaction in
+    // ONE database transaction - the ledger and the lots it describes can
+    // never be saved apart. `change` is synchronous and pure:
+    //   ({ portfolio, transactions }) => { portfolio, insert?, removeId? }
+    async applyLedgerChange(userId, change) {
+      const run = db.transaction(() => {
+        const row = db.prepare('SELECT payload FROM user_portfolios WHERE user_id = ?').get(userId);
+        const portfolio = parsePortfolioPayload(row && row.payload);
+        const transactions = db
+          .prepare('SELECT * FROM transactions WHERE user_id = ? ORDER BY trade_date ASC, created_at ASC, rowid ASC')
+          .all(userId)
+          .map(rowToTx);
+        const result = change({ portfolio, transactions });
+        db.prepare(
+          `INSERT INTO user_portfolios (user_id, payload, updated_at)
+           VALUES (?, ?, datetime('now'))
+           ON CONFLICT(user_id) DO UPDATE SET payload = excluded.payload, updated_at = datetime('now')`
+        ).run(userId, JSON.stringify(result.portfolio));
+        if (result.insert) {
+          const r = txToRow(userId, result.insert);
+          db.prepare(
+            `INSERT INTO transactions (${TRANSACTION_COLUMNS.join(', ')})
+             VALUES (${TRANSACTION_COLUMNS.map(() => '?').join(', ')})`
+          ).run(...TRANSACTION_COLUMNS.map((c) => r[c]));
+        }
+        if (result.removeId) {
+          db.prepare('DELETE FROM transactions WHERE user_id = ? AND id = ?').run(userId, result.removeId);
+        }
+        return result;
+      });
+      return run();
     }
   };
 }
@@ -241,6 +327,7 @@ async function pgStore(connectionString) {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+  await pool.query(TRANSACTIONS_TABLE_PG);
   const portfolioTables = [
     'user_israeli_stocks',
     'user_american_stocks',
@@ -491,9 +578,59 @@ async function pgStore(connectionString) {
     );
   }
 
+  async function readPayload(client, userId) {
+    // Important: do not run concurrent queries on the same pg client.
+    const israeliStocks = await readItems(client, 'user_israeli_stocks', userId);
+    const americanStocks = await readItems(client, 'user_american_stocks', userId);
+    const pensionFunds = await readItems(client, 'user_pension_funds', userId);
+    const bankBalances = await readItems(client, 'user_bank_balances', userId);
+    const cashFunds = await readItems(client, 'user_cash_funds', userId);
+    const bankSavingsFunds = await readItems(client, 'user_bank_savings_funds', userId);
+    const normalized = {
+      israeliStocks,
+      americanStocks,
+      pensionFunds,
+      bankBalances,
+      cashFunds,
+      bankSavingsFunds
+    };
+    const hasNormalizedData = Object.values(normalized).some((arr) => arr.length > 0);
+    if (hasNormalizedData) return JSON.stringify(normalized);
+
+    // Backward compatibility: if legacy snapshot exists, return it as-is.
+    const { rows } = await client.query('SELECT payload FROM user_portfolios WHERE user_id = $1', [userId]);
+    const row = rows[0];
+    return row && row.payload != null ? String(row.payload) : null;
+  }
+
+  async function writeSnapshot(client, userId, snapshot) {
+    await writeItems(client, 'user_israeli_stocks', userId, snapshot.israeliStocks);
+    await writeItems(client, 'user_american_stocks', userId, snapshot.americanStocks);
+    await writeItems(client, 'user_pension_funds', userId, snapshot.pensionFunds);
+    await writeItems(client, 'user_bank_balances', userId, snapshot.bankBalances);
+    await writeItems(client, 'user_cash_funds', userId, snapshot.cashFunds);
+    await writeItems(client, 'user_bank_savings_funds', userId, snapshot.bankSavingsFunds);
+    // Keep legacy snapshot row updated for easy inspection and backward compatibility.
+    await client.query(
+      `INSERT INTO user_portfolios (user_id, payload, updated_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (user_id) DO UPDATE SET
+         payload = EXCLUDED.payload,
+         updated_at = NOW()`,
+      [userId, JSON.stringify(snapshot)]
+    );
+  }
+
+  const TX_ORDER = 'ORDER BY trade_date ASC, created_at ASC, id ASC';
+
   return {
     kind: 'postgres',
     pool,
+    sql: makePgSql(pool),
+    async listUserIds() {
+      const { rows } = await pool.query('SELECT id FROM users ORDER BY id');
+      return rows.map((r) => Number(r.id));
+    },
     async findUserIdByEmail(email) {
       const { rows } = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
       return rows[0] || null;
@@ -515,30 +652,7 @@ async function pgStore(connectionString) {
     async getPortfolioPayload(userId) {
       const client = await pool.connect();
       try {
-        // Important: do not run concurrent queries on the same pg client.
-        const israeliStocks = await readItems(client, 'user_israeli_stocks', userId);
-        const americanStocks = await readItems(client, 'user_american_stocks', userId);
-        const pensionFunds = await readItems(client, 'user_pension_funds', userId);
-        const bankBalances = await readItems(client, 'user_bank_balances', userId);
-        const cashFunds = await readItems(client, 'user_cash_funds', userId);
-        const bankSavingsFunds = await readItems(client, 'user_bank_savings_funds', userId);
-        const normalized = {
-          israeliStocks,
-          americanStocks,
-          pensionFunds,
-          bankBalances,
-          cashFunds,
-          bankSavingsFunds
-        };
-        const hasNormalizedData = Object.values(normalized).some((arr) => arr.length > 0);
-        if (hasNormalizedData) return JSON.stringify(normalized);
-
-        // Backward compatibility: if legacy snapshot exists, return it as-is.
-        const { rows } = await client.query('SELECT payload FROM user_portfolios WHERE user_id = $1', [
-          userId
-        ]);
-        const row = rows[0];
-        return row && row.payload != null ? String(row.payload) : null;
+        return await readPayload(client, userId);
       } finally {
         client.release();
       }
@@ -548,21 +662,7 @@ async function pgStore(connectionString) {
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
-        await writeItems(client, 'user_israeli_stocks', userId, snapshot.israeliStocks);
-        await writeItems(client, 'user_american_stocks', userId, snapshot.americanStocks);
-        await writeItems(client, 'user_pension_funds', userId, snapshot.pensionFunds);
-        await writeItems(client, 'user_bank_balances', userId, snapshot.bankBalances);
-        await writeItems(client, 'user_cash_funds', userId, snapshot.cashFunds);
-        await writeItems(client, 'user_bank_savings_funds', userId, snapshot.bankSavingsFunds);
-        // Keep legacy snapshot row updated for easy inspection and backward compatibility.
-        await client.query(
-          `INSERT INTO user_portfolios (user_id, payload, updated_at)
-           VALUES ($1, $2, NOW())
-           ON CONFLICT (user_id) DO UPDATE SET
-             payload = EXCLUDED.payload,
-             updated_at = NOW()`,
-          [userId, JSON.stringify(snapshot)]
-        );
+        await writeSnapshot(client, userId, snapshot);
         await client.query('COMMIT');
       } catch (err) {
         await client.query('ROLLBACK');
@@ -667,6 +767,46 @@ async function pgStore(connectionString) {
            updated_at = NOW()`,
         [userId, targetsJson]
       );
+    },
+    async listTransactions(userId) {
+      const { rows } = await pool.query(`SELECT * FROM transactions WHERE user_id = $1 ${TX_ORDER}`, [userId]);
+      return rows.map(rowToTx);
+    },
+    async getTransaction(userId, id) {
+      const { rows } = await pool.query('SELECT * FROM transactions WHERE user_id = $1 AND id = $2', [userId, id]);
+      return rows[0] ? rowToTx(rows[0]) : null;
+    },
+    // See the SQLite version. The per-user advisory lock serializes two
+    // ledger changes for the same user, so both cannot read the same
+    // portfolio and the second overwrite the first.
+    async applyLedgerChange(userId, change) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query('SELECT pg_advisory_xact_lock($1)', [Number(userId)]);
+        const portfolio = parsePortfolioPayload(await readPayload(client, userId));
+        const { rows } = await client.query(`SELECT * FROM transactions WHERE user_id = $1 ${TX_ORDER}`, [userId]);
+        const result = change({ portfolio, transactions: rows.map(rowToTx) });
+        await writeSnapshot(client, userId, normalizeSnapshot(result.portfolio));
+        if (result.insert) {
+          const r = txToRow(userId, result.insert);
+          await client.query(
+            `INSERT INTO transactions (${TRANSACTION_COLUMNS.join(', ')})
+             VALUES (${TRANSACTION_COLUMNS.map((c, i) => (c === 'details' ? `$${i + 1}::jsonb` : `$${i + 1}`)).join(', ')})`,
+            TRANSACTION_COLUMNS.map((c) => r[c])
+          );
+        }
+        if (result.removeId) {
+          await client.query('DELETE FROM transactions WHERE user_id = $1 AND id = $2', [userId, result.removeId]);
+        }
+        await client.query('COMMIT');
+        return result;
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
     }
   };
 }
@@ -683,4 +823,4 @@ async function initDataStore() {
   return sqliteStore(openSqlite());
 }
 
-module.exports = { initDataStore, PG_UNIQUE_VIOLATION };
+module.exports = { initDataStore, PG_UNIQUE_VIOLATION, sqliteStore, openSqlite, pgStore, parsePortfolioPayload };

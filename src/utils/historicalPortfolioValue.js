@@ -7,10 +7,14 @@
 // holding instead of reimplementing the same carry-forward logic here.
 //
 // Quantity held as of a date is the sum of lots whose purchaseDate is on
-// or before that date - this app has no sell/lot-reduction model (only
-// additions), so "as of date X" can only ever include lots that existed
-// by then. A lot added after date X simply isn't counted yet, which is
-// the correct behavior, not a limitation to work around.
+// or before that date and that had not been sold by then. A lot row holds
+// only what is STILL owned; the part a sale closed lives in the
+// transactions ledger and comes back here as a "closed slice" (see
+// shared/transactionLedger.js#expandHoldingsWithClosedLots) carrying a
+// soldDate. A slice counts on every date before its sale and on none from
+// the sale date on - the day the proceeds leave as a cash flow, so the
+// value that disappears is netted against money that really left instead
+// of reading as a loss.
 //
 // Non-traded accounts (provident funds, money-market funds, current
 // accounts, bank savings funds) have no historical close to look up, so
@@ -45,9 +49,18 @@ function groupBySymbol(lots) {
   }, {});
 }
 
+// Held on `date`: bought on or before it, and (for a closed slice) not yet
+// sold. On the sale date itself the units are gone - the matching cash
+// flow is dated that day too, and portfolioCashFlows counts a flow dated
+// on a period's end as part of that period.
+export function isLotHeldOn(lot, date) {
+  if (!lot || !lot.purchaseDate || lot.purchaseDate > date) return false;
+  return !(lot.soldDate && date >= lot.soldDate);
+}
+
 function quantityAsOfDate(lots, date) {
   return lots
-    .filter((lot) => lot.purchaseDate && lot.purchaseDate <= date)
+    .filter((lot) => isLotHeldOn(lot, date))
     .reduce((sum, lot) => sum + (lot.quantity || 0), 0);
 }
 
@@ -109,7 +122,7 @@ function valueLotsOnDate(lots, date, close) {
   let needsClose = false;
 
   for (const lot of lots) {
-    if (!lot.purchaseDate || lot.purchaseDate > date) continue;
+    if (!isLotHeldOn(lot, date)) continue;
     const quantity = lot.quantity || 0;
     if (quantity <= 0) continue;
 
@@ -269,7 +282,7 @@ export const computePortfolioValueAtDate = (
     let value = 0;
     let missing = false;
     lots.forEach((lot) => {
-      if (!lot.purchaseDate || lot.purchaseDate > date) return;
+      if (!isLotHeldOn(lot, date)) return;
       const quantity = lot.quantity || 0;
       if (quantity <= 0) return;
 
@@ -435,7 +448,7 @@ export const computeHistoricalBreakdownAtDate = (date, holdings = {}, priceData 
     let value = 0;
     let missing = false;
     lots.forEach((lot) => {
-      if (!lot.purchaseDate || lot.purchaseDate > date) return;
+      if (!isLotHeldOn(lot, date)) return;
       const quantity = lot.quantity || 0;
       if (quantity <= 0) return;
       // An American lot also needs the rate it was bought at for its cost

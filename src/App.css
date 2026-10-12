@@ -1834,6 +1834,26 @@ h3 {
   color: var(--sw-text-muted);
 }
 
+.sample-portfolio-cta {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--sw-border);
+}
+
+.sample-portfolio-cta button {
+  margin-top: 8px;
+}
+
+.sample-portfolio-note {
+  margin: 12px 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px dashed var(--sw-border);
+  background: var(--sw-surface);
+  color: var(--sw-text-secondary);
+  font-size: 0.9rem;
+}
+
 /* Israeli stocks table width */
 .stocks-table:not(.american-stocks-table) {
   min-width: 1200px;
@@ -2934,9 +2954,12 @@ h3 {
     padding: 10px 5px;
   }
   
+  /* Sized by its content: the donut drops its callouts on a phone (see
+     PortfolioAnalysisView.js) and is much shorter, so a fixed minimum
+     only left an empty band above and below it. */
   .pie-chart-container {
-    padding: 20px 15px;
-    min-height: 400px;
+    padding: 16px 12px;
+    min-height: 0;
   }
   
   .pie-chart-wrapper {
@@ -4574,6 +4597,28 @@ textarea {
     background-color var(--sw-transition);
 }
 
+/* iOS draws a date field at its own intrinsic width, ignoring the width
+   its container gives it, so on a phone the date-range fields ran past
+   the card's edge. Dropping the native appearance and letting it shrink
+   makes it obey width: 100% like every other field. Phones only - it is
+   where the overflow happens, and desktop keeps the native control. */
+@media (max-width: 768px) {
+  input[type='date'],
+  input[type='month'] {
+    -webkit-appearance: none;
+    appearance: none;
+    min-width: 0;
+    max-width: 100%;
+    width: 100%;
+    display: block;
+  }
+
+  input[type='date']::-webkit-date-and-time-value,
+  input[type='month']::-webkit-date-and-time-value {
+    text-align: start;
+  }
+}
+
 input[type='text']:hover,
 input[type='number']:hover,
 input[type='date']:hover,
@@ -5422,9 +5467,15 @@ select {
     gap: 10px;
   }
 
+  /* Wraps rather than scrolls: a strip of buttons scrolling sideways on
+     a phone reads as buttons cut off at the edge ("ייצ…"), and there are
+     few enough of them that a second row costs very little. */
   .page-toolbar-secondary {
-    overflow-x: auto;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
+  }
+
+  .page-toolbar-secondary .toolbar-btn {
+    flex: 1 1 auto;
   }
 
   .page-toolbar-primary {
@@ -5478,15 +5529,34 @@ select {
    to stick to. A physical `left` would pin it to the far side of the
    table - visually the LAST column - which is not the identifier.
 
+   The scroller itself is LTR, though, and only the table inside it is
+   RTL (see .table-container below). WebKit - every browser on iOS -
+   mispositions a horizontally sticky cell inside an RTL scroll
+   container: the identifier column was drawn off the far edge, so on an
+   iPhone the stock names could only be found by dragging the table
+   around. In an LTR scroller the same pin is the plain, well-supported
+   case, and since the table is RTL its first column is still the
+   right-hand one - hence a physical `right` here, not a logical inset.
+   ScrollableTable.js opens the scroller at its right end, where the
+   table starts.
+
    The background must be OPAQUE. The surface tokens the cards use are
    translucent by design, and a translucent pinned cell shows the rows
    sliding underneath it, which is worse than not pinning at all.
    --sw-surface-3 exists for exactly this (see its own note: the token
    for surfaces something scrolls beneath). */
+.table-container {
+  direction: ltr;
+}
+
+.table-container > .stocks-table {
+  direction: rtl;
+}
+
 .stocks-table th:first-child,
 .stocks-table td:first-child {
   position: sticky;
-  inset-inline-start: 0;
+  right: 0;
   z-index: 2;
   background: var(--sw-surface-3);
   /* A hairline on the scrolling side, so the pinned column reads as an
@@ -7628,17 +7698,225 @@ select {
 }
 
 @media (max-width: 640px) {
-  /* One scrolling row rather than three wrapped ones - seven short
-     buttons stacked is most of a screen spent on a filter. */
-  .period-toggles {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    overscroll-behavior-x: contain;
-    padding-bottom: 4px;
-  }
-
+  /* Wrapped, and tighter, rather than one sideways-scrolling row: the
+     scrolling row cut its last button in half at the screen edge ("3 שנ…"),
+     which read as broken rather than as more to swipe to. */
   .period-toggle {
-    flex: 0 0 auto;
+    flex: 1 1 auto;
+    padding: 6px 10px;
   }
+}
+
+/* ------------------------------------------------------------------------
+   Smart Alerts (AlertsView.js) and the nav badge
+   ------------------------------------------------------------------------ */
+.side-nav-badge {
+  margin-inline-start: auto;
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: var(--sw-radius-pill);
+  background: var(--sw-red);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+}
+
+.alerts-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.alert-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.alert-card {
+  border: 1px solid var(--sw-border);
+  border-inline-start-width: 4px;
+  border-radius: var(--sw-radius);
+  background: var(--sw-surface);
+  padding: 12px 16px;
+}
+
+.alert-card.severity-critical {
+  border-inline-start-color: var(--sw-red);
+}
+
+.alert-card.severity-warning {
+  border-inline-start-color: var(--sw-amber);
+}
+
+.alert-card.severity-info {
+  border-inline-start-color: var(--sw-cyan);
+}
+
+.alert-card.is-unread {
+  background: var(--sw-surface-2);
+}
+
+.alert-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.alert-card-title {
+  margin: 0;
+  font-size: 15px;
+  color: var(--sw-text);
+}
+
+.alert-card-time {
+  margin-inline-start: auto;
+  font-size: 12px;
+  color: var(--sw-text-muted);
+}
+
+.alert-card-message,
+.alert-card-recommendation {
+  margin: 8px 0 0;
+  color: var(--sw-text-secondary);
+  line-height: 1.5;
+}
+
+.alert-severity-badge {
+  border-radius: var(--sw-radius-pill);
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.alert-severity-badge.severity-critical {
+  background: var(--sw-red-soft);
+  color: var(--sw-red);
+}
+
+.alert-severity-badge.severity-warning {
+  background: var(--sw-amber-soft);
+  color: var(--sw-amber);
+}
+
+.alert-severity-badge.severity-info {
+  background: var(--sw-accent-soft);
+  color: var(--sw-accent);
+}
+
+/* Recommendations (RecommendationsView.js) - the "why?" panel */
+.recommendation-why {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--sw-text-secondary);
+}
+
+.recommendation-why dt {
+  font-weight: 600;
+  color: var(--sw-text);
+}
+
+.recommendation-why dd {
+  margin: 0;
+}
+
+/* Valuation (ValuationView.js) */
+.muted-note {
+  color: var(--sw-text-muted);
+  font-size: 12px;
+}
+
+.range-bar .range-track {
+  stroke: var(--sw-border-strong);
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+
+.range-bar .range-avg {
+  stroke: var(--sw-text-secondary);
+  stroke-width: 2;
+}
+
+.range-bar .range-peer {
+  fill: var(--sw-amber);
+}
+
+.range-bar .range-now {
+  fill: var(--sw-accent);
+}
+
+.dcf-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) 2fr;
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .dcf-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.dcf-slider input[type='range'] {
+  width: 100%;
+}
+
+.dcf-advanced {
+  margin: 8px 0 12px;
+}
+
+.dcf-bridge {
+  margin-top: 16px;
+}
+
+.dcf-warnings,
+.dcf-errors {
+  margin: 12px 0;
+  padding-inline-start: 20px;
+  color: var(--sw-amber);
+}
+
+.dcf-errors {
+  color: var(--sw-red);
+}
+
+.dcf-grid td,
+.dcf-grid th {
+  text-align: center;
+}
+
+.dcf-grid .cell-under {
+  background: var(--sw-green-soft);
+  color: var(--sw-green);
+}
+
+.dcf-grid .cell-over {
+  background: var(--sw-red-soft);
+  color: var(--sw-red);
+}
+
+.dcf-grid .cell-current {
+  outline: 2px solid var(--sw-accent);
+  outline-offset: -2px;
+  font-weight: 700;
+}
+
+.inline-input {
+  padding: 8px 12px;
+  border: 1px solid var(--sw-border-strong);
+  border-radius: var(--sw-radius-sm);
+  background: var(--sw-surface);
+  color: var(--sw-text);
+  font: inherit;
+  width: 120px;
 }

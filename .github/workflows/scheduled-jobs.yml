@@ -1,0 +1,79 @@
+name: Scheduled jobs
+
+# Wakes the API and runs its background jobs on a schedule. The API host
+# (Render free plan) sleeps when idle, so an in-process timer alone would
+# miss these; each call below enqueues the job and waits while the server
+# runs it (see src/server/internalJobRoutes.js).
+#
+# Setup (repository Settings -> Secrets and variables -> Actions):
+#   STOCKVIEW_API_URL  - the API base URL, e.g. https://stockview-api.onrender.com
+#   CRON_SECRET        - the same value as the server's CRON_SECRET env var
+# Until both are set every run is a no-op.
+
+on:
+  schedule:
+    # Anomaly scan after the TASE close (Mon-Fri; 16:07 UTC is after the
+    # close in both Israeli summer and winter time).
+    - cron: '7 16 * * 1-5'
+    # Anomaly scan after the US close (21:37 UTC is after 16:00 New York
+    # time in both EDT and EST).
+    - cron: '37 21 * * 1-5'
+    # Event calendar refresh + reminders, early morning daily.
+    - cron: '13 5 * * *'
+    # Drain anything else that is due (e.g. monthly reports) hourly.
+    - cron: '47 * * * *'
+  workflow_dispatch:
+    inputs:
+      job:
+        description: 'Job to run'
+        required: true
+        default: 'anomaly.scan'
+        type: choice
+        options: [anomaly.scan, calendar.refresh, drain]
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Pick job
+        id: pick
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "job=${{ inputs.job }}" >> "$GITHUB_OUTPUT"
+          else
+            case "${{ github.event.schedule }}" in
+              '7 16 * * 1-5'|'37 21 * * 1-5') echo "job=anomaly.scan" >> "$GITHUB_OUTPUT" ;;
+              '13 5 * * *') echo "job=calendar.refresh" >> "$GITHUB_OUTPUT" ;;
+              *) echo "job=drain" >> "$GITHUB_OUTPUT" ;;
+            esac
+          fi
+
+      - name: Call the API
+        env:
+          API_URL: ${{ secrets.STOCKVIEW_API_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          JOB: ${{ steps.pick.outputs.job }}
+        run: |
+          # Tolerate a trailing slash in the secret ("https://x/" + "/api"
+          # would be "//api", which the server answers with 404).
+          API_URL="${API_URL%/}"
+          if [ -z "$API_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "STOCKVIEW_API_URL / CRON_SECRET not configured - skipping."
+            exit 0
+          fi
+          # The two post-close scans share one daily key; force the second
+          # so the US-close run is not deduplicated against the TASE one.
+          QUERY=""
+          if [ "${{ github.event.schedule }}" = "37 21 * * 1-5" ]; then QUERY="?force=1"; fi
+          # A sleeping free-tier host can take a minute to boot: retry.
+          for attempt in 1 2 3 4; do
+            status=$(curl -sS -o response.json -w '%{http_code}' --max-time 600 \
+              -X POST "$API_URL/api/internal/jobs/$JOB$QUERY" \
+              -H "X-Cron-Secret: $CRON_SECRET" -H 'Content-Type: application/json' -d '{}' || echo 000)
+            echo "attempt $attempt: HTTP $status"
+            if [ "$status" = "200" ]; then cat response.json; exit 0; fi
+            sleep $((attempt * 30))
+          done
+          cat response.json 2>/dev/null || true
+          exit 1

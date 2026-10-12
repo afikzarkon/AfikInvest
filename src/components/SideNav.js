@@ -54,6 +54,36 @@ const ICONS = {
       <circle cx="8" cy="8" r="2" />
       <circle cx="16" cy="16" r="2" />
     </>
+  ),
+  scale: (
+    <>
+      <path d="M12 4v16M7 20h10M5 8h14" />
+      <path d="m5 8-3 6a3 3 0 0 0 6 0L5 8Zm14 0-3 6a3 3 0 0 0 6 0l-3-6Z" />
+    </>
+  ),
+  report: (
+    <>
+      <path d="M7 3h7l4 4v14H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" />
+      <path d="M14 3v4h4M9 17v-3m3 3v-5m3 5v-2" />
+    </>
+  ),
+  compass: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="m15.5 8.5-2 5-5 2 2-5 5-2Z" />
+    </>
+  ),
+  bell: (
+    <>
+      <path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15L6 16Z" />
+      <path d="M10 20a2 2 0 0 0 4 0" />
+    </>
+  ),
+  ledger: (
+    <>
+      <path d="M7 4h11a1 1 0 0 1 1 1v15H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" />
+      <path d="M9 9h6m-6 4h6m-6 4h3" />
+    </>
   )
 };
 
@@ -91,7 +121,8 @@ export const NAV_ITEMS = ROUTES.filter((route) => !route.hidden);
 //
 // On narrow screens it becomes a bottom bar - thumb-reachable, and it
 // doesn't steal horizontal space a table needs.
-function SideNav({ activePage, onNavigate, user, onLogout, theme, onToggleTheme }) {
+// badges: { [routeKey]: count } - a count shown on that link (unread alerts).
+function SideNav({ activePage, onNavigate, user, onLogout, theme, onToggleTheme, badges = {} }) {
   return (
     <nav className="side-nav" aria-label="ניווט ראשי">
       <div className="side-nav-brand">
@@ -127,6 +158,11 @@ function SideNav({ activePage, onNavigate, user, onLogout, theme, onToggleTheme 
                     >
                       <NavIcon name={item.icon} />
                       <span className="side-nav-label">{item.label}</span>
+                      {badges[item.key] > 0 && (
+                        <span className="side-nav-badge" aria-label={`${badges[item.key]} חדשות`}>
+                          {badges[item.key] > 99 ? '99+' : badges[item.key]}
+                        </span>
+                      )}
                     </button>
                   </li>
                 );

@@ -99,7 +99,7 @@ function FinancialAccountsTables({
   // Opens the add form pointed at one account (see App.js's
   // handleRecordTransaction). Optional - without it the ledgers are
   // read-only, as they always were.
-  onRecordTransaction
+  onOpenLedgerEntry
 }) {
   const formatPercent = (value) => {
     if (value === null || value === undefined || Number.isNaN(value)) {
@@ -113,10 +113,10 @@ function FinancialAccountsTables({
   // adding one belongs - rather than only behind the toolbar's generic add
   // button, where the account had to be picked again by retyping its name.
   const renderRecordTransactionRow = (itemType, item, colSpan, label) =>
-    onRecordTransaction ? (
+    onOpenLedgerEntry ? (
       <tr className={`${isEditMode ? 'editable-row' : ''} detail-row`}>
         <td style={{ paddingLeft: '20px' }} colSpan={colSpan}>
-          <button type="button" className="monthly-toolbar-btn" onClick={() => onRecordTransaction(itemType, item)}>
+          <button type="button" className="monthly-toolbar-btn" onClick={() => onOpenLedgerEntry(itemType, item)}>
             {label}
           </button>
         </td>

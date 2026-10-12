@@ -37,7 +37,8 @@
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
-    "db:users": "node scripts/list-users.js"
+    "db:users": "node scripts/list-users.js",
+    "worker": "node src/worker.js"
   },
   "eslintConfig": {
     "extends": [

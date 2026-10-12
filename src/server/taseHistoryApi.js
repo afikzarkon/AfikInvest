@@ -144,4 +144,34 @@ async function fetchTaseHistoricalCloses(stockId, fromDateStr) {
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 }
 
-module.exports = { fetchTaseHistoricalCloses, fetchTaseQuoteFromEod, taseDateToIso };
+// The traded volume of one history row. The field name is not documented,
+// so the known candidates are tried in order; a row with none reads as 0,
+// which the anomaly engine treats as "no volume data" rather than as a
+// quiet day.
+const VOLUME_FIELDS = ['OverallTurnOverUnits', 'TurnOverUnits', 'Volume'];
+function volumeOfRow(item) {
+  for (const field of VOLUME_FIELDS) {
+    const v = Number(item && item[field]);
+    if (Number.isFinite(v) && v > 0) return v;
+  }
+  return 0;
+}
+
+// Daily bars for the anomaly engine: the newest `pages` pages of history
+// (30 trading days each). Close in agorot - the engine only uses ratios.
+async function fetchTaseDailyBars(stockId, pages = 3) {
+  const byDate = new Map();
+  for (let pageNum = 1; pageNum <= pages; pageNum += 1) {
+    const data = await fetchHistoryPage(stockId, pageNum);
+    const items = Array.isArray(data && data.Items) ? data.Items : [];
+    if (!items.length) break;
+    items.forEach((item) => {
+      const date = taseDateToIso(item.TradeDate);
+      if (date && Number.isFinite(item.CloseRate)) byDate.set(date, { date, close: item.CloseRate, volume: volumeOfRow(item) });
+    });
+    if (items.length < PAGE_SIZE) break;
+  }
+  return [...byDate.values()].sort((a, b) => (a.date < b.date ? -1 : 1));
+}
+
+module.exports = { fetchTaseHistoricalCloses, fetchTaseQuoteFromEod, fetchTaseDailyBars, taseDateToIso, volumeOfRow };

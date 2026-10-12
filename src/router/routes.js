@@ -57,6 +57,41 @@ export const ROUTES = [
     icon: 'tax'
   },
   {
+    key: 'alerts',
+    path: '/alerts',
+    label: 'התראות',
+    hint: 'תנועות חריגות ולוח אירועים',
+    icon: 'bell'
+  },
+  {
+    key: 'reports',
+    path: '/reports',
+    label: 'דוחות חודשיים',
+    hint: 'עדכון חודשי ודוח PDF',
+    icon: 'report'
+  },
+  {
+    key: 'valuation',
+    path: '/valuation',
+    label: 'הערכת שווי',
+    hint: 'מכפילים ו-DCF',
+    icon: 'scale'
+  },
+  {
+    key: 'recommendations',
+    path: '/recommendations',
+    label: 'המלצות',
+    hint: 'איזון, מימוש וקיזוז מס',
+    icon: 'compass'
+  },
+  {
+    key: 'transactions',
+    path: '/transactions',
+    label: 'עסקאות',
+    hint: 'מכירות, דיבידנדים ומשיכות',
+    icon: 'ledger'
+  },
+  {
     key: 'analytics',
     path: '/analytics',
     label: 'ניתוח תיק',
@@ -74,12 +109,12 @@ export const ROUTES = [
 // separating them from the overview and the tools keeps each group short
 // enough to read at a glance.
 export const NAV_GROUPS = [
-  { label: 'סקירה', keys: ['home', 'analytics', 'monthly-tracker'] },
+  { label: 'סקירה', keys: ['home', 'analytics', 'alerts', 'monthly-tracker', 'reports'] },
   {
     label: 'נכסים',
     keys: ['israeli-stocks', 'us-stocks', 'provident-funds', 'cash-and-checking', 'bank-savings']
   },
-  { label: 'כלים', keys: ['tax-offset'] }
+  { label: 'כלים', keys: ['recommendations', 'valuation', 'transactions', 'tax-offset'] }
 ];
 
 const BY_KEY = ROUTES.reduce((acc, route) => ({ ...acc, [route.key]: route }), {});
