@@ -9,6 +9,7 @@ import ExcelJS from 'exceljs';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { ALEF_REGULAR_BASE64 } from '../assets/fonts/alefRegularBase64';
+import { israelToday } from './marketSession';
 import {
   buildSummaryExportRows,
   buildIsraeliStocksExportRows,
@@ -21,7 +22,7 @@ import {
   buildPortfolioReportSections
 } from './exportData';
 
-const todayFileStamp = () => new Date().toISOString().slice(0, 10);
+const todayFileStamp = () => israelToday();
 
 function addSheetFromRows(workbook, sheetName, rows) {
   if (!rows || rows.length === 0) return;
@@ -94,26 +95,74 @@ function registerHebrewFont(doc) {
 // segmentation, so they mangle embedded dates/tickers/numbers just as
 // badly (confirmed: "2023-01-15" came back as "51-10-3202").
 //
-// Fix: reverse Hebrew strings ourselves before handing them to jsPDF, so
-// plain LTR placement produces the correct visual result - and swap
-// paired brackets before reversing (the Unicode Bidi Algorithm's
-// mirroring rule, rule L4) so "(₪)" doesn't come out as ")₪(". Left
-// completely alone if the string has no Hebrew in it (dates, tickers,
-// plain numbers must never be touched). This app's actual export strings
-// never mix Hebrew with inline digits/Latin within one string (those
-// always land in separate cells or separate text() calls), so this
-// simple whole-string approach is correct for every string this file
-// actually produces - it deliberately isn't a general bidi implementation.
+// Fix: reorder strings into VISUAL order ourselves before handing them to
+// jsPDF, so plain LTR placement produces the correct result.
+//
+// This used to reverse the whole string, on the assumption that no export
+// string mixes Hebrew with digits or Latin. Plenty do - the cover's
+// "הופק בתאריך 2026-10-12", the footer's "הופק ב-StockView", the
+// disclaimer's "(Beta)", the tile notes ("12.5% משוקלל") and every
+// "name (security id)" cell - and a whole-string reversal printed those
+// as "21-01-6202", "weiVkcotS" and "ateB". So this is a small RTL-paragraph
+// reordering (the parts of the Unicode Bidi Algorithm these strings
+// exercise):
+//   - Latin letters and digits form left-to-right runs, kept in order;
+//   - a neutral (space, '-', '.', ',', '/', ':', '&', ...) between two of
+//     them belongs to that run ("2026-10-12", "1,234.56", "S&P 500");
+//   - %, ₪ and $ next to a digit, and a +/- sign right before one, belong
+//     to the number ("12.5%", "-1.72");
+//   - everything else takes the paragraph's right-to-left direction;
+//   - the runs are laid out in reverse order, and each RTL run is reversed
+//     with its paired brackets mirrored (rule L4), so "(₪)" stays "(₪)".
+// A string with no Hebrew in it is returned untouched.
 const HEBREW_CHAR_RANGE = /[֐-׿]/;
 const BRACKET_MIRRORS = { '(': ')', ')': '(', '[': ']', ']': '[' };
+const LTR_STRONG = /[A-Za-z0-9]/;
+const DIGIT = /[0-9]/;
+const NUMBER_TERMINATORS = new Set(['%', '₪', '$']);
+
+function resolveDirections(chars) {
+  const strong = chars.map((ch) => (HEBREW_CHAR_RANGE.test(ch) ? 'R' : LTR_STRONG.test(ch) ? 'L' : null));
+  const nearest = (from, step) => {
+    for (let i = from; i >= 0 && i < chars.length; i += step) {
+      if (strong[i]) return strong[i];
+    }
+    return 'R'; // the paragraph direction
+  };
+  return chars.map((ch, i) => {
+    if (strong[i]) return strong[i];
+    const prevDigit = i > 0 && DIGIT.test(chars[i - 1]);
+    const nextDigit = i + 1 < chars.length && DIGIT.test(chars[i + 1]);
+    if (NUMBER_TERMINATORS.has(ch) && (prevDigit || nextDigit)) return 'L';
+    if ((ch === '-' || ch === '+') && nextDigit) return 'L';
+    return nearest(i - 1, -1) === 'L' && nearest(i + 1, 1) === 'L' ? 'L' : 'R';
+  });
+}
+
 export function toPdfDisplayText(text) {
   const str = String(text);
   if (!HEBREW_CHAR_RANGE.test(str)) return str;
-  const mirrored = str
-    .split('')
-    .map((ch) => BRACKET_MIRRORS[ch] || ch)
+  const chars = [...str];
+  const directions = resolveDirections(chars);
+
+  const runs = [];
+  chars.forEach((ch, i) => {
+    const last = runs[runs.length - 1];
+    if (last && last.dir === directions[i]) last.chars.push(ch);
+    else runs.push({ dir: directions[i], chars: [ch] });
+  });
+
+  return runs
+    .reverse()
+    .map((run) =>
+      run.dir === 'R'
+        ? run.chars
+            .map((ch) => BRACKET_MIRRORS[ch] || ch)
+            .reverse()
+            .join('')
+        : run.chars.join('')
+    )
     .join('');
-  return mirrored.split('').reverse().join('');
 }
 
 // ---------------------------------------------------------------------

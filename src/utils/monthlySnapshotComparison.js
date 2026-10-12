@@ -59,7 +59,13 @@ export const MANUAL_ENTRY_CATEGORIES = ['cashFunds', 'bank', 'bankSavings'];
 // deposits: [{date,amount}] array) that lets us know exactly how much
 // money entered and when - the only categories a Modified Dietz
 // contribution-adjustment can be computed for.
-export const CONTRIBUTION_ADJUSTABLE_CATEGORIES = ['israeli', 'american', 'pension', 'bankSavings'];
+//
+// Money-market funds and current accounts belong here too: the add form
+// records every deposit/withdrawal into them as a dated, signed ledger row
+// (negative = withdrawal), exactly like a provident-fund deposit. They used
+// to be treated as ledger-less, so those recorded flows were ignored and
+// the only way to net them out was to type the same amount again by hand.
+export const CONTRIBUTION_ADJUSTABLE_CATEGORIES = ['israeli', 'american', 'pension', 'cashFunds', 'bank', 'bankSavings'];
 
 export const MONTHLY_CATEGORY_LABELS_HE = {
   israeli: 'בורסה ישראלית',
@@ -102,7 +108,14 @@ export function normalizeCategoryItems(categoryValue, categoryKey) {
 // out of an old comparison - a known, inherent limitation of not having a
 // separate immutable transaction ledger.
 export function buildLiveCashFlows(liveHoldings) {
-  const flows = { israeli: new Map(), american: new Map(), pension: new Map(), bankSavings: new Map() };
+  const flows = {
+    israeli: new Map(),
+    american: new Map(),
+    pension: new Map(),
+    cashFunds: new Map(),
+    bank: new Map(),
+    bankSavings: new Map()
+  };
   const push = (map, key, date, amount) => {
     if (!key || !date) return;
     if (!map.has(key)) map.set(key, []);
@@ -128,7 +141,41 @@ export function buildLiveCashFlows(liveHoldings) {
       push(flows.bankSavings, fund.fundName, d.date, d.amount || 0);
     });
   });
+  // Keyed exactly as monthlySnapshotBreakdown.js keys these items, so a
+  // flow lands on the same row it is netted out of.
+  (liveHoldings?.cashFunds || []).forEach((fund) => {
+    (Array.isArray(fund.deposits) ? fund.deposits : []).forEach((d) => {
+      push(flows.cashFunds, fund.fundName || `cash-${fund.id}`, d.date, d.amount || 0);
+    });
+  });
+  (liveHoldings?.bankBalances || []).forEach((account, index) => {
+    (Array.isArray(account.deposits) ? account.deposits : []).forEach((d) => {
+      push(flows.bank, `bank-${index + 1}`, d.date, d.amount || 0);
+    });
+  });
   return flows;
+}
+
+// THE DATE A CHECKPOINT IS VALID FOR - the day its figures were taken.
+//
+// Recorded on every save since checkpoints started carrying it (see
+// server/monthlySnapshotRoutes.js): today for a live save, the valuation
+// date for an auto-filled month. A month saved before then has only its
+// month key, and is read as valid at that month's last day - the date an
+// auto-filled month is valued at, and the closest a month key alone can get.
+export function snapshotAsOfDate(snapshot) {
+  if (!snapshot) return null;
+  const recorded = snapshot.asOfDate || (snapshot.breakdown && snapshot.breakdown.asOfDate);
+  if (typeof recorded === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(recorded)) return recorded;
+  return typeof snapshot.month === 'string' ? monthEndDateString(snapshot.month) : null;
+}
+
+// The calendar day halfway between two YYYY-MM-DD dates.
+function midpointDate(fromDate, toDate) {
+  const from = Date.parse(`${fromDate}T00:00:00Z`);
+  const to = Date.parse(`${toDate}T00:00:00Z`);
+  if (!Number.isFinite(from) || !Number.isFinite(to)) return toDate;
+  return new Date(from + Math.round((to - from) / 2 / 86400000) * 86400000).toISOString().slice(0, 10);
 }
 
 // (periodStart, periodEnd] - a flow dated exactly on periodStart is
@@ -156,12 +203,16 @@ function monthEndDateString(monthKey) {
 // baseMonth and up to/including compareMonth - not just the two endpoints
 // being compared, so a multi-month comparison (e.g. January vs. June)
 // still picks up whatever was separately declared on March's, April's and
-// May's own saves. Each snapshot's declared amount is dated to the last
-// day of ITS OWN month for Modified Dietz weighting purposes - a
-// reasonable stand-in for "sometime during the period this snapshot
-// covers, by the time this snapshot was taken the money was already
-// in/out." allSnapshots is the full list (any order/shape is fine, only
-// .month and .breakdown.cashFlows are read).
+// May's own saves.
+//
+// A declared amount says how much moved during the period a snapshot
+// closes - from the checkpoint before it to its own date - but not when.
+// It is dated to the MIDDLE of that period, the standard Modified Dietz
+// assumption for a flow of unknown timing (half-weighted). It used to be
+// dated to the snapshot's month end, which gave it no weight at all - a
+// withdrawal declared on a checkpoint read as if it had left on the last
+// day - and, with checkpoints taken mid-month, could even land after the
+// checkpoint that declared it. allSnapshots is the full list (any order).
 // Reads EVERY category, not just the manual-entry ones. Nothing writes a
 // declared flow for stocks or provident funds any more (see
 // MANUAL_ENTRY_CATEGORIES above), but months saved while that was possible
@@ -170,29 +221,24 @@ function monthEndDateString(monthKey) {
 // and stops previously-correct history from silently changing.
 export function buildManualCashFlows(allSnapshots, baseMonth, compareMonth) {
   const flows = MONTHLY_CATEGORY_KEYS.reduce((acc, key) => ({ ...acc, [key]: [] }), {});
-  (allSnapshots || []).forEach((snap) => {
-    if (!snap || typeof snap.month !== 'string') return;
+  const ordered = (allSnapshots || [])
+    .filter((snap) => snap && typeof snap.month === 'string')
+    .sort((a, b) => (a.month < b.month ? -1 : a.month > b.month ? 1 : 0));
+  ordered.forEach((snap, index) => {
     if (!(snap.month > baseMonth && snap.month <= compareMonth)) return;
     const cashFlows = snap.breakdown && typeof snap.breakdown === 'object' ? snap.breakdown.cashFlows : null;
     if (!cashFlows || typeof cashFlows !== 'object') return;
+    const closesAt = snapshotAsOfDate(snap);
+    const opensAt = index > 0 ? snapshotAsOfDate(ordered[index - 1]) : `${snap.month}-01`;
+    const date = opensAt < closesAt ? midpointDate(opensAt, closesAt) : closesAt;
     MONTHLY_CATEGORY_KEYS.forEach((key) => {
       const amount = cashFlows[key];
       if (isFiniteNumber(amount) && amount !== 0) {
-        flows[key].push({ date: monthEndDateString(snap.month), amount });
+        flows[key].push({ date, amount });
       }
     });
   });
   return flows;
-}
-
-// First calendar day of the month AFTER a "YYYY-MM" month, as "YYYY-MM-DD".
-// Built via Date.UTC - see monthEndDateString's comment above for why.
-function nextMonthStartDateString(monthKey) {
-  const [year, month] = monthKey.split('-').map(Number);
-  // `month` is 1-indexed in the key; Date's month param is 0-indexed, so
-  // passing it through unchanged lands on day 1 of the *next* month.
-  const firstDayOfNextMonth = new Date(Date.UTC(year, month, 1));
-  return firstDayOfNextMonth.toISOString().slice(0, 10);
 }
 
 // True when a category's "items" is really just normalizeCategoryItems()'s
@@ -260,42 +306,42 @@ export function compareMonthlySnapshots(baseSnapshot, compareSnapshot, liveHoldi
   const baseBreakdown = baseSnapshot.breakdown || {};
   const compareBreakdown = compareSnapshot.breakdown || {};
 
-  // Month-boundary approximation: monthly snapshots only record a "YYYY-MM"
-  // month, not the exact day they were saved (and for manually-backfilled
-  // past months, there is no real "saved on this day" moment at all - the
-  // row is created whenever the user clicks add, regardless of which past
-  // month it represents).
+  // THE PERIOD IS BETWEEN THE TWO CHECKPOINTS' OWN DATES: (base, compare].
   //
-  // periodStart is the 1st of the month AFTER the base month, not the base
-  // month itself - anything dated within the base month is treated as
-  // already reflected in baseValue. This matters: a flow dated anywhere in
-  // the base month (even before the snapshot was actually saved) would
-  // otherwise get netted out of the calculation a *second* time - once by
-  // already being baked into baseValue, and again by being subtracted as
-  // an "in-period" cash flow - which can swing the result to a wildly
-  // wrong (even negative) percent for money that never left/entered mid-
-  // period at all. periodEnd stays generous (the full last day of the
-  // compare month) - the opposite failure mode (a flow dated after the
-  // compare snapshot was actually saved, but still within that month,
-  // getting netted out) only costs a little precision, never a wrong sign.
-  // See modifiedDietz.js's own comment for why this is still an
-  // approximation, not an exact daily return.
-  const periodStart = nextMonthStartDateString(baseSnapshot.month);
-  const periodEnd = monthEndDateString(compareSnapshot.month);
+  // A flow dated on or before the base checkpoint is already inside
+  // baseValue; one dated after the compare checkpoint is not yet inside
+  // compareValue. Only what falls strictly between the two is new money to
+  // net out. This used to be approximated from month keys alone - from the
+  // 1st of the month after the base to the last day of the compare month -
+  // so with a checkpoint taken on the 10th, a deposit on the 20th of the
+  // base month was treated as already counted (and read as growth), and a
+  // deposit after the compare checkpoint was netted out of a value it was
+  // never in (and read as a loss). See snapshotAsOfDate for months saved
+  // before checkpoints recorded their date.
+  const periodStart = snapshotAsOfDate(baseSnapshot);
+  const periodEnd = snapshotAsOfDate(compareSnapshot);
   const liveCashFlows = liveHoldings ? buildLiveCashFlows(liveHoldings) : null;
   const manualCashFlows = buildManualCashFlows(allSnapshots, baseSnapshot.month, compareSnapshot.month);
 
-  // Per category: auto-detected flows (ledger categories only, drawn from
-  // liveHoldings) + manually-declared flows (any category, drawn from
-  // breakdown.cashFlows on the snapshots in between) - additive, since they
-  // cover different things (auto sees deposits/purchases, manual is the
-  // only way to record a sale/withdrawal, or anything at all for עו"ש/
-  // קרנות כספיות).
-  const categoryFlowsInPeriod = (key) => {
-    const auto = liveCashFlows && CONTRIBUTION_ADJUSTABLE_CATEGORIES.includes(key)
+  const autoFlowsInPeriod = (key) =>
+    liveCashFlows && CONTRIBUTION_ADJUSTABLE_CATEGORIES.includes(key)
       ? Array.from(liveCashFlows[key].values()).flatMap((list) => flowsInPeriod(list, periodStart, periodEnd))
       : [];
+
+  // Per category: ledger flows (drawn from liveHoldings) plus declared ones
+  // (breakdown.cashFlows on the checkpoints in between).
+  //
+  // For the liquid categories the two can describe THE SAME MONEY - a
+  // withdrawal recorded in the account's ledger and declared again on the
+  // checkpoint - and adding them would net it out twice. There, a ledger
+  // that has entries in the period wins, and the declaration only fills in
+  // a period the ledger says nothing about. Stocks and provident funds keep
+  // adding the two, as they always have: no new declaration can be made
+  // for them, and the old ones recorded sales the ledger never could.
+  const categoryFlowsInPeriod = (key) => {
+    const auto = autoFlowsInPeriod(key);
     const manual = flowsInPeriod(manualCashFlows[key], periodStart, periodEnd);
+    if (MANUAL_ENTRY_CATEGORIES.includes(key) && auto.length > 0) return auto;
     return [...auto, ...manual];
   };
 
@@ -354,15 +400,20 @@ export function compareMonthlySnapshots(baseSnapshot, compareSnapshot, liveHoldi
 
   const totalCashFlows = MONTHLY_CATEGORY_KEYS.flatMap((key) => categoryFlowsInPeriod(key));
 
-  // "Partial" only when at least one category actually holding value has
-  // no cash-flow data at all behind it (neither auto-detected nor
-  // manually-declared) - i.e. there's a real, undisclosed gap in what the
-  // total's adjustment could account for. Once the user has been
-  // declaring flows for עו"ש/קרנות כספיות too, this naturally turns false.
-  const partiallyAdjusted = MONTHLY_CATEGORY_KEYS.some((key) => {
-    const hasLedger = CONTRIBUTION_ADJUSTABLE_CATEGORIES.includes(key);
-    const hasManualData = manualCashFlows[key].length > 0;
-    return !hasLedger && !hasManualData;
+  // "Partial" only when a category actually holding value has no
+  // cash-flow data at all behind it - an account whose ledger has never
+  // recorded a single movement, and nothing declared for this period
+  // either - i.e. a real, undisclosed gap in what the total's adjustment
+  // could account for.
+  const partiallyAdjusted = categoryRows.some((row) => {
+    const holdsValue = (row.baseValue || 0) !== 0 || (row.compareValue || 0) !== 0;
+    if (!holdsValue) return false;
+    // Stocks, provident funds and bank savings always carry their dated
+    // lots/deposits. A money-market fund or current account only does
+    // once a movement has actually been recorded in its ledger.
+    const ledgerInUse = !['cashFunds', 'bank'].includes(row.key) || Boolean(liveCashFlows && liveCashFlows[row.key].size > 0);
+    const hasManualData = manualCashFlows[row.key].length > 0;
+    return !ledgerInUse && !hasManualData;
   });
 
   const totalRow = {

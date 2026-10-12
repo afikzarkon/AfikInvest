@@ -7,6 +7,7 @@ import { calculateAmericanStockMetrics } from './portfolioMath';
 import { normalizeIsraeliPrice, toNum } from './formatters';
 import { computeBankSavingsFundValue } from './bankSavingsFund';
 import { effectiveExchangeForIsraeliStock } from './israeliEtfClassifier';
+import { effectiveDailyChangePercent } from './marketSession';
 
 export const calculatePortfolioAnalysis = (
   israeliStocks,
@@ -118,7 +119,7 @@ export const calculatePortfolioAnalysis = (
     stockDistribution[stock.stockName].weightedYearsNumerator += yearsHeld * purchaseValue;
     stockDistribution[stock.stockName].daysHeld = Math.max(stockDistribution[stock.stockName].daysHeld, daysHeld);
     stockDistribution[stock.stockName].yearsHeld = Math.max(stockDistribution[stock.stockName].yearsHeld, yearsHeld);
-    stockDistribution[stock.stockName].dailyChange = toNum(stock.dailyChangePercent);
+    stockDistribution[stock.stockName].dailyChange = effectiveDailyChangePercent(stock);
 
     if (yearsHeld > 0 && purchaseValue > 0) {
       const annualizedReturn = Math.pow((value / purchaseValue), (1 / yearsHeld)) - 1;
@@ -152,7 +153,7 @@ export const calculatePortfolioAnalysis = (
     stockDistribution[stock.stockName].weightedYearsNumerator += yearsHeld * purchaseValue;
     stockDistribution[stock.stockName].daysHeld = Math.max(stockDistribution[stock.stockName].daysHeld, daysHeld);
     stockDistribution[stock.stockName].yearsHeld = Math.max(stockDistribution[stock.stockName].yearsHeld, yearsHeld);
-    stockDistribution[stock.stockName].dailyChange = toNum(stock.dailyChangePercent);
+    stockDistribution[stock.stockName].dailyChange = effectiveDailyChangePercent(stock);
 
     if (yearsHeld > 0 && purchaseValue > 0) {
       const annualizedReturn = Math.pow((value / purchaseValue), (1 / yearsHeld)) - 1;

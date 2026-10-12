@@ -60,6 +60,22 @@ describe('toPdfDisplayText', () => {
     expect(toPdfDisplayText('מחיר (₪)')).toBe('(₪) ריחמ');
   });
 
+  // Strings that mix Hebrew with digits or Latin - which the report does
+  // print - used to be reversed wholesale: "2026-10-12" came out as
+  // "21-01-6202" and "StockView" as "weiVkcotS".
+  test('keeps an embedded date, number or Latin word in reading order', () => {
+    expect(toPdfDisplayText('הופק בתאריך 2026-10-12')).toBe('2026-10-12 ךיראתב קפוה');
+    expect(toPdfDisplayText('הופק ב-StockView')).toBe('StockView-ב קפוה');
+    expect(toPdfDisplayText('טבע (629014)')).toBe('(629014) עבט');
+    expect(toPdfDisplayText('בשלב בדיקות (Beta) ואינה')).toBe('הניאו (Beta) תוקידב בלשב');
+  });
+
+  test('keeps a percent sign, currency sign and minus sign attached to their number', () => {
+    expect(toPdfDisplayText('12.5% משוקלל')).toBe('ללקושמ 12.5%');
+    expect(toPdfDisplayText('שינוי -1.72')).toBe('-1.72 יוניש');
+    expect(toPdfDisplayText('S&P 500 מדד')).toBe('דדמ S&P 500');
+  });
+
   test('converts a non-string input to its string form before checking for Hebrew', () => {
     expect(toPdfDisplayText(null)).toBe('null');
     expect(toPdfDisplayText(undefined)).toBe('undefined');

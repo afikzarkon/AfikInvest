@@ -58,7 +58,9 @@ export async function refreshIsraeliStocks(israeliStocks, setIsraeliStocks) {
         // Convert from agorot to shekels - the server returns TASE's own
         // agorot convention (see server/taseQuoteApi.js).
         currentPrice: quote.currentPrice / 100,
-        dailyChangePercent: quote.changePercent
+        dailyChangePercent: quote.changePercent,
+        // Which session that change is from - see utils/marketSession.js.
+        dailyChangeTradeDate: quote.tradeDate || null
       };
     })
   );
@@ -86,6 +88,7 @@ export async function refreshAmericanStocks(americanStocks, setAmericanStocks) {
         ...stock,
         currentPrice: quote.currentPrice,
         dailyChangePercent: quote.changePercent,
+        dailyChangeTradeDate: quote.tradeDate || null,
         currentExchangeRate
       };
     })

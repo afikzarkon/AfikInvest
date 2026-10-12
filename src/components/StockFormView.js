@@ -2,10 +2,67 @@ import React, { useState } from 'react';
 import { useIsraeliStockSearch } from '../hooks/useIsraeliStockSearch';
 import { useStockSearch } from '../hooks/useStockSearch';
 import BetaBanner from './BetaBanner';
+import {
+  describeEntry,
+  applyLiquidAccountTransaction,
+  isBeforeLastBalance,
+  lastRecordedBalanceDate
+} from '../utils/assetEntry';
+import { formatPriceWithSign } from '../utils/formatters';
+
+const formatDateHe = (iso) => {
+  const [y, m, d] = String(iso || '').split('-');
+  return y && m && d ? `${d}/${m}/${y}` : iso;
+};
+
+// What this submission will do, said before it is done (see
+// utils/assetEntry.js, which App.js's submit handler uses to decide the
+// same thing). null when not enough is filled in to tell.
+function entryPreviewText(formData, holdings) {
+  const entry = describeEntry(formData, holdings);
+  if (!entry) return null;
+  const type = formData.itemType;
+
+  if (entry.kind === 'additional-lot') {
+    const units = entry.lots.reduce((sum, lot) => sum + (Number(lot.quantity) || 0), 0);
+    const name = entry.lots[0].officialName || formData.officialName || formData.stockName;
+    return `כבר מוחזקות ${units} יחידות של ${name} (${entry.lots.length} קניות). הקנייה תירשם כקנייה נוספת באותה החזקה, עם תאריך ומחיר משלה.`;
+  }
+  if (entry.kind === 'new-holding') {
+    return 'החזקה חדשה - תיפתח שורה חדשה בטבלה.';
+  }
+  if (entry.kind === 'new-account') {
+    if (type === 'bank') return 'ייפתח חשבון עו"ש, והסכום יהיה היתרה ההתחלתית שלו.';
+    const label = type === 'cash_fund' ? `כספית חדשה (נייר ${formData.securityId.trim()})` : `קופה חדשה: "${formData.stockName.trim()}"`;
+    return `תיפתח ${label}, וההפקדה הזו תהיה הראשונה בפנקס שלה.`;
+  }
+
+  // An existing account: a transaction on its ledger.
+  const target = entry.target;
+  const name = type === 'bank' ? 'חשבון העו"ש' : `"${target.fundName || target.securityId}"`;
+  if (type === 'pension') {
+    return `ההפקדה תירשם בפנקס ההפקדות של ${name}. השווי הנוכחי של הקופה לא משתנה - הוא מתעדכן מדוח הקופה, בטבלה.`;
+  }
+  if (type === 'bank_savings') {
+    return `ההפקדה תירשם בפנקס של ${name}, והשווי יחושב ממנה אוטומטית.`;
+  }
+  const amount = parseFloat(formData.purchasePrice);
+  if (!Number.isFinite(amount) || !formData.purchaseDate) {
+    return `התנועה תירשם בפנקס של ${name}.`;
+  }
+  if (isBeforeLastBalance(target, formData.purchaseDate)) {
+    return `התנועה תירשם בפנקס של ${name} בלבד: היא מוקדמת מהיתרה האחרונה שנרשמה (${formatDateHe(lastRecordedBalanceDate(target))}), שכבר כוללת אותה.`;
+  }
+  const after = applyLiquidAccountTransaction(target, amount, formData.purchaseDate);
+  return `התנועה תירשם בפנקס של ${name}, והיתרה תתעדכן ל-${formatPriceWithSign(after.currentValue)} ₪.`;
+}
 
 function StockFormView({
   isEditMode,
   formData,
+  // The current portfolio - only read, to tell an existing account from a
+  // new one (see entryPreviewText) and to suggest existing names.
+  holdings = {},
   handleSubmit,
   handleInputChange,
   handleBackToHome,
@@ -51,7 +108,13 @@ function StockFormView({
     <div className="App">
       <div className="form-container">
         <div className="form-content">
-          <h1 className="form-title">{isEditMode ? 'עריכת מנייה' : 'הוספת מידע על מנייה'}</h1>
+          <h1 className="form-title">{isEditMode ? 'עריכת מנייה' : 'הוספת נכס או רישום פעולה'}</h1>
+          {!isEditMode && (
+            <p className="form-help">
+              שם של נכס קיים רושם פעולה עליו (קנייה נוספת, הפקדה או משיכה); שם חדש פותח נכס חדש. אפשר לרשום פעולה גם
+              ישירות מהפנקס של כל חשבון בטבלה.
+            </p>
+          )}
 
           {/* The one screen that invites a real balance to be typed in. */}
           <BetaBanner tone="data" />
@@ -238,10 +301,17 @@ function StockFormView({
                   value={formData.stockName}
                   onChange={handleInputChange}
                   required
+                  list="existing-pension-funds"
+                  autoComplete="off"
                   placeholder="לדוגמה: קופת גמל להשקעה X"
                 />
+                <datalist id="existing-pension-funds">
+                  {(holdings.pensionFunds || []).map((f) => (
+                    <option key={f.id} value={f.fundName} />
+                  ))}
+                </datalist>
                 <small className="form-help">
-                  אם כבר יש קופה עם השם הזה בדיוק, ההפקדה תצטרף אליה אוטומטית - בדיוק כמו קניית מניה נוספת מאותה מניה.
+                  בחרו קופה קיימת מהרשימה כדי לרשום בה הפקדה, או הזינו שם חדש כדי לפתוח קופה.
                 </small>
               </div>
             )}
@@ -268,10 +338,19 @@ function StockFormView({
                     value={formData.securityId}
                     onChange={handleInputChange}
                     required
+                    list="existing-cash-funds"
+                    autoComplete="off"
                     placeholder="לדוגמה: 5119609"
                   />
+                  <datalist id="existing-cash-funds">
+                    {(holdings.cashFunds || []).map((f) => (
+                      <option key={f.id} value={f.securityId}>
+                        {f.fundName}
+                      </option>
+                    ))}
+                  </datalist>
                   <small className="form-help">
-                    אם כבר יש כספית עם מספר נייר זהה, ההפקדה/המשיכה תצטרף אליה אוטומטית - בדיוק כמו קופת גמל.
+                    מספר נייר של כספית קיימת רושם בה הפקדה/משיכה; מספר חדש פותח כספית חדשה.
                   </small>
                 </div>
               </>
@@ -287,10 +366,17 @@ function StockFormView({
                   value={formData.stockName}
                   onChange={handleInputChange}
                   required
+                  list="existing-bank-savings"
+                  autoComplete="off"
                   placeholder="לדוגמה: קופת חיסכון - בנק לאומי"
                 />
+                <datalist id="existing-bank-savings">
+                  {(holdings.bankSavingsFunds || []).map((f) => (
+                    <option key={f.id} value={f.fundName} />
+                  ))}
+                </datalist>
                 <small className="form-help">
-                  אם כבר יש קופה עם השם הזה בדיוק, ההפקדה תצטרף אליה אוטומטית - בדיוק כמו קופת גמל.
+                  בחרו קופה קיימת מהרשימה כדי לרשום בה הפקדה, או הזינו שם חדש כדי לפתוח קופה.
                 </small>
               </div>
             )}
@@ -358,7 +444,7 @@ function StockFormView({
                   placeholder="0.00"
                 />
                 <small className="form-help">
-                  סכום חיובי = הפקדה, סכום שלילי = משיכה. השווי הנוכחי יתעדכן בהתאם.
+                  סכום חיובי = הפקדה, סכום שלילי = משיכה. היתרה מתעדכנת בהתאם (ראו הסיכום למטה).
                 </small>
               </div>
             ) : formData.itemType === 'cash_fund' ? (
@@ -375,7 +461,7 @@ function StockFormView({
                   placeholder="0.00"
                 />
                 <small className="form-help">
-                  סכום חיובי = הפקדה, סכום שלילי = משיכה. השווי הנוכחי יתעדכן בהתאם.
+                  סכום חיובי = הפקדה, סכום שלילי = משיכה. היתרה מתעדכנת בהתאם (ראו הסיכום למטה).
                 </small>
               </div>
             ) : formData.itemType === 'bank_savings' ? (
@@ -491,6 +577,15 @@ function StockFormView({
                 )}
               </div>
             )}
+
+            {!isEditMode && (() => {
+              const preview = entryPreviewText(formData, holdings);
+              return preview ? (
+                <p className="exchange-rate-display" role="status">
+                  {preview}
+                </p>
+              ) : null;
+            })()}
 
             <div className="form-buttons">
               <button type="button" onClick={handleBackToHome} className="back-button">

@@ -9,6 +9,7 @@
 // quotes), so this endpoint just persists what the client sends; it does not
 // re-derive prices server-side.
 const { readAuthUserFromRequest, getJwtSecret } = require('./authRoutes');
+const { dateInTimeZone } = require('./marketCalendar');
 
 function requireAuth(req, res, next) {
   try {
@@ -23,8 +24,9 @@ function requireAuth(req, res, next) {
 
 // YYYY-MM-DD for "today", so repeated saves on the same day simply update
 // the same row (upsert) instead of piling up multiple snapshots per day.
+// Israel's calendar day, not UTC's - the users' day ends at local midnight.
 function todayDateString() {
-  return new Date().toISOString().slice(0, 10);
+  return dateInTimeZone(new Date(), 'Asia/Jerusalem');
 }
 
 function isValidDateString(s) {

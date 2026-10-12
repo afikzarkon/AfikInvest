@@ -1,5 +1,6 @@
 import { indexedCostBasis, calculateLinkedRealResult } from './cpiTax';
 import { calculateModifiedDietzReturn } from './modifiedDietz';
+import { israelToday } from './marketSession';
 
 export const TAX_RATE = 0.25;
 
@@ -121,7 +122,7 @@ export const applyLedgerValueUpdate = (item, newCurrentValue, newCurrentValueDat
 export const applyLedgerValueEditPayload = (item, payload) => {
   const hasDate = payload && typeof payload === 'object' && payload.date;
   const newValue = hasDate ? payload.value : payload;
-  const newDate = hasDate ? payload.date : new Date().toISOString().slice(0, 10);
+  const newDate = hasDate ? payload.date : israelToday();
   return applyLedgerValueUpdate(item, newValue, newDate);
 };
 

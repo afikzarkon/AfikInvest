@@ -88,6 +88,10 @@ function post(url, payload) {
   });
 }
 
+// A source that reports no session date gets one from the weekday calendar
+// (see marketCalendar.js) - which date depends on when the test runs.
+const ANY_ISO_DATE = expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/);
+
 describe('quotesRoutes', () => {
   let app;
   let server;
@@ -197,10 +201,11 @@ describe('quotesRoutes', () => {
   // the headless browser is never launched. Puppeteer on the hot path (the
   // client polls every 10s) was both the slow and the failure-prone part.
   test('GET /api/israeli-stock/:id succeeds via the TASE API without touching the later sources', async () => {
-    taseQuoteApi.fetchTaseQuoteFromApi.mockResolvedValue({ currentPrice: 11960, changePercent: 1.36 });
+    taseQuoteApi.fetchTaseQuoteFromApi.mockResolvedValue({ currentPrice: 11960, changePercent: 1.36, tradeDate: '2026-09-17' });
     const res = await get(`${baseUrl}/api/israeli-stock/629014`);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ currentPrice: 11960, changePercent: 1.36 });
+    // The exchange's own session date is passed through untouched.
+    expect(res.body).toEqual({ currentPrice: 11960, changePercent: 1.36, tradeDate: '2026-09-17' });
     expect(taseHistoryApi.fetchTaseQuoteFromEod).not.toHaveBeenCalled();
     expect(taseScraper.scrapeTaseQuote).not.toHaveBeenCalled();
   });
@@ -212,7 +217,7 @@ describe('quotesRoutes', () => {
     taseHistoryApi.fetchTaseQuoteFromEod.mockResolvedValue({ currentPrice: 7811, changePercent: -1.72 });
     const res = await get(`${baseUrl}/api/israeli-stock/604611`);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ currentPrice: 7811, changePercent: -1.72 });
+    expect(res.body).toEqual({ currentPrice: 7811, changePercent: -1.72, tradeDate: ANY_ISO_DATE });
     expect(taseQuoteApi.fetchTaseQuoteFromApi).toHaveBeenCalledTimes(1);
     expect(taseScraper.scrapeTaseQuote).not.toHaveBeenCalled();
   });
@@ -225,14 +230,14 @@ describe('quotesRoutes', () => {
     taseHistoryApi.fetchTaseQuoteFromEod.mockResolvedValue({ currentPrice: 6000, changePercent: 1.1 });
     const res = await get(`${baseUrl}/api/israeli-stock/1111`);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ currentPrice: 6000, changePercent: 1.1 });
+    expect(res.body).toEqual({ currentPrice: 6000, changePercent: 1.1, tradeDate: ANY_ISO_DATE });
   });
 
   test('GET /api/israeli-stock/:id reaches the scraper only after both APIs fail', async () => {
     taseScraper.scrapeTaseQuote.mockResolvedValue({ currentPrice: 5000, changePercent: 2.3 });
     const res = await get(`${baseUrl}/api/israeli-stock/1111`);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ currentPrice: 5000, changePercent: 2.3 });
+    expect(res.body).toEqual({ currentPrice: 5000, changePercent: 2.3, tradeDate: ANY_ISO_DATE });
     expect(taseQuoteApi.fetchTaseQuoteFromApi).toHaveBeenCalled();
     expect(taseHistoryApi.fetchTaseQuoteFromEod).toHaveBeenCalled();
   });
@@ -243,7 +248,7 @@ describe('quotesRoutes', () => {
       .mockResolvedValueOnce({ currentPrice: 5000, changePercent: 2.3 });
     const res = await get(`${baseUrl}/api/israeli-stock/1111`);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ currentPrice: 5000, changePercent: 2.3 });
+    expect(res.body).toEqual({ currentPrice: 5000, changePercent: 2.3, tradeDate: ANY_ISO_DATE });
     expect(taseScraper.scrapeTaseQuote).toHaveBeenCalledTimes(2);
   });
 

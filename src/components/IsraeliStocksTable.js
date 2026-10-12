@@ -5,6 +5,7 @@ import ValuePill from './ValuePill';
 import AssetCell from './AssetCell';
 import ScrollableTable from './ScrollableTable';
 import { profitClass, formatDailyChangePercent } from '../utils/formatters';
+import { effectiveDailyChangePercent } from '../utils/marketSession';
 import { calculateStockRealGainTax, monthKeyFromDate } from '../utils/cpiTax';
 import { sectorLabelHe } from '../utils/sectorLabels';
 import { effectiveExchangeForIsraeliStock, resolveIsraeliSector } from '../utils/israeliEtfClassifier';
@@ -222,12 +223,12 @@ function IsraeliComputedCells({ stock, normalizeIsraeliPrice, calculateProfitPer
         <ValuePill value={profit}>{profitPercentage}%</ValuePill>
       </td>
       <td data-label={COL.dailyPercent}>
-        <ValuePill value={stock.dailyChangePercent}>
-          {formatDailyChangePercent(stock.dailyChangePercent)}%
+        <ValuePill value={effectiveDailyChangePercent(stock)}>
+          {formatDailyChangePercent(effectiveDailyChangePercent(stock))}%
         </ValuePill>
       </td>
-      <td className={profitClass(stock.dailyChangePercent)} data-label={COL.dailyProfit}>
-        {formatPriceWithSign(((stock.dailyChangePercent || 0) / 100) * totalCurrentValue)} ₪
+      <td className={profitClass(effectiveDailyChangePercent(stock))} data-label={COL.dailyProfit}>
+        {formatPriceWithSign((effectiveDailyChangePercent(stock) / 100) * totalCurrentValue)} ₪
       </td>
       {isEditMode && (
         <td data-label={COL.actions}>
@@ -413,12 +414,12 @@ function IsraeliStocksTable({
                           <ValuePill value={summary.totalProfit}>{summary.profitPercentage}%</ValuePill>
                         </td>
                         <td data-label={COL.dailyPercent}>
-                          <ValuePill value={stocks[0].dailyChangePercent}>
-                            {formatDailyChangePercent(stocks[0].dailyChangePercent)}%
+                          <ValuePill value={effectiveDailyChangePercent(stocks[0])}>
+                            {formatDailyChangePercent(effectiveDailyChangePercent(stocks[0]))}%
                           </ValuePill>
                         </td>
-                        <td className={profitClass(stocks[0].dailyChangePercent)} data-label={COL.dailyProfit}>
-                          {formatPriceWithSign(((stocks[0].dailyChangePercent || 0) / 100) * summary.totalCurrentValue)} ₪
+                        <td className={profitClass(effectiveDailyChangePercent(stocks[0]))} data-label={COL.dailyProfit}>
+                          {formatPriceWithSign((effectiveDailyChangePercent(stocks[0]) / 100) * summary.totalCurrentValue)} ₪
                         </td>
                         {isEditMode && <td></td>}
                       </tr>

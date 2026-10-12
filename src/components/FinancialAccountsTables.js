@@ -3,6 +3,7 @@ import ScrollableTable from './ScrollableTable';
 import { calculatePensionRealGainTax, calculateBankSavingsFundTax, monthKeyFromDate } from '../utils/cpiTax';
 import { calculateLedgerPeriodReturn, hasAmbiguousLedgerPeriod } from '../utils/portfolioMath';
 import { computeBankSavingsFundValue } from '../utils/bankSavingsFund';
+import { todayISO } from '../utils/portfolioDates';
 
 // The four ledger-backed account tables: provident funds, money-market
 // funds, current accounts and bank savings.
@@ -94,7 +95,11 @@ function FinancialAccountsTables({
   handleKeyDown,
   formatDate,
   formatPriceWithSign,
-  handleDelete
+  handleDelete,
+  // Opens the add form pointed at one account (see App.js's
+  // handleRecordTransaction). Optional - without it the ledgers are
+  // read-only, as they always were.
+  onRecordTransaction
 }) {
   const formatPercent = (value) => {
     if (value === null || value === undefined || Number.isNaN(value)) {
@@ -102,6 +107,21 @@ function FinancialAccountsTables({
     }
     return `${Number(value).toFixed(2)}%`;
   };
+
+  // The first row of every expanded ledger: record a new movement on THIS
+  // account. Its transactions are listed right under it, so this is where
+  // adding one belongs - rather than only behind the toolbar's generic add
+  // button, where the account had to be picked again by retyping its name.
+  const renderRecordTransactionRow = (itemType, item, colSpan, label) =>
+    onRecordTransaction ? (
+      <tr className={`${isEditMode ? 'editable-row' : ''} detail-row`}>
+        <td style={{ paddingLeft: '20px' }} colSpan={colSpan}>
+          <button type="button" className="monthly-toolbar-btn" onClick={() => onRecordTransaction(itemType, item)}>
+            {label}
+          </button>
+        </td>
+      </tr>
+    ) : null;
 
   const [expandedFunds, setExpandedFunds] = useState({});
   const toggleFundExpanded = (fundId) => {
@@ -124,7 +144,7 @@ function FinancialAccountsTables({
   // מבוססות-ledger (קופות גמל, כספית שקלית, עו"ש) - לא רק לפנסיה.
   const [valueDraft, setValueDraft] = useState({ value: '', date: '' });
   const startValueEdit = (item, exchange) => {
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = todayISO();
     setValueDraft({
       value: item.currentValue ?? item.amount ?? '',
       date: item.currentValueDate || todayStr
@@ -353,6 +373,7 @@ function FinancialAccountsTables({
                         </td>
                       )}
                     </tr>
+                    {isExpanded && renderRecordTransactionRow('pension', item, (showAdditionalData ? 15 : 9) + (isEditMode ? 1 : 0), '+ רישום הפקדה לקופה')}
                     {isExpanded && deposits.length === 0 && (
                       <tr className={`${isEditMode ? 'editable-row' : ''} detail-row`}>
                         <td style={{ paddingLeft: '20px' }} colSpan={(showAdditionalData ? 15 : 9) + (isEditMode ? 1 : 0)}>אין הפקדות רשומות</td>
@@ -503,6 +524,7 @@ function FinancialAccountsTables({
                           </td>
                         )}
                       </tr>
+                      {isExpanded && renderRecordTransactionRow('cash_fund', item, (showAdditionalData ? 8 : 7) + (isEditMode ? 1 : 0), '+ רישום הפקדה/משיכה')}
                       {isExpanded && deposits.length === 0 && (
                         <tr className={`${isEditMode ? 'editable-row' : ''} detail-row`}>
                           <td style={{ paddingLeft: '20px' }} colSpan={(showAdditionalData ? 8 : 7) + (isEditMode ? 1 : 0)}>אין הפקדות/משיכות רשומות</td>
@@ -615,6 +637,7 @@ function FinancialAccountsTables({
                           </td>
                         )}
                       </tr>
+                      {isExpanded && renderRecordTransactionRow('bank', item, (showAdditionalData ? 6 : 5) + (isEditMode ? 1 : 0), '+ רישום הפקדה/משיכה')}
                       {isExpanded && deposits.length === 0 && (
                         <tr className={`${isEditMode ? 'editable-row' : ''} detail-row`}>
                           <td style={{ paddingLeft: '20px' }} colSpan={(showAdditionalData ? 6 : 5) + (isEditMode ? 1 : 0)}>אין הפקדות/משיכות רשומות</td>
@@ -751,6 +774,7 @@ function FinancialAccountsTables({
                         </td>
                       )}
                     </tr>
+                    {isExpanded && renderRecordTransactionRow('bank_savings', item, (showAdditionalData ? 9 : 7) + (isEditMode ? 1 : 0), '+ רישום הפקדה לקופה')}
                     {isExpanded && deposits.length === 0 && (
                       <tr className={`${isEditMode ? 'editable-row' : ''} detail-row`}>
                         <td style={{ paddingLeft: '20px' }} colSpan={(showAdditionalData ? 9 : 7) + (isEditMode ? 1 : 0)}>אין הפקדות רשומות</td>

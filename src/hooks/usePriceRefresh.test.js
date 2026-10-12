@@ -33,8 +33,8 @@ describe('refreshIsraeliStocks', () => {
   // time).
   test('asks for every unique security id in ONE request and applies each price to all its lots', async () => {
     fetchIsraeliStockPrices.mockResolvedValue({
-      TEVA: { currentPrice: 1550, changePercent: 1.2 },
-      ICL: { currentPrice: 800, changePercent: -0.4 }
+      TEVA: { currentPrice: 1550, changePercent: 1.2, tradeDate: '2026-10-12' },
+      ICL: { currentPrice: 800, changePercent: -0.4, tradeDate: '2026-10-12' }
     });
     const stocks = [
       { stockName: 'TEVA', quantity: 10 },
@@ -47,11 +47,13 @@ describe('refreshIsraeliStocks', () => {
     expect(fetchIsraeliStockPrices).toHaveBeenCalledTimes(1);
     expect(fetchIsraeliStockPrices).toHaveBeenCalledWith(['TEVA', 'ICL']);
 
-    // Prices come back in agorot and are converted to shekels.
+    // Prices come back in agorot and are converted to shekels; the session
+    // date rides along so a stale change can be told apart later.
+    const traded = { dailyChangeTradeDate: '2026-10-12' };
     expect(applyUpdate(setIsraeliStocks, stocks)).toEqual([
-      { stockName: 'TEVA', quantity: 10, currentPrice: 15.5, dailyChangePercent: 1.2 },
-      { stockName: 'TEVA', quantity: 5, currentPrice: 15.5, dailyChangePercent: 1.2 },
-      { stockName: 'ICL', quantity: 3, currentPrice: 8, dailyChangePercent: -0.4 }
+      { stockName: 'TEVA', quantity: 10, currentPrice: 15.5, dailyChangePercent: 1.2, ...traded },
+      { stockName: 'TEVA', quantity: 5, currentPrice: 15.5, dailyChangePercent: 1.2, ...traded },
+      { stockName: 'ICL', quantity: 3, currentPrice: 8, dailyChangePercent: -0.4, ...traded }
     ]);
   });
 
@@ -68,7 +70,7 @@ describe('refreshIsraeliStocks', () => {
     await refreshIsraeliStocks(stocks, setIsraeliStocks);
 
     expect(applyUpdate(setIsraeliStocks, stocks)).toEqual([
-      { stockName: 'TEVA', quantity: 10, currentPrice: 15.5, dailyChangePercent: 1.2 },
+      { stockName: 'TEVA', quantity: 10, currentPrice: 15.5, dailyChangePercent: 1.2, dailyChangeTradeDate: null },
       { stockName: 'ICL', quantity: 3, currentPrice: 99 }
     ]);
   });
@@ -97,7 +99,7 @@ describe('refreshAmericanStocks', () => {
 
   test('applies price and the shared exchange rate (which rides on the same response) to every lot', async () => {
     fetchAmericanStockPrices.mockResolvedValue({
-      quotes: { AAPL: { currentPrice: 190, changePercent: 0.8 } },
+      quotes: { AAPL: { currentPrice: 190, changePercent: 0.8, tradeDate: '2026-10-09' } },
       exchangeRate: 3.7
     });
     const stocks = [
@@ -110,8 +112,8 @@ describe('refreshAmericanStocks', () => {
     expect(fetchAmericanStockPrices).toHaveBeenCalledTimes(1);
     expect(fetchAmericanStockPrices).toHaveBeenCalledWith(['AAPL']);
     expect(applyUpdate(setAmericanStocks, stocks)).toEqual([
-      { stockName: 'AAPL', quantity: 10, exchangeRate: 3.6, currentPrice: 190, dailyChangePercent: 0.8, currentExchangeRate: 3.7 },
-      { stockName: 'AAPL', quantity: 2, exchangeRate: 3.5, currentPrice: 190, dailyChangePercent: 0.8, currentExchangeRate: 3.7 }
+      { stockName: 'AAPL', quantity: 10, exchangeRate: 3.6, currentPrice: 190, dailyChangePercent: 0.8, dailyChangeTradeDate: '2026-10-09', currentExchangeRate: 3.7 },
+      { stockName: 'AAPL', quantity: 2, exchangeRate: 3.5, currentPrice: 190, dailyChangePercent: 0.8, dailyChangeTradeDate: '2026-10-09', currentExchangeRate: 3.7 }
     ]);
   });
 

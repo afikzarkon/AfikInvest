@@ -1,5 +1,6 @@
 import { renderHook } from '@testing-library/react';
 import { useAutoSnapshot } from './useAutoSnapshot';
+import { todayISO } from '../utils/portfolioDates';
 
 describe('useAutoSnapshot', () => {
   const baseProps = () => ({
@@ -35,16 +36,48 @@ describe('useAutoSnapshot', () => {
     expect(props.saveMonthlySnapshot).toHaveBeenCalledWith(100000, { israeli: [] });
   });
 
-  test('skips the daily save entirely when a snapshot for today already exists (from another device/session)', () => {
-    const today = new Date().toISOString().slice(0, 10);
-    const props = { ...baseProps(), snapshots: [{ date: today, totalValueILS: 99000 }] };
+  test('skips the daily save when a snapshot for today already exists (from another device/session)', () => {
+    const today = todayISO();
+    const props = {
+      ...baseProps(),
+      snapshots: [{ date: today, totalValueILS: 99000 }],
+      monthlySnapshots: [{ month: today.slice(0, 7), totalValueILS: 99000 }]
+    };
     renderHook(() => useAutoSnapshot(props));
     expect(props.saveSnapshotNow).not.toHaveBeenCalled();
     expect(props.saveMonthlySnapshot).not.toHaveBeenCalled();
   });
 
+  // The month's save used to be skipped along with the day's, so a month
+  // whose first save failed stayed missing until the next month.
+  test("still saves a missing month even when today's daily snapshot already exists", () => {
+    const props = { ...baseProps(), snapshots: [{ date: todayISO(), totalValueILS: 99000 }] };
+    renderHook(() => useAutoSnapshot(props));
+    expect(props.saveSnapshotNow).not.toHaveBeenCalled();
+    expect(props.saveMonthlySnapshot).toHaveBeenCalledWith(100000, { israeli: [] });
+  });
+
+  // An empty list that hasn't come back from the server yet is "unknown",
+  // not "nothing saved" - and the monthly save is an upsert, so acting on
+  // it would overwrite the month the user had already saved.
+  test('waits for both snapshot lists to load before deciding anything', () => {
+    const props = { ...baseProps(), snapshotsLoaded: true, monthlySnapshotsLoaded: false };
+    const { rerender } = renderHook((p) => useAutoSnapshot(p), { initialProps: props });
+    expect(props.saveSnapshotNow).not.toHaveBeenCalled();
+    expect(props.saveMonthlySnapshot).not.toHaveBeenCalled();
+
+    const currentMonth = todayISO().slice(0, 7);
+    rerender({
+      ...props,
+      monthlySnapshotsLoaded: true,
+      monthlySnapshots: [{ month: currentMonth, totalValueILS: 95000 }]
+    });
+    expect(props.saveSnapshotNow).toHaveBeenCalledTimes(1);
+    expect(props.saveMonthlySnapshot).not.toHaveBeenCalled();
+  });
+
   test('saves the daily snapshot but skips the monthly one when this month is already saved', () => {
-    const currentMonth = new Date().toISOString().slice(0, 7);
+    const currentMonth = todayISO().slice(0, 7);
     const props = { ...baseProps(), monthlySnapshots: [{ month: currentMonth, totalValueILS: 95000 }] };
     renderHook(() => useAutoSnapshot(props));
     expect(props.saveSnapshotNow).toHaveBeenCalled();

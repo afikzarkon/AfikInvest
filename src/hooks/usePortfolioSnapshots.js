@@ -17,6 +17,10 @@ import { apiUrl } from '../apiBase';
 export function usePortfolioSnapshots(user, authHeader) {
   const [snapshots, setSnapshots] = useState([]);
   const [snapshotsLoading, setSnapshotsLoading] = useState(false);
+  // True once the list has come back from the server at least once. Until
+  // then an empty array means "not known yet", not "nothing saved" - see
+  // useAutoSnapshot.js, which must not save over a list it hasn't seen.
+  const [snapshotsLoaded, setSnapshotsLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [lastSavedAt, setLastSavedAt] = useState(null);
@@ -28,6 +32,7 @@ export function usePortfolioSnapshots(user, authHeader) {
   const fetchSnapshots = useCallback(async () => {
     if (!user) {
       setSnapshots([]);
+      setSnapshotsLoaded(false);
       return;
     }
     setSnapshotsLoading(true);
@@ -39,6 +44,7 @@ export function usePortfolioSnapshots(user, authHeader) {
       if (!r.ok) throw new Error('load failed');
       const d = await r.json();
       setSnapshots(Array.isArray(d.snapshots) ? d.snapshots : []);
+      setSnapshotsLoaded(true);
     } catch {
       // Keep whatever we had before; a failed refresh shouldn't wipe the
       // chart the user is already looking at.
@@ -78,5 +84,5 @@ export function usePortfolioSnapshots(user, authHeader) {
     [user, fetchSnapshots]
   );
 
-  return { snapshots, snapshotsLoading, saveSnapshotNow, saving, saveError, lastSavedAt, refetchSnapshots: fetchSnapshots };
+  return { snapshots, snapshotsLoading, snapshotsLoaded, saveSnapshotNow, saving, saveError, lastSavedAt, refetchSnapshots: fetchSnapshots };
 }

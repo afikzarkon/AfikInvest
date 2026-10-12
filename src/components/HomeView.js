@@ -53,6 +53,21 @@ function HomeView({
 
   const cardProps = { summary, formatPriceWithSign };
 
+  // Says which markets the daily figure is made of, since a market that has
+  // not traded today contributes 0 rather than its last session's change
+  // (see utils/marketSession.js).
+  const sessions = summary.dailyChangeSessions || {};
+  const tradedToday = [
+    sessions.israeli === 'today' ? 'ת"א' : null,
+    sessions.american === 'today' ? 'ארה"ב' : null
+  ].filter(Boolean);
+  const anySessionKnown = sessions.israeli != null || sessions.american != null;
+  const dailyChangeSub = !anySessionKnown
+    ? 'משוקלל לפי שווי ההחזקות'
+    : tradedToday.length === 0
+      ? 'אין מסחר היום עדיין - יתעדכן עם פתיחת המסחר'
+      : `מסחר היום: ${tradedToday.join(' + ')}`;
+
   // Each overview card is a doorway to the page that holds its rows. The
   // card stays a plain block of figures when there is nowhere to go (no
   // onNavigate) rather than rendering a button that does nothing.
@@ -133,7 +148,7 @@ function HomeView({
                 value={`${formatPriceWithSign(summary.dailyProfitILS)} ₪`}
                 badge={`${summary.weightedDailyChange >= 0 ? '+' : ''}${summary.weightedDailyChange.toFixed(2)}%`}
                 badgeTone={toneOf(summary.dailyProfitILS)}
-                sub="משוקלל לפי שווי ההחזקות"
+                sub={dailyChangeSub}
               />
               {/* Fills the rest of the featured tile's second row, so the
                   block stays rectangular. */}

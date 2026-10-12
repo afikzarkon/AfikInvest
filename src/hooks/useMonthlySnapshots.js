@@ -9,6 +9,11 @@ import { apiUrl } from '../apiBase';
 export function useMonthlySnapshots(user, authHeader) {
   const [monthlySnapshots, setMonthlySnapshots] = useState([]);
   const [monthlySnapshotsLoading, setMonthlySnapshotsLoading] = useState(false);
+  // See usePortfolioSnapshots.js's snapshotsLoaded - the same guard, and it
+  // matters more here: the monthly save is an upsert, so saving against a
+  // list that simply hadn't arrived yet REPLACED the month the user had
+  // already saved, cash-flow declarations included.
+  const [monthlySnapshotsLoaded, setMonthlySnapshotsLoaded] = useState(false);
   const [savingMonthly, setSavingMonthly] = useState(false);
   const [saveMonthlyError, setSaveMonthlyError] = useState('');
   const [updatingMonth, setUpdatingMonth] = useState(null);
@@ -23,6 +28,7 @@ export function useMonthlySnapshots(user, authHeader) {
   const fetchMonthlySnapshots = useCallback(async () => {
     if (!user) {
       setMonthlySnapshots([]);
+      setMonthlySnapshotsLoaded(false);
       return;
     }
     setMonthlySnapshotsLoading(true);
@@ -34,6 +40,7 @@ export function useMonthlySnapshots(user, authHeader) {
       if (!r.ok) throw new Error('load failed');
       const d = await r.json();
       setMonthlySnapshots(Array.isArray(d.snapshots) ? d.snapshots : []);
+      setMonthlySnapshotsLoaded(true);
     } catch {
       // Keep whatever we had before; a failed refresh shouldn't wipe the
       // history table the user is already looking at.
@@ -166,6 +173,7 @@ export function useMonthlySnapshots(user, authHeader) {
   return {
     monthlySnapshots,
     monthlySnapshotsLoading,
+    monthlySnapshotsLoaded,
     saveMonthlySnapshot,
     savingMonthly,
     saveMonthlyError,

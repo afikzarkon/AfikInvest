@@ -5,6 +5,7 @@ import ValuePill from './ValuePill';
 import AssetCell from './AssetCell';
 import ScrollableTable from './ScrollableTable';
 import { profitClass, formatDailyChangePercent } from '../utils/formatters';
+import { effectiveDailyChangePercent } from '../utils/marketSession';
 
 // The column headers, named once and used for BOTH the <th> row and each
 // cell's data-label. Below 720px the table becomes one card per row and
@@ -206,12 +207,12 @@ function AmericanSingleStockComputedCells({
         <ValuePill value={profitPercentage}>{profitPercentage}%</ValuePill>
       </td>
       <td data-label={COL.dailyPercent}>
-        <ValuePill value={stock.dailyChangePercent}>
-          {formatDailyChangePercent(stock.dailyChangePercent)}%
+        <ValuePill value={effectiveDailyChangePercent(stock)}>
+          {formatDailyChangePercent(effectiveDailyChangePercent(stock))}%
         </ValuePill>
       </td>
-      <td className={profitClass(stock.dailyChangePercent)} data-label={COL.dailyProfit}>
-        {formatPriceWithSign(((stock.dailyChangePercent || 0) / 100) * totalCurrentValueUSD)} $
+      <td className={profitClass(effectiveDailyChangePercent(stock))} data-label={COL.dailyProfit}>
+        {formatPriceWithSign((effectiveDailyChangePercent(stock) / 100) * totalCurrentValueUSD)} $
       </td>
       {showAdditionalData && <td className={profitClass(exchangeRateImpact)} data-label={COL.fxImpact}>{formatPriceWithSign(exchangeRateImpact)} ₪</td>}
       {showAdditionalData && <td className="profit-negative" data-label={COL.tax}>{formatPriceWithSign(-taxILS)} ₪</td>}
@@ -378,12 +379,12 @@ function AmericanStocksTable({
                           <ValuePill value={profitPercentage}>{profitPercentage}%</ValuePill>
                         </td>
                         <td data-label={COL.dailyPercent}>
-                          <ValuePill value={stocks[0].dailyChangePercent}>
-                            {formatDailyChangePercent(stocks[0].dailyChangePercent)}%
+                          <ValuePill value={effectiveDailyChangePercent(stocks[0])}>
+                            {formatDailyChangePercent(effectiveDailyChangePercent(stocks[0]))}%
                           </ValuePill>
                         </td>
-                        <td className={profitClass(stocks[0].dailyChangePercent)} data-label={COL.dailyProfit}>
-                          {formatPriceWithSign(((stocks[0].dailyChangePercent || 0) / 100) * totalCurrentValueUSD)} $
+                        <td className={profitClass(effectiveDailyChangePercent(stocks[0]))} data-label={COL.dailyProfit}>
+                          {formatPriceWithSign((effectiveDailyChangePercent(stocks[0]) / 100) * totalCurrentValueUSD)} $
                         </td>
                         {showAdditionalData && <td className={profitClass(totalExchangeRateImpact)} data-label={COL.fxImpact}>{formatPriceWithSign(totalExchangeRateImpact)} ₪</td>}
                         {showAdditionalData && <td className="profit-negative" data-label={COL.tax}>{formatPriceWithSign(-totalTaxILS)} ₪</td>}

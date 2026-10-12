@@ -6,7 +6,8 @@ import {
   MONTHLY_CATEGORY_KEYS,
   MONTHLY_CATEGORY_LABELS_HE,
   AUTO_DERIVED_CATEGORIES,
-  MANUAL_ENTRY_CATEGORIES
+  MANUAL_ENTRY_CATEGORIES,
+  snapshotAsOfDate
 } from './monthlySnapshotComparison';
 
 const january = {
@@ -403,8 +404,11 @@ describe('compareMonthlySnapshots', () => {
     test('collects a declared amount per category from a snapshot strictly after baseMonth and up to/including compareMonth', () => {
       const snap = { month: '2024-02', breakdown: { cashFlows: { bank: 6000, israeli: -1000 } } };
       const flows = buildManualCashFlows([snap], '2024-01', '2024-02');
-      expect(flows.bank).toEqual([{ date: '2024-02-29', amount: 6000 }]);
-      expect(flows.israeli).toEqual([{ date: '2024-02-29', amount: -1000 }]);
+      // Timing within the period is unknown, so the flow is dated to its
+      // middle (half-weighted) - here Feb 1 -> Feb 29, there being no
+      // earlier checkpoint to open the period.
+      expect(flows.bank).toEqual([{ date: '2024-02-15', amount: 6000 }]);
+      expect(flows.israeli).toEqual([{ date: '2024-02-15', amount: -1000 }]);
       expect(flows.pension).toEqual([]);
     });
 
@@ -472,7 +476,88 @@ describe('category split between derived and manually-entered data', () => {
       '2026-01',
       '2026-03'
     );
-    expect(flows.israeli).toEqual([{ date: '2026-02-28', amount: 5000 }]);
-    expect(flows.bank).toEqual([{ date: '2026-02-28', amount: 1000 }]);
+    expect(flows.israeli).toEqual([{ date: '2026-02-15', amount: 5000 }]);
+    expect(flows.bank).toEqual([{ date: '2026-02-15', amount: 1000 }]);
+  });
+});
+
+// The period between two checkpoints is bounded by the dates their figures
+// are valid for, not by their month keys.
+describe('checkpoint dates (asOfDate)', () => {
+  const fund = (deposits) => ({ fundName: 'F', deposits });
+  const snap = (month, asOfDate, value) => ({
+    month,
+    asOfDate,
+    totalValueILS: value,
+    breakdown: { pension: [{ key: 'F', label: 'F', value }] }
+  });
+  const pensionRow = (rows) => rows.find((r) => r.key === 'pension');
+
+  test('a deposit after the base checkpoint but in the same month is netted out, not read as growth', () => {
+    // Checkpoints on the 10th; ₪20,000 deposited on Sept 20 and no growth.
+    const base = snap('2026-09', '2026-09-10', 100000);
+    const compare = snap('2026-10', '2026-10-10', 120000);
+    const rows = compareMonthlySnapshots(base, compare, { pensionFunds: [fund([{ date: '2026-09-20', amount: 20000 }])] });
+    expect(pensionRow(rows).netCashFlow).toBe(20000);
+    expect(pensionRow(rows).changePercent).toBeCloseTo(0, 6);
+  });
+
+  test('a deposit after the compare checkpoint is not netted out of a value it was never in', () => {
+    const base = snap('2026-09', '2026-09-10', 100000);
+    const compare = snap('2026-10', '2026-10-10', 105000);
+    const rows = compareMonthlySnapshots(base, compare, { pensionFunds: [fund([{ date: '2026-10-25', amount: 50000 }])] });
+    expect(pensionRow(rows).netCashFlow).toBe(0);
+    expect(pensionRow(rows).changePercent).toBeCloseTo(5, 6);
+  });
+
+  test("an undated (legacy) month is valid at its month end - so a flow on the next month's 1st is in the period", () => {
+    const base = { ...snap('2026-09', undefined, 100000), asOfDate: undefined };
+    const compare = { ...snap('2026-10', undefined, 110000), asOfDate: undefined };
+    expect(snapshotAsOfDate(base)).toBe('2026-09-30');
+    const rows = compareMonthlySnapshots(base, compare, { pensionFunds: [fund([{ date: '2026-10-01', amount: 10000 }])] });
+    expect(pensionRow(rows).netCashFlow).toBe(10000);
+  });
+
+  test('reads the date from breakdown.asOfDate as well as the top level', () => {
+    expect(snapshotAsOfDate({ month: '2026-09', breakdown: { asOfDate: '2026-09-12' } })).toBe('2026-09-12');
+  });
+});
+
+// Money-market funds and current accounts record their deposits and
+// withdrawals in a dated ledger too.
+describe('liquid-account ledgers', () => {
+  const base = {
+    month: '2026-09',
+    asOfDate: '2026-09-30',
+    totalValueILS: 50000,
+    breakdown: { bank: [{ key: 'bank-1', label: 'עו"ש', value: 50000 }] }
+  };
+  const compareWith = (cashFlows) => ({
+    month: '2026-10',
+    asOfDate: '2026-10-31',
+    totalValueILS: 40000,
+    breakdown: { bank: [{ key: 'bank-1', label: 'עו"ש', value: 40000 }], cashFlows }
+  });
+  const withdrawal = { bankBalances: [{ deposits: [{ date: '2026-10-15', amount: -10000 }] }] };
+  const bankRow = (rows) => rows.find((r) => r.key === 'bank');
+
+  test('a withdrawal recorded in the ledger is netted out automatically', () => {
+    const compare = compareWith({});
+    const rows = compareMonthlySnapshots(base, compare, withdrawal, [base, compare]);
+    expect(bankRow(rows).netCashFlow).toBe(-10000);
+    expect(bankRow(rows).changePercent).toBeCloseTo(0, 6);
+    expect(bankRow(rows).items[0].netCashFlow).toBe(-10000);
+  });
+
+  test('the same withdrawal declared again on the checkpoint is not counted twice', () => {
+    const compare = compareWith({ bank: -10000 });
+    const rows = compareMonthlySnapshots(base, compare, withdrawal, [base, compare]);
+    expect(bankRow(rows).netCashFlow).toBe(-10000);
+  });
+
+  test('a declaration still applies to a period the ledger says nothing about', () => {
+    const compare = compareWith({ bank: -10000 });
+    const rows = compareMonthlySnapshots(base, compare, { bankBalances: [{ deposits: [] }] }, [base, compare]);
+    expect(bankRow(rows).netCashFlow).toBe(-10000);
   });
 });

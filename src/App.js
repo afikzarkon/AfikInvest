@@ -23,6 +23,7 @@ import { useRebalanceTargets } from './hooks/useRebalanceTargets';
 import { useTheme } from './hooks/useTheme';
 import { monthKeyFromDate } from './utils/cpiTax';
 import { useRoute } from './hooks/useRoute';
+import { findExistingAccount, applyLiquidAccountTransaction } from './utils/assetEntry';
 import HomeView from './components/HomeView';
 import AuthView from './components/AuthView';
 import AppShell from './components/AppShell';
@@ -101,6 +102,32 @@ function portfolioHasAnyRows(p) {
 function clearLegacyPortfolioKeys() {
   LEGACY_KEYS.forEach((k) => localStorage.removeItem(k));
 }
+
+// The add form's blank state.
+const EMPTY_FORM = {
+  itemType: 'stock',
+  stockName: '',
+  officialName: '',
+  securityType: '',
+  securitySubType: '',
+  branch: '',
+  isFund: false,
+  isForeignETF: false,
+  securityId: '',
+  purchaseDate: '',
+  purchasePrice: '',
+  initialInvestment: '',
+  currentValue: '',
+  previousValue: '',
+  currentValueDate: '',
+  previousValueDate: '',
+  quantity: '',
+  exchange: 'israeli',
+  exchangeRate: '',
+  investmentTrack: '',
+  interestRate: '',
+  isLinkedToIndex: false
+};
 
 function App() {
   const { user, authLoading, authHeader, login, logout } = useAuth();
@@ -240,7 +267,7 @@ function App() {
 
   const {
     snapshots,
-
+    snapshotsLoaded,
     saveSnapshotNow,
     saveError: snapshotSaveError,
     lastSavedAt: lastSnapshotSavedAt
@@ -249,6 +276,7 @@ function App() {
   const {
     monthlySnapshots,
     monthlySnapshotsLoading,
+    monthlySnapshotsLoaded,
     saveMonthlySnapshot,
     savingMonthly,
     saveMonthlyError,
@@ -274,7 +302,9 @@ function App() {
     snapshots,
     saveSnapshotNow,
     monthlySnapshots,
-    saveMonthlySnapshot
+    saveMonthlySnapshot,
+    snapshotsLoaded,
+    monthlySnapshotsLoaded
   });
 
   // Confirms before every save, since the comparison table is only
@@ -324,6 +354,28 @@ function App() {
   const handleAddInfo = () => {
     setIsEditMode(false);
     setEditingStock(null);
+    setIsAddingNewStock(true);
+    navigate('add');
+  };
+
+  // "+ רישום הפקדה/משיכה" on an account's ledger in the tables. Opens the
+  // same add form, already pointed at that account - recording a
+  // transaction from the table and from the toolbar is one form and one
+  // submit path (see utils/assetEntry.js), not two that could drift.
+  const handleRecordTransaction = (itemType, account) => {
+    setIsEditMode(false);
+    setEditingStock(null);
+    setFormData({
+      ...EMPTY_FORM,
+      itemType,
+      stockName: account.fundName || '',
+      securityId: account.securityId || '',
+      // A bank-savings deposit form requires these; an existing fund keeps
+      // its own regardless, so they are only there to let the form submit.
+      investmentTrack: account.investmentTrack || '',
+      interestRate: account.interestRate != null ? String(account.interestRate) : '',
+      isLinkedToIndex: !!account.isLinkedToIndex
+    });
     setIsAddingNewStock(true);
     navigate('add');
   };
@@ -509,6 +561,8 @@ function App() {
     // קבלת מחיר נוכחי ואחוז שינוי יומי מ-API
     let currentPrice = 0;
     let dailyChangePercent = 0;
+    // The session that change is from (see utils/marketSession.js).
+    let dailyChangeTradeDate = null;
     // Classification metadata resolved from the exchange for an Israeli
     // holding whose id was typed rather than picked from the search box.
     let israeliMeta = null;
@@ -518,6 +572,7 @@ function App() {
       if (priceData) {
         currentPrice = priceData.currentPrice || 0;
         dailyChangePercent = priceData.changePercent || 0;
+        dailyChangeTradeDate = priceData.tradeDate || null;
       }
     } else if (formData.exchange === 'israeli') {
       const stockId = formData.stockName.trim();
@@ -535,6 +590,7 @@ function App() {
         const normalizedPrice = priceData.currentPrice / 100; // המרה מאגורות לשקלים
         currentPrice = normalizedPrice;
         dailyChangePercent = priceData.changePercent || 0;
+        dailyChangeTradeDate = priceData.tradeDate || null;
       }
       if (meta) israeliMeta = meta;
       // אם לא מתקבל מחיר, המחיר נשאר 0 (כפי שהוגדר בתחילת הפונקציה)
@@ -559,6 +615,7 @@ function App() {
         exchangeRate: formData.exchange === 'american' ? parseFloat(formData.exchangeRate) : null,
         currentPrice: currentPrice,
         dailyChangePercent: dailyChangePercent,
+        dailyChangeTradeDate,
         // Classification fields, Israeli holdings only - what makes the
         // foreign-asset and sector columns automatic (see
         // utils/israeliEtfClassifier.js). All optional: a holding saved
@@ -594,13 +651,12 @@ function App() {
       const depositAmount = parseFloat(formData.purchasePrice) || 0;
       const depositDate = formData.purchaseDate;
       const trimmedSecurityId = (formData.securityId || '').trim();
-      const existingFund = trimmedSecurityId && cashFunds.find((fund) => fund.securityId === trimmedSecurityId);
+      // Same rule the form previews (see utils/assetEntry.js).
+      const existingFund = findExistingAccount('cash_fund', formData, { cashFunds });
 
       if (existingFund) {
         const updatedCashFunds = cashFunds.map((fund) =>
-          fund.securityId === trimmedSecurityId
-            ? { ...fund, deposits: [...(Array.isArray(fund.deposits) ? fund.deposits : []), { date: depositDate, amount: depositAmount }] }
-            : fund
+          fund.id === existingFund.id ? applyLiquidAccountTransaction(fund, depositAmount, depositDate) : fund
         );
         setCashFunds(updatedCashFunds);
         setHasUnsavedChanges(true);
@@ -625,14 +681,16 @@ function App() {
       const depositAmount = parseFloat(formData.initialInvestment) || 0;
       const depositDate = formData.purchaseDate;
       const trimmedName = (formData.stockName || '').trim();
-      const existingFund = pensionFunds.find((fund) => fund.fundName === trimmedName);
+      // Same rule the form previews (see utils/assetEntry.js) - whitespace and
+      // letter case don't make a second fund.
+      const existingFund = findExistingAccount('pension', formData, { pensionFunds });
 
       if (existingFund) {
         // קופה קיימת עם אותו שם בדיוק: מוסיפים שורה חדשה לפנקס ההפקדות
         // שלה בלבד. currentValue/previousValue של הקופה
         // הקיימת לא משתנים (אלה מתעדכנים בנפרד דרך הטבלה, לא כאן).
         const updatedPensionFunds = pensionFunds.map((fund) =>
-          fund.fundName === trimmedName
+          fund.id === existingFund.id
             ? { ...fund, deposits: [...(Array.isArray(fund.deposits) ? fund.deposits : []), { date: depositDate, amount: depositAmount }] }
             : fund
         );
@@ -666,10 +724,9 @@ function App() {
       const existingAccount = bankBalances[0];
 
       if (existingAccount) {
+        // The balance moves with the movement - see applyLiquidAccountTransaction.
         const updatedBankBalances = bankBalances.map((account, index) =>
-          index === 0
-            ? { ...account, deposits: [...(Array.isArray(account.deposits) ? account.deposits : []), { date: depositDate, amount: depositAmount }] }
-            : account
+          index === 0 ? applyLiquidAccountTransaction(account, depositAmount, depositDate) : account
         );
         setBankBalances(updatedBankBalances);
         setHasUnsavedChanges(true);
@@ -693,14 +750,14 @@ function App() {
       const depositAmount = parseFloat(formData.initialInvestment) || 0;
       const depositDate = formData.purchaseDate;
       const trimmedName = (formData.stockName || '').trim();
-      const existingFund = bankSavingsFunds.find((fund) => fund.fundName === trimmedName);
+      const existingFund = findExistingAccount('bank_savings', formData, { bankSavingsFunds });
 
       if (existingFund) {
         // קופה קיימת עם אותו שם בדיוק: מוסיפים שורה חדשה לפנקס ההפקדות
         // שלה בלבד. מסלול ההשקעה/ריבית/צמידות למדד של הקופה הקיימת לא
         // משתנים כאן (אלה מתעדכנים בנפרד דרך הטבלה).
         const updatedBankSavingsFunds = bankSavingsFunds.map((fund) =>
-          fund.fundName === trimmedName
+          fund.id === existingFund.id
             ? { ...fund, deposits: [...(Array.isArray(fund.deposits) ? fund.deposits : []), { date: depositDate, amount: depositAmount }] }
             : fund
         );
@@ -803,12 +860,14 @@ function App() {
     
     let currentPrice = editingStock.currentPrice;
     let dailyChangePercent = editingStock.dailyChangePercent;
-    
+    let dailyChangeTradeDate = editingStock.dailyChangeTradeDate || null;
+
     if (formData.exchange === 'american') {
       const priceData = await fetchCurrentPrice(formData.stockName.trim());
       if (priceData) {
         currentPrice = priceData.currentPrice || 0;
         dailyChangePercent = priceData.changePercent || 0;
+        dailyChangeTradeDate = priceData.tradeDate || null;
       }
     } else if (formData.exchange === 'israeli') {
       // מנייה ישראלית - שומרים את המחיר הנוכחי ואחוז השינוי הקיימים
@@ -822,7 +881,8 @@ function App() {
       quantity: parseInt(formData.quantity),
       purchaseDate: formData.purchaseDate,
       currentPrice: currentPrice,
-      dailyChangePercent: dailyChangePercent
+      dailyChangePercent: dailyChangePercent,
+      dailyChangeTradeDate
     };
     
     if (formData.exchange === 'israeli') {
@@ -1062,7 +1122,8 @@ function App() {
     finishInlineEdit,
     handleKeyDown,
     handleDelete,
-    toggleGroup
+    toggleGroup,
+    onRecordTransaction: handleRecordTransaction
   };
 
   // THE EXPORT IS ALWAYS THE WHOLE PORTFOLIO.
@@ -1108,7 +1169,7 @@ function App() {
           <StockFormView
             isEditMode={isEditMode}
             formData={formData}
-            pensionFunds={pensionFunds}
+            holdings={holdings}
             handleSubmit={handleSubmit}
             handleInputChange={handleInputChange}
             handleBackToHome={handleBackToHome}

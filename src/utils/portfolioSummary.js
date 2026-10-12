@@ -7,10 +7,15 @@ import { TAX_RATE, calculateAmericanStockMetrics, calculatePensionPeriodReturn }
 import { normalizeIsraeliPrice } from './formatters';
 import { calculateStockRealGainTax, calculatePensionRealGainTax, calculateBankSavingsFundTax, monthKeyFromDate } from './cpiTax';
 import { computeBankSavingsFundValue } from './bankSavingsFund';
+import { effectiveDailyChangePercent, israelToday, marketSessionState } from './marketSession';
 
 // cpi = { currentIndex, indexByMonth } - אופציונלי. כל עוד המדד לא נטען
 // (או שהמשיכה נכשלה), נופלים חזרה לחישוב מס שטוח על הרווח הנומינלי
 // (כמו קודם), כדי שהאפליקציה תמשיך לעבוד גם בלי תלות ברשת/במדד.
+//
+// options.today ('YYYY-MM-DD', Israel date) decides which lots' daily
+// change counts: only those whose market traded today (see
+// utils/marketSession.js). Defaults to the real date; tests pin it.
 export const calculatePortfolioSummary = (
   israeliStocks,
   americanStocks,
@@ -18,9 +23,12 @@ export const calculatePortfolioSummary = (
   cashFunds,
   bankBalances,
   cpi = {},
-  bankSavingsFunds = []
+  bankSavingsFunds = [],
+  options = {}
 ) => {
   const { currentIndex = null, indexByMonth = {} } = cpi;
+  const today = options.today || israelToday();
+  const dailyPct = (stock) => effectiveDailyChangePercent(stock, today);
 
   // Israeli stocks
   const israeliSummary = israeliStocks.reduce((acc, stock) => {
@@ -67,7 +75,7 @@ export const calculatePortfolioSummary = (
     acc.totalRealGainILS += realGain;
     acc.totalInflationaryGainILS += inflationaryGain;
     acc.totalWeight += totalCurrentValue; // weight for daily-change percentage
-    acc.dailyChangeSum += (stock.dailyChangePercent || 0) * totalCurrentValue;
+    acc.dailyChangeSum += dailyPct(stock) * totalCurrentValue;
 
     return acc;
   }, {
@@ -97,7 +105,7 @@ export const calculatePortfolioSummary = (
     acc.totalCurrencyExemptGainILS += metrics.currencyExemptGainILS;
     acc.totalExchangeImpact += metrics.exchangeRateImpact;
     acc.totalWeight += metrics.totalCurrentValueILS; // weight for daily-change percentage
-    acc.dailyChangeSum += (stock.dailyChangePercent || 0) * metrics.totalCurrentValueILS;
+    acc.dailyChangeSum += dailyPct(stock) * metrics.totalCurrentValueILS;
 
     return acc;
   }, {
@@ -128,12 +136,12 @@ export const calculatePortfolioSummary = (
   // Daily profit split per exchange
   const israeliDailyProfitILS = israeliStocks.reduce((sum, stock) => {
     const totalCurrentValue = normalizeIsraeliPrice(stock.currentPrice) * (stock.quantity || 0);
-    return sum + ((stock.dailyChangePercent || 0) / 100) * totalCurrentValue;
+    return sum + (dailyPct(stock) / 100) * totalCurrentValue;
   }, 0);
 
   const americanDailyProfitUSD = americanStocks.reduce((sum, stock) => {
     const totalCurrentValueUSD = (stock.currentPrice || 0) * (stock.quantity || 0);
-    return sum + ((stock.dailyChangePercent || 0) / 100) * totalCurrentValueUSD;
+    return sum + (dailyPct(stock) / 100) * totalCurrentValueUSD;
   }, 0);
 
   // Total profit percentages per exchange
@@ -311,6 +319,13 @@ export const calculatePortfolioSummary = (
 
     // Weighted daily-change percentage
     weightedDailyChange: weightedDailyChange,
+    // Which markets that figure includes: 'today' (traded today), 'closed'
+    // (last session was an earlier day, so it contributes 0) or null (no
+    // holdings there) - lets the UI say what the number is made of.
+    dailyChangeSessions: {
+      israeli: marketSessionState(israeliStocks, today),
+      american: marketSessionState(americanStocks, today)
+    },
 
     // Daily profit in ILS and USD
     dailyProfitILS: dailyProfitILS,

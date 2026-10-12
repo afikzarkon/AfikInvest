@@ -3,6 +3,7 @@
 // unchanged, only the location moved.
 const axios = require('axios');
 const { getYahooCrumbAndCookie, invalidateYahooCrumb } = require('./yahooCrumb');
+const { tradeDateFromYahooMeta, lastSessionDate } = require('./marketCalendar');
 
 const YAHOO_CACHE_TTL_MS = 15 * 1000;
 const yahooChartCache = new Map();
@@ -78,7 +79,10 @@ async function getYahooPayload(symbol) {
 
     const payload = {
       currentPrice: Number.isFinite(currentPrice) ? currentPrice : null,
-      changePercent: Number.isFinite(finalChangePercent) ? finalChangePercent : 0
+      changePercent: Number.isFinite(finalChangePercent) ? finalChangePercent : 0,
+      // The session regularMarketPrice belongs to. Before the US open it is
+      // still yesterday's - see marketCalendar.js for why that matters.
+      tradeDate: tradeDateFromYahooMeta(meta) || lastSessionDate('us')
     };
     writeCachedYahoo(symbol, payload);
     return payload;

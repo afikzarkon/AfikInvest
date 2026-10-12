@@ -12,6 +12,7 @@ const { fetchTaseQuoteFromApi } = require('./taseQuoteApi');
 const { fetchTaseQuoteFromEod } = require('./taseHistoryApi');
 const { getYahooPayload, fetchYahooHistoricalRateForDate } = require('./yahooQuotes');
 const { searchIsraeliSecuritiesByName } = require('./bizportalSearch');
+const { lastSessionDate } = require('./marketCalendar');
 const { fetchTaseSecurityMeta, isSecurityIdQuery } = require('./taseSecurityLookup');
 
 const taseInFlight = new Map();
@@ -117,7 +118,13 @@ function resetSecurityMetaCache() {
 
 async function attemptTaseSource(source, stockId) {
   const result = await source.fn(stockId);
-  const payload = { currentPrice: result.currentPrice, changePercent: result.changePercent };
+  const payload = {
+    currentPrice: result.currentPrice,
+    changePercent: result.changePercent,
+    // Which session the change belongs to. The page scrape reports no date,
+    // so it is judged by the weekday calendar instead (see marketCalendar.js).
+    tradeDate: result.tradeDate || lastSessionDate('tase')
+  };
   if (!isUsableTasePayload(payload)) {
     const err = new Error(`${source.name} returned unusable payload`);
     err._debugTextSnippet = result._debugTextSnippet;

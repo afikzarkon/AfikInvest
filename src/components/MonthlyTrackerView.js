@@ -40,8 +40,12 @@ import {
 // there. Offering a second, manual place to declare the same flow created
 // two sources for one number with nothing to say which was right, and
 // invited double-counting - the declared amount and the ledger entry would
-// both be netted out. A liquid account has no such ledger, so for those
-// the user's declaration is the only source there is.
+// both be netted out.
+//
+// The liquid accounts have a ledger too (every deposit/withdrawal entered
+// through the add form), and when it has entries in a period those are
+// what the comparison uses. The declaration here is the fallback for a
+// period the ledger says nothing about - see compareMonthlySnapshots.
 //
 // Kept as strings while being edited (like every other numeric input in
 // this form), parsed into numbers (dropping blank/zero entries) just
@@ -141,14 +145,15 @@ function MonthlyTrackerView({
   // mid-period deposit isn't misread as investment growth. See that
   // function's own comment for the categories/limitations.
   const monthlyLiveHoldings = useMemo(
-    () => ({ israeliStocks, americanStocks, pensionFunds, bankSavingsFunds }),
-    [israeliStocks, americanStocks, pensionFunds, bankSavingsFunds]
+    () => ({ israeliStocks, americanStocks, pensionFunds, cashFunds, bankBalances, bankSavingsFunds }),
+    [israeliStocks, americanStocks, pensionFunds, cashFunds, bankBalances, bankSavingsFunds]
   );
   const monthlyComparisonRows = useMemo(
     () => compareMonthlySnapshots(baseMonthlySnapshot, compareMonthlySnapshot, monthlyLiveHoldings, monthlySnapshots),
     [baseMonthlySnapshot, compareMonthlySnapshot, monthlyLiveHoldings, monthlySnapshots]
   );
-  const currentMonthKey = new Date().toISOString().slice(0, 7);
+  // Israel's month, as the server files it (see utils/portfolioDates.js).
+  const currentMonthKey = todayDate.slice(0, 7);
   const currentMonthAlreadySaved = monthlySnapshots.some((s) => s.month === currentMonthKey);
 
   // "פתח פירוט מלא" / "קבץ לפי קטגוריות" - shared by the comparison table
@@ -183,6 +188,11 @@ function MonthlyTrackerView({
   const [editDraftCashFlows, setEditDraftCashFlows] = useState(emptyCashFlows);
   // Carried through the edit untouched - see extractLegacyCashFlows.
   const [editLegacyCashFlows, setEditLegacyCashFlows] = useState({});
+  // The date the edited figures are valid for. Correcting a figure doesn't
+  // move it; re-filling the month automatically does - to the date the
+  // auto-fill valued it at. null for a month saved before checkpoints
+  // carried a date, which stays undated rather than being given a guess.
+  const [editDraftAsOfDate, setEditDraftAsOfDate] = useState(null);
 
   const draftRowIdRef = useRef(0);
   const nextDraftRowId = () => {
@@ -228,6 +238,7 @@ function MonthlyTrackerView({
   const startEditingMonth = (snapshot) => {
     const savedCashFlows = snapshot.breakdown?.cashFlows;
     setEditingMonth(snapshot.month);
+    setEditDraftAsOfDate(snapshot.asOfDate || snapshot.breakdown?.asOfDate || null);
     setEditDraftBreakdown(buildDraftFromBreakdown(snapshot.breakdown));
     // Only the categories that still have an input become editable...
     setEditDraftCashFlows(
@@ -247,6 +258,7 @@ function MonthlyTrackerView({
     setEditDraftBreakdown(null);
     setEditDraftCashFlows(emptyCashFlows());
     setEditLegacyCashFlows({});
+    setEditDraftAsOfDate(null);
   };
 
   // Both editors update one field of one row, addressed by its stable
@@ -321,6 +333,8 @@ function MonthlyTrackerView({
     // Rebuilt through the same draft factory as every other row, so
     // auto-filled rows are editable afterwards exactly like typed ones.
     setEditDraftBreakdown(buildDraftFromBreakdown(breakdown));
+    // The figures now describe the date they were valued at.
+    setEditDraftAsOfDate(monthEndDate(editingMonth, todayDate));
   };
 
   const handleEditCashFlowChange = (categoryKey, rawValue) => {
@@ -343,6 +357,7 @@ function MonthlyTrackerView({
     // Legacy first, so an edited liquid category always wins over whatever
     // was stored for it - the two key sets are otherwise disjoint.
     breakdown.cashFlows = { ...editLegacyCashFlows, ...parseCashFlows(editDraftCashFlows) };
+    if (editDraftAsOfDate) breakdown.asOfDate = editDraftAsOfDate;
     const ok = await onUpdateMonthlySnapshot(editingMonth, draftTotal, breakdown);
     if (ok) cancelEditingMonth();
   };
@@ -473,6 +488,9 @@ function MonthlyTrackerView({
         .filter((it) => it.key && Number.isFinite(it.value));
     });
     breakdown.cashFlows = parseCashFlows(manualAddCashFlows);
+    // Valid for the date the derived rows were valued at - the month's last
+    // day, or today for the month in progress - not "some time that month".
+    breakdown.asOfDate = monthEndDate(manualAddMonth, todayDate);
     const ok = await onAddManualMonthlySnapshot(manualAddMonth, manualAddTotal, breakdown);
     if (ok) setShowManualAddForm(false);
   };
@@ -496,6 +514,15 @@ function MonthlyTrackerView({
     setSaveCashFlows(emptyCashFlows());
   };
 
+  // "נכון ל-12/10/2026" - the date a checkpoint's figures are valid for.
+  // Months saved before checkpoints carried one say so instead of showing
+  // the month-end stand-in the comparison falls back to.
+  const formatAsOf = (snapshot) => {
+    const date = snapshot && (snapshot.asOfDate || snapshot.breakdown?.asOfDate);
+    if (!date) return 'תאריך מדויק לא נשמר (מחושב לסוף החודש)';
+    const [y, m, d] = date.split('-');
+    return `נכון ל-${d}/${m}/${y}`;
+  };
   const formatMoneyCell = (v) => (v != null ? `${formatPriceWithSign(v)} ₪` : '—');
   const formatPercentCell = (v) => (v != null ? `${v >= 0 ? '+' : ''}${v.toFixed(1)}%` : '—');
   const percentCellClass = (v) => (v == null ? '' : v >= 0 ? 'profit-positive' : 'profit-negative');
@@ -507,9 +534,10 @@ function MonthlyTrackerView({
   const renderCashFlowInputs = (values, onChange, idPrefix) => (
     <div className="monthly-cashflow-inputs">
       <p className="monthly-cashflow-hint">
-        תזרים חיצוני נטו בתקופה (₪, אופציונלי) - הפקדה = מספר חיובי, משיכה = מספר שלילי. רלוונטי רק לעו"ש, לקרנות
-        כספיות ולקופות חיסכון, שאין להן שערי סגירה יומיים. עבור מניות וקופות גמל, ההפקדות והרכישות נלקחות אוטומטית
-        מהתאריכים והסכומים שבטבלאות הראשיות - אין צורך (ואי אפשר) להזין אותן כאן.
+        תזרים חיצוני נטו בתקופה (₪, אופציונלי) - הפקדה = מספר חיובי, משיכה = מספר שלילי. הפקדות ומשיכות שנרשמו
+        בפנקס של החשבון (דרך "הוספה") נלקחות ממנו אוטומטית לפי התאריך שלהן, ובמקרה כזה הסכום שמוזן כאן לא נספר
+        פעמיים. השדה נועד לתקופה שבה לא נרשמה בפנקס שום תנועה. עבור מניות וקופות גמל, ההפקדות והרכישות תמיד נלקחות
+        מהטבלאות הראשיות.
       </p>
       <div className="monthly-cashflow-grid">
         {MANUAL_ENTRY_CATEGORIES.map((key) => (
@@ -779,8 +807,14 @@ function MonthlyTrackerView({
                       <thead>
                         <tr>
                           <th>קטגוריה{detailedView ? ' / נכס' : ''}</th>
-                          <th>{formatMonthLabel(effectiveBaseMonth)}</th>
-                          <th>{formatMonthLabel(effectiveCompareMonth)}</th>
+                          <th>
+                            {formatMonthLabel(effectiveBaseMonth)}
+                            <div className="monthly-cashflow-note">{formatAsOf(baseMonthlySnapshot)}</div>
+                          </th>
+                          <th>
+                            {formatMonthLabel(effectiveCompareMonth)}
+                            <div className="monthly-cashflow-note">{formatAsOf(compareMonthlySnapshot)}</div>
+                          </th>
                           <th title="כשיש היסטוריית הפקדות/רכישות לקטגוריה, השינוי מנוטרל מהשפעת כסף חדש שנכנס באמצע התקופה - הוא לא נספר כתשואה">
                             שינוי (מנוטרל הפקדות)
                           </th>
@@ -881,6 +915,13 @@ function MonthlyTrackerView({
                           <span className="date-label">
                             {formatMonthLabel(historySnapshot.month)} — סה"כ{' '}
                             {formatMoneyCell(isEditingThis ? draftTotal : historySnapshot.totalValueILS)}
+                            <span className="monthly-cashflow-note">
+                              {' '}
+                              ·{' '}
+                              {formatAsOf(
+                                isEditingThis ? { asOfDate: editDraftAsOfDate } : historySnapshot
+                              )}
+                            </span>
                           </span>
                           <div className="monthly-toolbar-buttons">
                             {isEditingThis ? (

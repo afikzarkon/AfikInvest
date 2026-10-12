@@ -14,6 +14,7 @@
 import { normalizeIsraeliPrice } from './formatters';
 import { calculateAmericanStockMetrics, calculatePensionPeriodReturn } from './portfolioMath';
 import { computeBankSavingsFundValue } from './bankSavingsFund';
+import { effectiveDailyChangePercent } from './marketSession';
 import { israeliStockDisplayName, effectiveExchangeForIsraeliStock } from './israeliEtfClassifier';
 
 const round2 = (n) => Math.round((n || 0) * 100) / 100;
@@ -68,7 +69,7 @@ export const buildIsraeliStocksExportRows = (israeliStocks) =>
       'מחיר קנייה (₪)': round2(stock.purchasePrice || 0),
       'כמות': quantity,
       'מחיר נוכחי (₪)': round2(currentPrice),
-      'שינוי יומי (%)': round2(stock.dailyChangePercent || 0),
+      'שינוי יומי (%)': round2(effectiveDailyChangePercent(stock)),
       'סה"כ רכישה (₪)': round2(totalPurchase),
       'סה"כ שווי נוכחי (₪)': round2(totalCurrentValue),
       'רווח/הפסד (₪)': round2(profit),
@@ -87,7 +88,7 @@ export const buildAmericanStocksExportRows = (americanStocks) =>
       'מחיר קנייה ($)': round2(stock.purchasePrice || 0),
       'כמות': quantity,
       'מחיר נוכחי ($)': round2(stock.currentPrice || 0),
-      'שינוי יומי (%)': round2(stock.dailyChangePercent || 0),
+      'שינוי יומי (%)': round2(effectiveDailyChangePercent(stock)),
       // Both rates, because the gap between them is the whole of the
       // currency effect the last column reports.
       'שער חליפין בקנייה': round2(stock.exchangeRate || 0),

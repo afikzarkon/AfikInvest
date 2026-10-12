@@ -82,6 +82,7 @@ async function fetchTaseQuoteFromEod(stockId) {
   return {
     currentPrice: Number.isFinite(item.CloseRate) ? item.CloseRate : null,
     changePercent: Number.isFinite(item.Change) ? item.Change : null,
+    tradeDate: taseDateToIso(item.TradeDate),
     _debugPriceMatch: {
       matchedLabel: 'EOD CloseRate',
       rawToken: String(item.CloseRate),

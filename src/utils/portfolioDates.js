@@ -1,3 +1,5 @@
+import { israelToday } from './marketSession';
+
 // Dates derived from the portfolio itself, shared by the pages that need
 // the same answer.
 //
@@ -42,8 +44,11 @@ export function computeFirstStockPurchaseDate({ israeliStocks = [], americanStoc
   return computePortfolioInceptionDate({ israeliStocks, americanStocks });
 }
 
-export function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+// Today's date in ISRAEL, not in UTC. toISOString() is UTC, which is still
+// "yesterday" until 02:00/03:00 Israel time - long enough for a save made
+// just after midnight on the 1st to be filed under the previous month.
+export function todayISO(now = new Date()) {
+  return israelToday(now);
 }
 
 // THE QUICK PERIOD TOGGLES.

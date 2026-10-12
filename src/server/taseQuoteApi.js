@@ -17,6 +17,7 @@
 // which is exactly why it sits at the head of a chain rather than alone -
 // quotesRoutes.js falls through to the EOD API and then the scraper.
 const axios = require('axios');
+const { taseDateToIso } = require('./taseHistoryApi');
 
 const TASE_QUOTE_URL = 'https://api.tase.co.il/api/company/securitydata';
 
@@ -58,6 +59,9 @@ async function fetchTaseQuoteFromApi(stockId) {
   return {
     currentPrice: typeof data.LastRate === 'number' ? data.LastRate : null,
     changePercent: typeof data.Change === 'number' ? data.Change : null,
+    // The session that Change belongs to - TASE keeps reporting the last
+    // session's figures until the next one opens (see marketCalendar.js).
+    tradeDate: taseDateToIso(data.TradeDate),
     // Same diagnostic shape the scraper returns, so quotesRoutes.js's
     // success logging reads identically no matter which source won.
     _debugPriceMatch: {

@@ -7,6 +7,7 @@
 // schedule, then browses/compares later (see PortfolioAnalysisView.js's
 // "מעקב חודשי" section).
 const { readAuthUserFromRequest, getJwtSecret } = require('./authRoutes');
+const { dateInTimeZone } = require('./marketCalendar');
 
 function requireAuth(req, res, next) {
   try {
@@ -23,11 +24,55 @@ function requireAuth(req, res, next) {
 // for the date, same reasoning as snapshotRoutes.js's todayDateString()) so
 // repeated saves within the same calendar month update that one row
 // (upsert) instead of creating a new entry per click.
+//
+// Israel's calendar, not UTC's: toISOString() still reads as last month
+// until 02:00/03:00 on the 1st, which filed early-morning saves under the
+// wrong month.
+function todayString() {
+  return dateInTimeZone(new Date(), 'Asia/Jerusalem');
+}
+
 function currentMonthString() {
-  return new Date().toISOString().slice(0, 7);
+  return todayString().slice(0, 7);
 }
 
 const MONTH_KEY_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+const DATE_RE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+
+// THE DATE A CHECKPOINT IS VALID FOR.
+//
+// A month key alone says nothing about WHEN in the month the figures were
+// taken - a live save on the 3rd and an auto-filled month-end valuation
+// both read "2026-09". The comparison needs the real date to know which
+// deposits/withdrawals fall between two checkpoints: one made on the 20th
+// is inside the period if the checkpoint was the 10th, and already in the
+// value if it was the 30th. Getting that wrong counts the deposit as growth,
+// or nets it out twice.
+//
+// Stored as breakdown.asOfDate, next to the breakdown's other reserved key
+// (cashFlows), so it needs no schema change. Must fall inside its own month
+// and not in the future; anything else is replaced by the latest date the
+// month can be valid for (its last day, or today for the current month).
+function lastValidDateOfMonth(month) {
+  const [year, mm] = month.split('-').map(Number);
+  const lastDay = new Date(Date.UTC(year, mm, 0)).toISOString().slice(0, 10);
+  const today = todayString();
+  return lastDay > today ? today : lastDay;
+}
+
+function resolveAsOfDate(month, requested) {
+  if (typeof requested === 'string' && DATE_RE.test(requested)) {
+    if (requested.slice(0, 7) === month && requested <= todayString()) return requested;
+  }
+  return lastValidDateOfMonth(month);
+}
+
+function serializeBreakdown(rawBreakdown, asOfDate) {
+  const breakdown = rawBreakdown && typeof rawBreakdown === 'object' ? { ...rawBreakdown } : {};
+  if (asOfDate) breakdown.asOfDate = asOfDate;
+  else delete breakdown.asOfDate;
+  return JSON.stringify(breakdown);
+}
 
 function mountMonthlySnapshotRoutes(app, store) {
   app.post('/api/portfolio-monthly-snapshot', requireAuth, async (req, res) => {
@@ -38,11 +83,13 @@ function mountMonthlySnapshotRoutes(app, store) {
         return res.status(400).json({ error: 'totalValueILS לא תקין' });
       }
       const snapshotMonth = currentMonthString();
-      const breakdown =
-        body.breakdown && typeof body.breakdown === 'object' ? JSON.stringify(body.breakdown) : null;
+      // A live save is valid for today - the server's today, whatever the
+      // client claims.
+      const asOfDate = todayString();
+      const breakdown = serializeBreakdown(body.breakdown, asOfDate);
 
       await store.upsertMonthlySnapshot(req.user.id, snapshotMonth, totalValueILS, breakdown);
-      return res.json({ ok: true, month: snapshotMonth });
+      return res.json({ ok: true, month: snapshotMonth, asOfDate });
     } catch (err) {
       console.error('[monthly-snapshot] failed to save snapshot', err);
       return res.status(500).json({ error: 'שגיאת שרת' });
@@ -68,11 +115,14 @@ function mountMonthlySnapshotRoutes(app, store) {
       if (!Number.isFinite(totalValueILS) || totalValueILS < 0) {
         return res.status(400).json({ error: 'totalValueILS לא תקין' });
       }
-      const breakdown =
-        body.breakdown && typeof body.breakdown === 'object' ? JSON.stringify(body.breakdown) : null;
+      // A backfilled month is valid for the date its figures were valued
+      // at (the client's auto-fill values a month at its last day, or today
+      // for the month in progress) - checked to fall inside that month.
+      const asOfDate = resolveAsOfDate(month, body.breakdown && body.breakdown.asOfDate);
+      const breakdown = serializeBreakdown(body.breakdown, asOfDate);
 
       await store.upsertMonthlySnapshot(req.user.id, month, totalValueILS, breakdown);
-      return res.json({ ok: true, month });
+      return res.json({ ok: true, month, asOfDate });
     } catch (err) {
       console.error('[monthly-snapshot] failed to add manual snapshot', err);
       return res.status(500).json({ error: 'שגיאת שרת' });
@@ -81,7 +131,12 @@ function mountMonthlySnapshotRoutes(app, store) {
 
   app.get('/api/portfolio-monthly-snapshots', requireAuth, async (req, res) => {
     try {
-      const snapshots = await store.listMonthlySnapshots(req.user.id);
+      const snapshots = (await store.listMonthlySnapshots(req.user.id)).map((snap) => ({
+        ...snap,
+        // null for a month saved before checkpoints recorded their date -
+        // the comparison falls back to month boundaries for those.
+        asOfDate: (snap.breakdown && snap.breakdown.asOfDate) || null
+      }));
       return res.json({ snapshots });
     } catch (err) {
       console.error('[monthly-snapshot] failed to list snapshots', err);
@@ -104,8 +159,13 @@ function mountMonthlySnapshotRoutes(app, store) {
       if (!Number.isFinite(totalValueILS) || totalValueILS < 0) {
         return res.status(400).json({ error: 'totalValueILS לא תקין' });
       }
-      const breakdown =
-        body.breakdown && typeof body.breakdown === 'object' ? JSON.stringify(body.breakdown) : null;
+      // An edit carries the date its figures are valid for: unchanged when
+      // only a figure was corrected, the valuation date when the month was
+      // re-filled automatically. A month that never had one (saved before
+      // this existed) stays undated rather than being given a guess.
+      const requestedAsOf = body.breakdown && body.breakdown.asOfDate;
+      const asOfDate = requestedAsOf ? resolveAsOfDate(month, requestedAsOf) : null;
+      const breakdown = serializeBreakdown(body.breakdown, asOfDate);
 
       const updated = await store.updateMonthlySnapshot(req.user.id, month, totalValueILS, breakdown);
       if (!updated) {
@@ -138,4 +198,4 @@ function mountMonthlySnapshotRoutes(app, store) {
   });
 }
 
-module.exports = { mountMonthlySnapshotRoutes };
+module.exports = { mountMonthlySnapshotRoutes, resolveAsOfDate, serializeBreakdown };
