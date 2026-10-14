@@ -6,7 +6,7 @@ import { applyLedgerValueEditPayload } from '../utils/portfolioMath';
 // The money-market fund and current-account tables, wired the way App.js
 // wires them: a 'currentValue' edit goes through applyLedgerValueEditPayload,
 // anything else replaces the field.
-function Harness({ initialCashFunds = [], initialBankBalances = [], onEditTransaction }) {
+function Harness({ initialCashFunds = [], initialBankBalances = [], onEditTransaction, isEditMode = true }) {
   const [cashFunds, setCashFunds] = useState(initialCashFunds);
   const [bankBalances, setBankBalances] = useState(initialBankBalances);
   const [editingField, setEditingField] = useState(null);
@@ -30,7 +30,7 @@ function Harness({ initialCashFunds = [], initialBankBalances = [], onEditTransa
       sections={['cash', 'bank']}
       cpi={null}
       showAdditionalData={true}
-      isEditMode={true}
+      isEditMode={isEditMode}
       editingField={editingField}
       handleCellClick={(id, field) => setEditingField(`${id}-${field}`)}
       handleInlineEdit={handleInlineEdit}
@@ -93,10 +93,41 @@ describe('money-market fund (כספית שקלית)', () => {
     expect(row.children[5].textContent).toBe('-');
 
     recordValue(row.children[3], '15000', '2026-10-05');
-    expect(row.children[7].textContent).toBe('16500 ₪');
-    expect(row.children[5].textContent).toBe('-9.09%');
+    // The previous value is the deposits' own sum, so it says so, and the
+    // return is measured from the opening.
+    expect(row.children[7].textContent).toBe('16500 ₪סכום ההפקדות');
+    expect(row.children[5].textContent).toBe('-9.09%מאז הפתיחה (2026-10-04)');
     expect(row.children[6].textContent).toContain('-9.09%');
     expect(row.children[6].textContent).toContain('-1500 ₪');
+  });
+
+  // 40,000 on 02/04 and 20,000 on 10/10, worth 70,000 on 14/10: the 10,000
+  // gain is measured against the money AS IT WAS INVESTED - the 40,000 for
+  // all 195 days, the 20,000 for only the last 4:
+  //   10,000 / (40,000 + 20,000 x 4/195) = 24.75%
+  // not against the 60,000 total as if it had all been in since 10/10
+  // (+16.67% in four days).
+  test('a deposit made late in the period counts only for the days it was invested', () => {
+    const fund = {
+      id: 15,
+      fundName: 'כספית',
+      securityId: '5119609',
+      valueFromLedger: true,
+      currentValue: 60000,
+      amount: 60000,
+      currentValueDate: '2026-10-10',
+      previousValue: 0,
+      previousValueDate: '',
+      deposits: [
+        { date: '2026-04-02', amount: 40000, txId: 'a' },
+        { date: '2026-10-10', amount: 20000, txId: 'b' }
+      ]
+    };
+    const { container } = render(<Harness initialCashFunds={[fund]} />);
+    const row = container.querySelector('tbody tr');
+    recordValue(row.children[3], '70000', '2026-10-14');
+    expect(row.children[5].textContent).toBe('24.75%מאז הפתיחה (2026-04-02)');
+    expect(row.children[6].textContent).toContain('16.67%'); // overall: 10,000 on 60,000 paid in
   });
 
   test('a withdrawal shows in the expanded ledger labeled "(משיכה)"', () => {
@@ -127,6 +158,20 @@ describe('money-market fund (כספית שקלית)', () => {
 });
 
 describe('correcting a ledger row', () => {
+  // Like every other change to a table, from the page's "מצב עריכה" - not
+  // a button sitting beside every row all the time.
+  test('the edit buttons are there only in edit mode', () => {
+    const fund = { id: 16, fundName: 'כספית', securityId: '1', currentValue: 500, currentValueDate: '2026-10-01', deposits: [{ date: '2026-10-01', amount: 500, txId: 'tx-2' }] };
+    const viewing = render(<Harness initialCashFunds={[fund]} isEditMode={false} />);
+    fireEvent.click(viewing.container.querySelector('.expand-button'));
+    expect(viewing.queryByRole('button', { name: /עריכת התנועה/ })).toBeNull();
+    viewing.unmount();
+
+    const editing = render(<Harness initialCashFunds={[fund]} isEditMode={true} />);
+    fireEvent.click(editing.container.querySelector('.expand-button'));
+    expect(editing.getByRole('button', { name: 'עריכת התנועה מ-2026-10-01' })).toBeInTheDocument();
+  });
+
   test('a row recorded through the ledger opens the entry form on its transaction', () => {
     const onEditTransaction = jest.fn();
     const fund = {

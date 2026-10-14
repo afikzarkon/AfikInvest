@@ -202,6 +202,23 @@ function FinancialAccountsTables({
     );
   };
 
+  // When the value an account was last compared against is the deposits'
+  // own sum (no statement before it), its return is measured from the
+  // opening instead (portfolioMath.js's calculateLedgerPeriodReturn) - and
+  // the table says so, rather than leaving that sum to read as a statement.
+  const firstMovementDate = (item) =>
+    (Array.isArray(item.deposits) ? item.deposits : []).map((d) => (d && d.date ? d.date.slice(0, 10) : '')).filter(Boolean).sort()[0] || '';
+  const renderSinceOpeningNote = (item, percent) =>
+    item.previousValueFromLedger && percent !== null && firstMovementDate(item) ? (
+      <small className="form-help" style={{ display: 'block' }}>{`מאז הפתיחה (${formatDate(firstMovementDate(item))})`}</small>
+    ) : null;
+  const renderPreviousValue = (item, previousValue) => (
+    <>
+      {`${formatPriceWithSign(previousValue)} ₪`}
+      {item.previousValueFromLedger && <small className="form-help" style={{ display: 'block' }}>סכום ההפקדות</small>}
+    </>
+  );
+
   // What has been paid in, net of withdrawals.
   const netMovements = (item) => (Array.isArray(item.deposits) ? item.deposits : []).reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
 
@@ -236,7 +253,8 @@ function FinancialAccountsTables({
   // behind it and is edited in place.
   const [movementDraft, setMovementDraft] = useState(null);
   const movementKey = (exchange, item, index) => `${exchange}:${item.id}:${index}`;
-  const isEditingMovement = (exchange, item, index) => !!movementDraft && movementDraft.key === movementKey(exchange, item, index);
+  const isEditingMovement = (exchange, item, index) =>
+    isEditMode && !!movementDraft && movementDraft.key === movementKey(exchange, item, index);
   const startMovementEdit = (item, index, exchange) => {
     const row = (Array.isArray(item.deposits) ? item.deposits : [])[index];
     if (!row) return;
@@ -450,7 +468,7 @@ function FinancialAccountsTables({
                           שלהן תעקוף את applyPensionValueUpdate שדואג לשמר היסטוריה נכונה
                           כשמעדכנים "שווי נוכחי" (ראו portfolioMath.js). זה בעצמו הבאג שהיה
                           כאן בעבר - השדות האלה משתנים רק כתוצאה מעדכון "שווי נוכחי" חדש. */}
-                      <td data-label={PENSION_COL.previous}>{`${formatPriceWithSign(previousValue)} ₪`}</td>
+                      <td data-label={PENSION_COL.previous}>{renderPreviousValue(item, previousValue)}</td>
                       {showAdditionalData && (
                         <td data-label={PENSION_COL.previousDate}>{item.previousValueDate ? formatDate(item.previousValueDate) : '-'}</td>
                       )}
@@ -486,6 +504,7 @@ function FinancialAccountsTables({
                           </span>
                         )}
                         {formatPercent(previousProfitPercent)}
+                        {renderSinceOpeningNote(item, previousProfitPercent)}
                       </td>
                       <td className={profitPercent > 0 ? 'profit-positive' : profitPercent < 0 ? 'profit-negative' : ''} data-label={PENSION_COL.cumulative}>
                         {formatPercent(profitPercent)}
@@ -512,7 +531,7 @@ function FinancialAccountsTables({
                       <tr key={i} className={`${isEditMode ? 'editable-row' : ''} detail-row`}>
                         <td style={{ paddingLeft: '20px' }} data-label={DEPOSIT_COL.date}>{renderMovementDate(item, d, i, 'pension')}</td>
                         <td data-label={DEPOSIT_COL.amount}>{renderMovementAmount(item, d, i, 'pension')}</td>
-                        <td>{renderMovementButtons(item, d, i, 'pension')}</td>
+                        <td></td>
                         <td></td>
                         <td></td>
                         {showAdditionalData && <td></td>}
@@ -529,6 +548,7 @@ function FinancialAccountsTables({
                         <td></td>
                         {isEditMode && (
                           <td>
+                            {renderMovementButtons(item, d, i, 'pension')}{' '}
                             <button onClick={() => deleteDeposit(item, i, 'pension')} className="delete-button">מחק הפקדה</button>
                           </td>
                         )}
@@ -649,6 +669,7 @@ function FinancialAccountsTables({
                             </span>
                           )}
                           {formatPercent(periodReturnPercent)}
+                          {renderSinceOpeningNote(item, periodReturnPercent)}
                         </td>
                         <td className={overall && overall.percent > 0 ? 'profit-positive' : overall && overall.percent < 0 ? 'profit-negative' : ''} data-label={CASH_COL.totalReturn}>
                           {overall ? (
@@ -660,7 +681,7 @@ function FinancialAccountsTables({
                         </td>
                         {/* previousValue/previousValueDate הן תצוגה בלבד בכוונה - ראו
                             הערת השדות המקבילים בטבלת קופות הגמל למעלה. */}
-                        {showAdditionalData && <td data-label={CASH_COL.previous}>{`${formatPriceWithSign(previousValue)} ₪`}</td>}
+                        {showAdditionalData && <td data-label={CASH_COL.previous}>{renderPreviousValue(item, previousValue)}</td>}
                         {showAdditionalData && (
                           <td data-label={CASH_COL.previousDate}>{item.previousValueDate ? formatDate(item.previousValueDate) : '-'}</td>
                         )}
@@ -680,7 +701,7 @@ function FinancialAccountsTables({
                         <tr key={i} className={`${isEditMode ? 'editable-row' : ''} detail-row`}>
                           <td style={{ paddingLeft: '20px' }} data-label={DEPOSIT_COL.date}>{renderMovementDate(item, d, i, 'cash_fund')}</td>
                           <td data-label={DEPOSIT_COL.amount}>{renderMovementAmount(item, d, i, 'cash_fund')}</td>
-                          <td>{renderMovementButtons(item, d, i, 'cash_fund')}</td>
+                          <td></td>
                           <td></td>
                           <td></td>
                           <td></td>
@@ -689,6 +710,7 @@ function FinancialAccountsTables({
                           {showAdditionalData && <td></td>}
                           {isEditMode && (
                             <td>
+                              {renderMovementButtons(item, d, i, 'cash_fund')}{' '}
                               <button onClick={() => deleteDeposit(item, i, 'cash_fund')} className="delete-button">מחק</button>
                             </td>
                           )}
@@ -751,9 +773,10 @@ function FinancialAccountsTables({
                         <tr key={i} className={`${isEditMode ? 'editable-row' : ''} detail-row`}>
                           <td style={{ paddingLeft: '20px' }} data-label={DEPOSIT_COL.amount}>{renderMovementAmount(item, d, i, 'bank')}</td>
                           <td data-label={DEPOSIT_COL.date}>{renderMovementDate(item, d, i, 'bank')}</td>
-                          <td>{renderMovementButtons(item, d, i, 'bank')}</td>
+                          <td></td>
                           {isEditMode && (
                             <td>
+                              {renderMovementButtons(item, d, i, 'bank')}{' '}
                               <button onClick={() => deleteDeposit(item, i, 'bank')} className="delete-button">מחק</button>
                             </td>
                           )}
@@ -886,7 +909,7 @@ function FinancialAccountsTables({
                       <tr key={i} className={`${isEditMode ? 'editable-row' : ''} detail-row`}>
                         <td style={{ paddingLeft: '20px' }} data-label={DEPOSIT_COL.date}>{renderMovementDate(item, d, i, 'bank_savings')}</td>
                         <td data-label={DEPOSIT_COL.amount}>{renderMovementAmount(item, d, i, 'bank_savings')}</td>
-                        <td>{renderMovementButtons(item, d, i, 'bank_savings')}</td>
+                        <td></td>
                         <td></td>
                         <td></td>
                         <td></td>
@@ -895,6 +918,7 @@ function FinancialAccountsTables({
                         {showAdditionalData && <td></td>}
                         {isEditMode && (
                           <td>
+                            {renderMovementButtons(item, d, i, 'bank_savings')}{' '}
                             <button onClick={() => deleteBankSavingsDeposit(item, i)} className="delete-button">מחק הפקדה</button>
                           </td>
                         )}

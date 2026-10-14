@@ -141,16 +141,32 @@ export const applyLedgerValueEditPayload = (item, payload) => {
 // ב-25 לחודש מקבלת משקל חלקי בלבד (~0.17) ולא מלא - ולכן משפיעה הרבה
 // פחות על adjustedPreviousValue מהחישוב השטוח הישן. משיכה (amount שלילי)
 // מטופלת בדיוק באותה נוסחה - הנוסחה agnostic לסימן.
+//
+// A "previous" value the LEDGER made (the deposits' sum before any statement
+// was recorded - see transactionLedger.js's syncLedgerValue) is not a
+// measurement: it assumes nothing grew between the deposits. Measuring from
+// it would hand all the growth since the opening to the days after the
+// LAST deposit - 40,000 on 02/04 and 20,000 on 10/10, worth 70,000 on 14/10,
+// read as +16.67% earned in four days. So the period then starts at the
+// account's opening, from nothing, with every deposit a dated flow: the
+// 20,000 counts for the four days it was invested, and the return is
+// 10,000 / (40,000 + 20,000 x 4/195) = +24.75%.
 export const calculateLedgerPeriodReturn = (item) => {
   const currentValue = item.currentValue ?? item.amount ?? 0;
-  const previousValue = item.previousValue ?? 0;
   const deposits = Array.isArray(item.deposits) ? item.deposits : [];
-  const periodDeposits = filterDepositsInRange(deposits, item.previousValueDate, item.currentValueDate);
+  const sinceOpening = !!item.previousValueFromLedger;
+  const openingDate = deposits
+    .map((d) => (d && d.date ? d.date.slice(0, 10) : ''))
+    .filter(Boolean)
+    .sort()[0];
+  const previousValue = sinceOpening ? 0 : item.previousValue ?? 0;
+  const periodStart = sinceOpening ? openingDate : item.previousValueDate;
+  const periodDeposits = filterDepositsInRange(deposits, sinceOpening ? '' : item.previousValueDate, item.currentValueDate);
   const { netCashFlow: depositsInPeriod, percent: dietzPercent } = calculateModifiedDietzReturn({
     beginningValue: previousValue,
     endingValue: currentValue,
     cashFlows: periodDeposits,
-    periodStart: item.previousValueDate,
+    periodStart,
     periodEnd: item.currentValueDate
   });
   const adjustedPreviousValue = previousValue + depositsInPeriod;
