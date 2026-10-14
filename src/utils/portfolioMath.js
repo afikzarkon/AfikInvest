@@ -105,10 +105,16 @@ export const sumDepositsInRange = (deposits, fromDateExclusive, toDateInclusive)
 export const applyLedgerValueUpdate = (item, newCurrentValue, newCurrentValueDate) => {
   const oldCurrentValue = item.currentValue ?? item.amount ?? 0;
   const oldCurrentValueDate = item.currentValueDate || '';
+  // A value the ledger made (the sum of the deposits, before any statement
+  // - see transactionLedger.js's syncLedgerValue) becomes the previous
+  // value marked as such, and the account's value is the statement's from
+  // now on.
+  const { valueFromLedger, previousValueFromLedger, ...rest } = item;
   return {
-    ...item,
+    ...rest,
     previousValue: oldCurrentValue,
     previousValueDate: oldCurrentValueDate,
+    ...(valueFromLedger ? { previousValueFromLedger: true } : {}),
     currentValue: newCurrentValue,
     currentValueDate: newCurrentValueDate,
     amount: newCurrentValue

@@ -32,6 +32,7 @@ function AccountsPage({
   handleDelete,
   onOpenLedgerEntry,
   onDeleteTransaction,
+  onEditTransaction,
   ...toolbarProps
 }) {
   return (
@@ -65,6 +66,7 @@ function AccountsPage({
         handleDelete={handleDelete}
         onOpenLedgerEntry={onOpenLedgerEntry}
         onDeleteTransaction={onDeleteTransaction}
+        onEditTransaction={onEditTransaction}
       />
     </AssetPageLayout>
   );

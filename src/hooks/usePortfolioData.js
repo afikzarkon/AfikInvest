@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { apiUrl } from '../apiBase';
 import { normalizeIsraeliStocksFromStorage } from '../utils/formatters';
+import { normalizeLedgerAccounts } from '../shared/transactionLedger';
 
 export function usePortfolioData(user, authHeader) {
   const [israeliStocks, setIsraeliStocks] = useState([]);
@@ -53,7 +54,10 @@ export function usePortfolioData(user, authHeader) {
           headers: { ...authHeader() }
         });
         if (!r.ok) throw new Error('load failed');
-        const d = await r.json();
+        // Accounts opened before their value followed their ledger are
+        // repaired as they load (see transactionLedger.js); the repair is
+        // saved with the next save or ledger change.
+        const d = normalizeLedgerAccounts(await r.json());
         if (cancelled) return;
         setIsraeliStocks(normalizeIsraeliStocksFromStorage(d.israeliStocks || []));
         setAmericanStocks(Array.isArray(d.americanStocks) ? d.americanStocks : []);

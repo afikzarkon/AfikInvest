@@ -325,6 +325,14 @@ function App() {
   const TABLE_TO_ASSET_CLASS = { pension: 'pension', cash_fund: 'cashFunds', bank: 'bank', bank_savings: 'bankSavings' };
   const handleOpenLedgerEntry = (itemType, account) =>
     openAssetEntry({ assetClass: TABLE_TO_ASSET_CLASS[itemType] || itemType, assetId: account.id, action: 'DEPOSIT' });
+  // "עריכה" on a ledger row in the tables: the form, filled in with the
+  // transaction behind that row, so its date and amount are corrected
+  // through the ledger (revert + re-apply in one step).
+  const handleEditLedgerMovement = (txId) => {
+    const tx = (transactions || []).find((t) => t.id === txId);
+    if (tx) openAssetEntry({ transaction: tx });
+    else window.alert('העסקה לא נמצאה ביומן העסקאות - רעננו את הדף ונסו שוב.');
+  };
 
   // A bookmarked/typed /add opens the form over the dashboard.
   useEffect(() => {
@@ -688,7 +696,8 @@ function App() {
     handleDelete,
     toggleGroup,
     onOpenLedgerEntry: handleOpenLedgerEntry,
-    onDeleteTransaction: handleDeleteTransaction
+    onDeleteTransaction: handleDeleteTransaction,
+    onEditTransaction: handleEditLedgerMovement
   };
 
   // THE EXPORT IS ALWAYS THE WHOLE PORTFOLIO.

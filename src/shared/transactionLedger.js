@@ -335,6 +335,101 @@ const clonePortfolio = (portfolio) => {
   return out;
 };
 
+// ---------------------------------------------------------------------------
+// An account's value, from its ledger, until a statement says otherwise
+//
+// A provident fund, money-market fund or current account carries a RECORDED
+// value (currentValue/currentValueDate) that readers treat as "the balance
+// at the end of that day, every movement dated up to then included" - see
+// liquidBalance.js. That holds for a value typed in from a statement. It
+// did not hold for the value an account was OPENED with: the opening
+// deposit was stored as a recorded value dated that day, so a second
+// deposit the same day (or one back-dated before it) was taken to be
+// already inside it and silently dropped. Opened with 14,000 plus 2,500 on
+// 14/10, the balance read 14,000, and a statement of 15,000 the next day
+// reported +7.14% instead of -9.09%.
+//
+// So an account whose value comes from its ledger says so (valueFromLedger),
+// and while it does, its value IS its ledger: the sum of every movement,
+// dated at the latest one - recomputed on every deposit, withdrawal, edit
+// and delete. Recording a statement value ends that (portfolioMath.js's
+// applyLedgerValueUpdate), and the value it rolls off into "previous" is
+// marked as ledger-made too.
+const LEDGER_VALUED_KEYS = ['pensionFunds', 'cashFunds', 'bankBalances'];
+
+// The movements up to and including `day` (all of them without one).
+function ledgerSum(account, day) {
+  const deposits = Array.isArray(account.deposits) ? account.deposits : [];
+  return round(
+    deposits.reduce((sum, d) => {
+      if (day && !(d && typeof d.date === 'string' && d.date.slice(0, 10) <= day)) return sum;
+      return sum + (num(d && d.amount) || 0);
+    }, 0),
+    6
+  );
+}
+
+// Re-derives whatever the ledger made: the current value while there is no
+// statement, and a "previous" value the ledger made - the balance on that
+// date, which an edited or deleted movement dated before it changes too.
+// Called after every change to the movements.
+function syncLedgerValue(account) {
+  if (account.valueFromLedger) {
+    const deposits = Array.isArray(account.deposits) ? account.deposits : [];
+    const dates = deposits.map((d) => (d && typeof d.date === 'string' ? d.date.slice(0, 10) : '')).filter(Boolean).sort();
+    const latest = dates.length ? dates[dates.length - 1] : '';
+    const total = ledgerSum(account);
+    account.currentValue = total;
+    account.amount = total;
+    account.currentValueDate = latest;
+    if (account.updateDate !== undefined) account.updateDate = latest;
+  }
+  if (account.previousValueFromLedger && typeof account.previousValueDate === 'string' && account.previousValueDate) {
+    account.previousValue = ledgerSum(account, account.previousValueDate.slice(0, 10));
+  }
+}
+
+// Accounts opened before valueFromLedger existed still carry the opening
+// deposit as a recorded value. Recognised by what it is - the first ledger
+// entry's own date and amount - and turned into what it should have been:
+// the current value back into a ledger value, or a "previous" value that a
+// statement has since rolled it into, into the balance on that date.
+function repairOpeningEcho(account) {
+  if (!account || account.valueFromLedger) return;
+  const deposits = Array.isArray(account.deposits) ? account.deposits : [];
+  const opening = deposits[0];
+  if (!opening || !opening.txId || typeof opening.date !== 'string') return;
+  const day = opening.date.slice(0, 10);
+  const echoes = (date, value) =>
+    typeof date === 'string' && date.slice(0, 10) === day && Math.abs((num(value) || 0) - (num(opening.amount) || 0)) < 0.005;
+  if (!account.previousValueDate && echoes(account.currentValueDate, account.currentValue !== undefined ? account.currentValue : account.amount)) {
+    account.valueFromLedger = true;
+    syncLedgerValue(account);
+    return;
+  }
+  if (!account.previousValueFromLedger && echoes(account.previousValueDate, account.previousValue)) {
+    account.previousValueFromLedger = true;
+    syncLedgerValue(account);
+  }
+}
+
+// The portfolio with every such account repaired (new objects only where
+// something changed). Applied before every ledger change, and by the app
+// when it loads the portfolio.
+function normalizeLedgerAccounts(portfolio) {
+  const p = portfolio && typeof portfolio === 'object' ? portfolio : {};
+  const out = Object.assign({}, p);
+  LEDGER_VALUED_KEYS.forEach((key) => {
+    if (!Array.isArray(p[key])) return;
+    out[key] = p[key].map((account) => {
+      const copy = Object.assign({}, account);
+      repairOpeningEcho(copy);
+      return JSON.stringify(copy) === JSON.stringify(account) ? account : copy;
+    });
+  });
+  return out;
+}
+
 // Applies a NORMALIZED transaction (see normalizeTransaction) that already
 // has an `id`. Returns { portfolio, transaction } - new objects; the inputs
 // are not mutated. The returned transaction carries what revert needs
@@ -344,7 +439,7 @@ const clonePortfolio = (portfolio) => {
 // add-stock form generates, so nothing downstream can tell them apart).
 function applyTransaction(portfolio, tx, { newLotId } = {}) {
   if (!tx || !tx.id) throw new LedgerError('INVALID', 'transaction needs an id before it is applied');
-  const next = clonePortfolio(portfolio);
+  const next = clonePortfolio(normalizeLedgerAccounts(portfolio));
   const applied = Object.assign({}, tx);
 
   if (tx.type === 'BUY') {
@@ -403,9 +498,9 @@ function applyTransaction(portfolio, tx, { newLotId } = {}) {
 
   if (tx.type === 'DEPOSIT' && tx.newAccount) {
     // Opens the account with this deposit as its first ledger entry. A
-    // value-tracked account starts out worth what was paid in (the same
-    // starting point the old add form gave it); bank savings derive their
-    // value from the deposits alone.
+    // value-tracked account is worth what its ledger holds until a
+    // statement value is recorded (see syncLedgerValue); bank savings
+    // derive their value from the deposits alone.
     const key = ACCOUNT_CLASSES[tx.assetClass];
     const accountId = newLotId !== undefined && newLotId !== null ? newLotId : Date.now();
     const deposit = { date: tx.date, amount: tx.amount, txId: tx.id };
@@ -415,8 +510,9 @@ function applyTransaction(portfolio, tx, { newLotId } = {}) {
           { id: accountId },
           tx.assetClass === 'bank' ? { updateDate: tx.date } : { fundName: '' },
           tx.newAccount,
-          { currentValue: tx.amount, currentValueDate: tx.date, previousValue: 0, previousValueDate: '', amount: tx.amount, deposits: [deposit] }
+          { previousValue: 0, previousValueDate: '', valueFromLedger: true, deposits: [deposit] }
         );
+    syncLedgerValue(account);
     next[key].push(account);
     applied.assetId = String(accountId);
     applied.createdAccountId = accountId;
@@ -430,6 +526,7 @@ function applyTransaction(portfolio, tx, { newLotId } = {}) {
     if (!account) throw new LedgerError('ACCOUNT_NOT_FOUND', `no ${tx.assetClass} account with id ${tx.assetId}`);
     const signed = tx.type === 'WITHDRAWAL' ? -tx.amount : tx.amount;
     account.deposits = (Array.isArray(account.deposits) ? account.deposits : []).concat([{ date: tx.date, amount: signed, txId: tx.id }]);
+    syncLedgerValue(account);
     applied.amountILS = signed;
     return { portfolio: next, transaction: applied };
   }
@@ -446,7 +543,7 @@ function applyTransaction(portfolio, tx, { newLotId } = {}) {
 // activity makes that impossible (a bought lot that has since been partly
 // sold - delete that sale first).
 function revertTransaction(portfolio, tx) {
-  const next = clonePortfolio(portfolio);
+  const next = clonePortfolio(normalizeLedgerAccounts(portfolio));
 
   if (tx.type === 'BUY') {
     const key = STOCK_CLASSES[tx.assetClass];
@@ -479,6 +576,7 @@ function revertTransaction(portfolio, tx) {
     const account = next[key].find((a) => String(a.id) === String(tx.assetId));
     if (account && Array.isArray(account.deposits)) {
       account.deposits = account.deposits.filter((d) => d.txId !== tx.id);
+      syncLedgerValue(account);
     }
     // The deposit that opened the account: with nothing else recorded on it
     // since, undoing it removes the account it created. Once other entries
@@ -611,6 +709,7 @@ exports.STOCK_CLASSES = STOCK_CLASSES;
 exports.ACCOUNT_CLASSES = ACCOUNT_CLASSES;
 exports.LOT_METHODS = LOT_METHODS;
 exports.LedgerError = LedgerError;
+exports.normalizeLedgerAccounts = normalizeLedgerAccounts;
 exports.normalizeTransaction = normalizeTransaction;
 exports.selectLotsForSale = selectLotsForSale;
 exports.applyTransaction = applyTransaction;

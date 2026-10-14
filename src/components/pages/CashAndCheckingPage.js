@@ -6,9 +6,7 @@ import AccountsPage from './AccountsPage';
 // /cash-and-checking - כספית שקלית ועו"ש.
 //
 // The two are one page rather than two because they are one thing to the
-// user: money that is liquid right now. They are also the two categories
-// whose external flows have to be declared by hand in the monthly tracker,
-// for the same reason - neither carries a purchase ledger of its own.
+// user: money that is liquid right now.
 function CashAndCheckingPage({ cashFunds = [], bankBalances = [], summary, ...rest }) {
   return (
     <AccountsPage

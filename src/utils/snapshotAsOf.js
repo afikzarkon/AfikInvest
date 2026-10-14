@@ -117,11 +117,13 @@ export function composeAsOfBreakdown({ asOfDate, today, liveBreakdown, historica
 }
 
 // The value statements a provident fund carries, oldest first.
+// A value the ledger made rather than a statement (the deposits' sum, before
+// any statement was recorded - transactionLedger.js) is not a statement.
 function statementPoints(fund) {
   const points = [];
   [
-    [fund && fund.previousValueDate, fund && fund.previousValue],
-    [fund && fund.currentValueDate, fund && fund.currentValue]
+    [fund && !fund.previousValueFromLedger && fund.previousValueDate, fund && fund.previousValue],
+    [fund && !fund.valueFromLedger && fund.currentValueDate, fund && fund.currentValue]
   ].forEach(([date, value]) => {
     if (typeof date === 'string' && DATE_RE.test(date.slice(0, 10)) && Number.isFinite(Number(value))) {
       points.push({ date: date.slice(0, 10), value: Number(value) });

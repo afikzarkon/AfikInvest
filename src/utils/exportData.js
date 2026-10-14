@@ -500,7 +500,7 @@ export const buildReportAsOf = ({ generatedAt = new Date(), pricesAsOf = null, p
   const generated = formatReportDateTime(generatedAt);
   const live = pricesAsOf ? formatReportDateTime(pricesAsOf) : '';
   const dates = (pensionFunds || [])
-    .filter((f) => Number(f.currentValue ?? f.amount) > 0)
+    .filter((f) => !f.valueFromLedger && Number(f.currentValue ?? f.amount) > 0)
     .map(statementDate)
     .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
     .sort();

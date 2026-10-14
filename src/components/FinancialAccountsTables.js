@@ -4,7 +4,8 @@ import { calculatePensionRealGainTax, calculateBankSavingsFundTax, monthKeyFromD
 import { calculateLedgerPeriodReturn, hasAmbiguousLedgerPeriod } from '../utils/portfolioMath';
 import { computeBankSavingsFundValue } from '../utils/bankSavingsFund';
 import { todayISO } from '../utils/portfolioDates';
-import { liquidBalanceOn, movementsSinceLastBalance } from '../shared/liquidBalance';
+import { liquidBalanceOn, movementsSinceLastBalance, recordedBalances } from '../shared/liquidBalance';
+import { openingBalanceOfLedgerAccount } from '../utils/ledgerAccountHistory';
 
 // The four ledger-backed account tables: provident funds, money-market
 // funds, current accounts and bank savings.
@@ -45,20 +46,20 @@ const PENSION_COL = {
 const CASH_COL = {
   name: 'שם',
   securityId: 'מספר נייר ערך',
-  current: 'שווי נוכחי (₪)',
-  currentDate: 'תאריך שווי נוכחי',
+  deposited: 'סך הפקדות (₪)',
+  current: 'שווי היום (₪)',
+  currentDate: 'תאריך שווי אחרון',
+  periodReturn: 'תשואה (מעדכון קודם)',
+  totalReturn: 'תשואה כללית',
   previous: 'שווי בעדכון הקודם (₪)',
   previousDate: 'תאריך שווי קודם',
-  periodReturn: 'תשואה (מעדכון קודם)',
   actions: 'פעולות'
 };
 
 const BANK_COL = {
-  current: 'שווי נוכחי (₪)',
-  currentDate: 'תאריך שווי נוכחי',
-  previous: 'שווי בעדכון הקודם (₪)',
-  previousDate: 'תאריך שווי קודם',
-  periodReturn: 'תשואה (מעדכון קודם)',
+  balance: 'יתרה (₪)',
+  lastActivity: 'תנועה אחרונה',
+  movements: 'תנועות',
   actions: 'פעולות'
 };
 
@@ -103,7 +104,10 @@ function FinancialAccountsTables({
   onOpenLedgerEntry,
   // Deletes a ledger row recorded through the transactions ledger, so the
   // row and its history line go together (see deleteDeposit).
-  onDeleteTransaction
+  onDeleteTransaction,
+  // Opens the entry form on the transaction behind a ledger row, to
+  // correct its date or amount (see startMovementEdit).
+  onEditTransaction
 }) {
   const formatPercent = (value) => {
     if (value === null || value === undefined || Number.isNaN(value)) {
@@ -197,6 +201,93 @@ function FinancialAccountsTables({
       </>
     );
   };
+
+  // What has been paid in, net of withdrawals.
+  const netMovements = (item) => (Array.isArray(item.deposits) ? item.deposits : []).reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
+
+  // A money-market fund's return since the money went in: today's value
+  // against everything paid in, net of withdrawals. Only when the ledger
+  // starts the account - an account recorded with a balance before its
+  // first ledger entry carries money whose cost the app never saw.
+  const overallLiquidReturn = (item) => {
+    const paidIn = netMovements(item);
+    const hasLedger = Array.isArray(item.deposits) && item.deposits.length > 0;
+    if (!hasLedger || paidIn <= 0 || openingBalanceOfLedgerAccount(item) !== 0) return null;
+    const profit = liquidBalanceOn(item, todayISO()) - paidIn;
+    return { profit, percent: (profit / paidIn) * 100 };
+  };
+
+  // The latest day anything was recorded on an account - a movement, or a
+  // balance recorded before the ledger.
+  const lastActivityDate = (item) => {
+    const dates = [
+      ...(Array.isArray(item.deposits) ? item.deposits : []).map((d) => (d && d.date ? d.date.slice(0, 10) : '')),
+      ...recordedBalances(item).map((p) => p.date)
+    ].filter(Boolean).sort();
+    return dates.length ? dates[dates.length - 1] : '';
+  };
+
+  // CORRECTING A LEDGER ROW: its date or its amount.
+  //
+  // A row recorded through the transactions ledger is corrected THROUGH it
+  // - the entry form opens on that transaction and the edit reverts and
+  // re-applies it in one step, so the history and the account cannot
+  // disagree. A row from before the ledger (no txId) has no transaction
+  // behind it and is edited in place.
+  const [movementDraft, setMovementDraft] = useState(null);
+  const movementKey = (exchange, item, index) => `${exchange}:${item.id}:${index}`;
+  const isEditingMovement = (exchange, item, index) => !!movementDraft && movementDraft.key === movementKey(exchange, item, index);
+  const startMovementEdit = (item, index, exchange) => {
+    const row = (Array.isArray(item.deposits) ? item.deposits : [])[index];
+    if (!row) return;
+    if (row.txId && onEditTransaction) {
+      onEditTransaction(row.txId);
+      return;
+    }
+    setMovementDraft({ key: movementKey(exchange, item, index), date: row.date || '', amount: String(row.amount ?? '') });
+  };
+  const saveMovementEdit = (item, index, exchange) => {
+    const amount = parseFloat(movementDraft.amount);
+    if (!movementDraft.date || !Number.isFinite(amount) || amount === 0) return;
+    const updated = item.deposits.map((d, j) => (j === index ? { ...d, date: movementDraft.date, amount } : d));
+    handleInlineEdit(item.id, 'deposits', updated, exchange);
+    setMovementDraft(null);
+  };
+  const renderMovementDate = (item, d, index, exchange) =>
+    isEditingMovement(exchange, item, index) ? (
+      <input
+        type="date"
+        aria-label="תאריך התנועה"
+        value={movementDraft.date}
+        onChange={(e) => setMovementDraft((m) => ({ ...m, date: e.target.value }))}
+      />
+    ) : d.date ? formatDate(d.date) : '-';
+  const renderMovementAmount = (item, d, index, exchange) =>
+    isEditingMovement(exchange, item, index) ? (
+      <input
+        type="number"
+        step="0.01"
+        aria-label="סכום התנועה (משיכה במינוס)"
+        value={movementDraft.amount}
+        onChange={(e) => setMovementDraft((m) => ({ ...m, amount: e.target.value }))}
+      />
+    ) : `${formatPriceWithSign(d.amount)} ₪ ${d.amount < 0 ? '(משיכה)' : ''}`;
+  const renderMovementButtons = (item, d, index, exchange) =>
+    isEditingMovement(exchange, item, index) ? (
+      <>
+        <button type="button" className="monthly-toolbar-btn" onClick={() => saveMovementEdit(item, index, exchange)}>שמירה</button>{' '}
+        <button type="button" className="monthly-toolbar-btn" onClick={() => setMovementDraft(null)}>ביטול</button>
+      </>
+    ) : (
+      <button
+        type="button"
+        className="monthly-toolbar-btn"
+        aria-label={`עריכת התנועה מ-${d.date ? formatDate(d.date) : ''}`}
+        onClick={() => startMovementEdit(item, index, exchange)}
+      >
+        עריכה
+      </button>
+    );
 
   const [expandedBankSavingsFunds, setExpandedBankSavingsFunds] = useState({});
   const toggleBankSavingsFundExpanded = (fundId) => {
@@ -419,9 +510,9 @@ function FinancialAccountsTables({
                     )}
                     {isExpanded && deposits.map((d, i) => (
                       <tr key={i} className={`${isEditMode ? 'editable-row' : ''} detail-row`}>
-                        <td style={{ paddingLeft: '20px' }} data-label={DEPOSIT_COL.date}>{d.date ? formatDate(d.date) : '-'}</td>
-                        <td data-label={DEPOSIT_COL.amount}>{`${formatPriceWithSign(d.amount)} ₪`}</td>
-                        <td></td>
+                        <td style={{ paddingLeft: '20px' }} data-label={DEPOSIT_COL.date}>{renderMovementDate(item, d, i, 'pension')}</td>
+                        <td data-label={DEPOSIT_COL.amount}>{renderMovementAmount(item, d, i, 'pension')}</td>
+                        <td>{renderMovementButtons(item, d, i, 'pension')}</td>
                         <td></td>
                         <td></td>
                         {showAdditionalData && <td></td>}
@@ -459,11 +550,13 @@ function FinancialAccountsTables({
                 <tr>
                   <th>{CASH_COL.name}</th>
                   <th>{CASH_COL.securityId}</th>
+                  <th>{CASH_COL.deposited}</th>
                   <th>{CASH_COL.current}</th>
                   <th>{CASH_COL.currentDate}</th>
-                  <th>{CASH_COL.previous}</th>
-                  {showAdditionalData && <th>{CASH_COL.previousDate}</th>}
                   <th>{CASH_COL.periodReturn}</th>
+                  <th>{CASH_COL.totalReturn}</th>
+                  {showAdditionalData && <th>{CASH_COL.previous}</th>}
+                  {showAdditionalData && <th>{CASH_COL.previousDate}</th>}
                   {isEditMode && <th>{CASH_COL.actions}</th>}
                 </tr>
               </thead>
@@ -471,10 +564,15 @@ function FinancialAccountsTables({
                 {cashFunds.map(item => {
                   const deposits = Array.isArray(item.deposits) ? item.deposits : [];
                   const previousValue = item.previousValue ?? 0;
+                  // "Since the previous update" needs two values to measure
+                  // between - before the first statement there is only the
+                  // ledger's own sum, and nothing to measure.
                   const periodReturn = calculateLedgerPeriodReturn(item);
-                  const periodReturnPercent = previousValue > 0 ? periodReturn.percent : null;
+                  const periodReturnPercent = previousValue > 0 && !item.valueFromLedger ? periodReturn.percent : null;
                   const ambiguousPeriod = hasAmbiguousLedgerPeriod(item);
+                  const overall = overallLiquidReturn(item);
                   const isExpanded = !!expandedCashFunds[item.id];
+                  const columnCount = (showAdditionalData ? 9 : 7) + (isEditMode ? 1 : 0);
                   return (
                     <React.Fragment key={item.id}>
                       <tr className={isEditMode ? 'editable-row' : ''}>
@@ -505,6 +603,7 @@ function FinancialAccountsTables({
                             />
                           ) : item.securityId}
                         </td>
+                        <td data-label={CASH_COL.deposited}>{`${formatPriceWithSign(netMovements(item))} ₪`}</td>
                         <td
                           onClick={() => { if (editingField !== `${item.id}-currentValue`) startValueEdit(item, 'cash_fund'); }}
                           className={isEditMode ? 'editable-cell' : ''}
@@ -537,13 +636,9 @@ function FinancialAccountsTables({
                             </div>
                           ) : renderLiquidBalance(item)}
                         </td>
-                        <td data-label={CASH_COL.currentDate}>{item.currentValueDate ? formatDate(item.currentValueDate) : '-'}</td>
-                        {/* previousValue/previousValueDate הן תצוגה בלבד בכוונה - ראו
-                            הערת השדות המקבילים בטבלת קופות הגמל למעלה. */}
-                        <td data-label={CASH_COL.previous}>{`${formatPriceWithSign(previousValue)} ₪`}</td>
-                        {showAdditionalData && (
-                          <td data-label={CASH_COL.previousDate}>{item.previousValueDate ? formatDate(item.previousValueDate) : '-'}</td>
-                        )}
+                        <td data-label={CASH_COL.currentDate}>
+                          {item.valueFromLedger ? 'לפי ההפקדות' : item.currentValueDate ? formatDate(item.currentValueDate) : '-'}
+                        </td>
                         <td className={periodReturnPercent > 0 ? 'profit-positive' : periodReturnPercent < 0 ? 'profit-negative' : ''} data-label={CASH_COL.periodReturn}>
                           {ambiguousPeriod && (
                             <span
@@ -555,27 +650,43 @@ function FinancialAccountsTables({
                           )}
                           {formatPercent(periodReturnPercent)}
                         </td>
+                        <td className={overall && overall.percent > 0 ? 'profit-positive' : overall && overall.percent < 0 ? 'profit-negative' : ''} data-label={CASH_COL.totalReturn}>
+                          {overall ? (
+                            <>
+                              {formatPercent(overall.percent)}
+                              <small className="form-help" style={{ display: 'block' }}>{`${formatPriceWithSign(overall.profit)} ₪`}</small>
+                            </>
+                          ) : '-'}
+                        </td>
+                        {/* previousValue/previousValueDate הן תצוגה בלבד בכוונה - ראו
+                            הערת השדות המקבילים בטבלת קופות הגמל למעלה. */}
+                        {showAdditionalData && <td data-label={CASH_COL.previous}>{`${formatPriceWithSign(previousValue)} ₪`}</td>}
+                        {showAdditionalData && (
+                          <td data-label={CASH_COL.previousDate}>{item.previousValueDate ? formatDate(item.previousValueDate) : '-'}</td>
+                        )}
                         {isEditMode && (
                           <td data-label={CASH_COL.actions}>
                             <button onClick={() => handleDelete(item.id, 'cash_fund')} className="delete-button">מחק כספית</button>
                           </td>
                         )}
                       </tr>
-                      {isExpanded && renderRecordTransactionRow('cash_fund', item, (showAdditionalData ? 8 : 7) + (isEditMode ? 1 : 0), '+ רישום פעולה (הפקדה / משיכה / עדכון שווי)')}
+                      {isExpanded && renderRecordTransactionRow('cash_fund', item, columnCount, '+ רישום פעולה (הפקדה / משיכה / עדכון שווי)')}
                       {isExpanded && deposits.length === 0 && (
                         <tr className={`${isEditMode ? 'editable-row' : ''} detail-row`}>
-                          <td style={{ paddingLeft: '20px' }} colSpan={(showAdditionalData ? 8 : 7) + (isEditMode ? 1 : 0)}>אין הפקדות/משיכות רשומות</td>
+                          <td style={{ paddingLeft: '20px' }} colSpan={columnCount}>אין הפקדות/משיכות רשומות</td>
                         </tr>
                       )}
                       {isExpanded && deposits.map((d, i) => (
                         <tr key={i} className={`${isEditMode ? 'editable-row' : ''} detail-row`}>
-                          <td style={{ paddingLeft: '20px' }} data-label={DEPOSIT_COL.date}>{d.date ? formatDate(d.date) : '-'}</td>
-                          <td data-label={DEPOSIT_COL.amount}>{`${formatPriceWithSign(d.amount)} ₪ ${d.amount < 0 ? '(משיכה)' : ''}`}</td>
+                          <td style={{ paddingLeft: '20px' }} data-label={DEPOSIT_COL.date}>{renderMovementDate(item, d, i, 'cash_fund')}</td>
+                          <td data-label={DEPOSIT_COL.amount}>{renderMovementAmount(item, d, i, 'cash_fund')}</td>
+                          <td>{renderMovementButtons(item, d, i, 'cash_fund')}</td>
+                          <td></td>
                           <td></td>
                           <td></td>
                           <td></td>
                           {showAdditionalData && <td></td>}
-                          <td></td>
+                          {showAdditionalData && <td></td>}
                           {isEditMode && (
                             <td>
                               <button onClick={() => deleteDeposit(item, i, 'cash_fund')} className="delete-button">מחק</button>
@@ -594,98 +705,53 @@ function FinancialAccountsTables({
       {shows('bank') && bankBalances.length > 0 && (
         <div className="stocks-section">
           <h2 className="section-title">עו"ש</h2>
-          <ScrollableTable label={'עו"ש'}>
+          {/* A current account does not grow, so it has no value to record
+              and no return to measure: its balance is its deposits less its
+              withdrawals (plus, for an account recorded before the ledger,
+              the balance it was recorded with). */}
+          <ScrollableTable label={'עו"ש'} tableClassName="compact-table">
               <thead>
                 <tr>
-                  <th>{BANK_COL.current}</th>
-                  <th>{BANK_COL.currentDate}</th>
-                  <th>{BANK_COL.previous}</th>
-                  {showAdditionalData && <th>{BANK_COL.previousDate}</th>}
-                  <th>{BANK_COL.periodReturn}</th>
+                  <th>{BANK_COL.balance}</th>
+                  <th>{BANK_COL.lastActivity}</th>
+                  <th>{BANK_COL.movements}</th>
                   {isEditMode && <th>{BANK_COL.actions}</th>}
                 </tr>
               </thead>
               <tbody>
                 {bankBalances.map(item => {
                   const deposits = Array.isArray(item.deposits) ? item.deposits : [];
-                  const previousValue = item.previousValue ?? 0;
-                  const periodReturn = calculateLedgerPeriodReturn(item);
-                  const periodReturnPercent = previousValue > 0 ? periodReturn.percent : null;
-                  const ambiguousPeriod = hasAmbiguousLedgerPeriod(item);
                   const isExpanded = !!expandedBankAccounts[item.id];
+                  const columnCount = 3 + (isEditMode ? 1 : 0);
+                  const lastActivity = lastActivityDate(item);
                   return (
                     <React.Fragment key={item.id}>
                       <tr className={isEditMode ? 'editable-row' : ''}>
-                        <td
-                          onClick={() => { if (editingField !== `${item.id}-currentValue`) startValueEdit(item, 'bank'); }}
-                          className={isEditMode ? 'editable-cell' : ''}
-                          data-label={BANK_COL.current}
-                        >
+                        <td data-label={BANK_COL.balance}>
                           <button onClick={() => toggleBankAccountExpanded(item.id)} className="expand-button" style={{ marginRight: '8px', background: 'none', border: 'none', cursor: 'pointer' }}>
                             {isExpanded ? '▼' : '▶'}
                           </button>
-                          {editingField === `${item.id}-currentValue` ? (
-                            <div
-                              className="pension-value-edit-group"
-                              onBlur={(e) => {
-                                if (!e.currentTarget.contains(e.relatedTarget)) {
-                                  commitValueEdit(item, 'bank');
-                                }
-                              }}
-                            >
-                              <input
-                                type="number"
-                                value={valueDraft.value}
-                                onChange={(e) => setValueDraft((d) => ({ ...d, value: e.target.value }))}
-                                onKeyDown={(e) => { if (e.key === 'Enter') commitValueEdit(item, 'bank'); }}
-                                autoFocus
-                                step="0.01"
-                                min="0"
-                              />
-                              <input
-                                type="date"
-                                value={valueDraft.date}
-                                onChange={(e) => setValueDraft((d) => ({ ...d, date: e.target.value }))}
-                                onKeyDown={(e) => { if (e.key === 'Enter') commitValueEdit(item, 'bank'); }}
-                              />
-                            </div>
-                          ) : renderLiquidBalance(item)}
+                          {`${formatPriceWithSign(liquidBalanceOn(item, todayISO()))} ₪`}
                         </td>
-                        <td data-label={BANK_COL.currentDate}>{item.currentValueDate ? formatDate(item.currentValueDate) : '-'}</td>
-                        <td data-label={BANK_COL.previous}>{`${formatPriceWithSign(previousValue)} ₪`}</td>
-                        {showAdditionalData && (
-                          <td data-label={BANK_COL.previousDate}>{item.previousValueDate ? formatDate(item.previousValueDate) : '-'}</td>
-                        )}
-                        <td className={periodReturnPercent > 0 ? 'profit-positive' : periodReturnPercent < 0 ? 'profit-negative' : ''} data-label={BANK_COL.periodReturn}>
-                          {ambiguousPeriod && (
-                            <span
-                              className="ambiguous-period-warning"
-                              title='תאריך "שווי קודם" זהה לתאריך "שווי נוכחי" - כל הפקדה/משיכה שקדמה לתאריך הזה, גם אם קדמה זמן רב, לא נלקחת בחשבון בחישוב הזה.'
-                            >
-                              ⚠️{' '}
-                            </span>
-                          )}
-                          {formatPercent(periodReturnPercent)}
-                        </td>
+                        <td data-label={BANK_COL.lastActivity}>{lastActivity ? formatDate(lastActivity) : '-'}</td>
+                        <td data-label={BANK_COL.movements}>{deposits.length}</td>
                         {isEditMode && (
                           <td data-label={BANK_COL.actions}>
                             <button onClick={() => handleDelete(item.id, 'bank')} className="delete-button">מחק חשבון</button>
                           </td>
                         )}
                       </tr>
-                      {isExpanded && renderRecordTransactionRow('bank', item, (showAdditionalData ? 6 : 5) + (isEditMode ? 1 : 0), '+ רישום פעולה (הפקדה / משיכה / עדכון שווי)')}
+                      {isExpanded && renderRecordTransactionRow('bank', item, columnCount, '+ רישום הפקדה / משיכה')}
                       {isExpanded && deposits.length === 0 && (
                         <tr className={`${isEditMode ? 'editable-row' : ''} detail-row`}>
-                          <td style={{ paddingLeft: '20px' }} colSpan={(showAdditionalData ? 6 : 5) + (isEditMode ? 1 : 0)}>אין הפקדות/משיכות רשומות</td>
+                          <td style={{ paddingLeft: '20px' }} colSpan={columnCount}>אין הפקדות/משיכות רשומות</td>
                         </tr>
                       )}
                       {isExpanded && deposits.map((d, i) => (
                         <tr key={i} className={`${isEditMode ? 'editable-row' : ''} detail-row`}>
-                          <td style={{ paddingLeft: '20px' }} data-label={DEPOSIT_COL.amount}>{`${formatPriceWithSign(d.amount)} ₪ ${d.amount < 0 ? '(משיכה)' : ''}`}</td>
-                          <td data-label={DEPOSIT_COL.date}>{d.date ? formatDate(d.date) : '-'}</td>
-                          <td></td>
-                          {showAdditionalData && <td></td>}
-                          <td></td>
+                          <td style={{ paddingLeft: '20px' }} data-label={DEPOSIT_COL.amount}>{renderMovementAmount(item, d, i, 'bank')}</td>
+                          <td data-label={DEPOSIT_COL.date}>{renderMovementDate(item, d, i, 'bank')}</td>
+                          <td>{renderMovementButtons(item, d, i, 'bank')}</td>
                           {isEditMode && (
                             <td>
                               <button onClick={() => deleteDeposit(item, i, 'bank')} className="delete-button">מחק</button>
@@ -818,9 +884,9 @@ function FinancialAccountsTables({
                     )}
                     {isExpanded && deposits.map((d, i) => (
                       <tr key={i} className={`${isEditMode ? 'editable-row' : ''} detail-row`}>
-                        <td style={{ paddingLeft: '20px' }} data-label={DEPOSIT_COL.date}>{d.date ? formatDate(d.date) : '-'}</td>
-                        <td data-label={DEPOSIT_COL.amount}>{`${formatPriceWithSign(d.amount)} ₪`}</td>
-                        <td></td>
+                        <td style={{ paddingLeft: '20px' }} data-label={DEPOSIT_COL.date}>{renderMovementDate(item, d, i, 'bank_savings')}</td>
+                        <td data-label={DEPOSIT_COL.amount}>{renderMovementAmount(item, d, i, 'bank_savings')}</td>
+                        <td>{renderMovementButtons(item, d, i, 'bank_savings')}</td>
                         <td></td>
                         <td></td>
                         <td></td>

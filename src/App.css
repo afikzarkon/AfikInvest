@@ -1859,6 +1859,13 @@ h3 {
   min-width: 1200px;
 }
 
+/* A table of three columns (the current account) has nothing to scroll
+   sideways to - at 1200px its last column and the ledger rows' edit
+   buttons sat off-screen. */
+.stocks-table.compact-table {
+  min-width: 0;
+}
+
 /* American stocks table width */
 .american-stocks-table {
   min-width: 1500px;

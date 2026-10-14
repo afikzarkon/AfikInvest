@@ -12,8 +12,8 @@
 // the same kinds of event two different ways, so neither the history nor
 // the holdings could be trusted to be complete.
 //
-// A statement value (what a provident fund / money-market fund / current
-// account was worth on a date) is not a transaction - no money moved - so
+// A statement value (what a provident fund or money-market fund was worth
+// on a date) is not a transaction - no money moved - so
 // it updates the account's recorded value (portfolioMath.js's
 // applyLedgerValueEditPayload), still from this same form.
 
@@ -22,7 +22,9 @@ export const ASSET_CLASSES = [
   { key: 'american', label: 'מניה / קרן - בורסה אמריקאית', kind: 'stock', holdingsKey: 'americanStocks' },
   { key: 'pension', label: 'קופת גמל / השתלמות', kind: 'account', holdingsKey: 'pensionFunds', valueTracked: true, tableKey: 'pension' },
   { key: 'cashFunds', label: 'קרן כספית', kind: 'account', holdingsKey: 'cashFunds', valueTracked: true, tableKey: 'cash_fund' },
-  { key: 'bank', label: 'עו"ש', kind: 'account', holdingsKey: 'bankBalances', valueTracked: true, tableKey: 'bank' },
+  // A current account does not grow: its balance is its deposits less its
+  // withdrawals, so it has no statement value to record.
+  { key: 'bank', label: 'עו"ש', kind: 'account', holdingsKey: 'bankBalances', valueTracked: false, tableKey: 'bank' },
   { key: 'bankSavings', label: 'קופת חיסכון בבנק', kind: 'account', holdingsKey: 'bankSavingsFunds', valueTracked: false }
 ];
 

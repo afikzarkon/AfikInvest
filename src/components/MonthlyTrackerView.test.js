@@ -142,12 +142,14 @@ test('clicking the save button calls onSaveMonthlySnapshot with an empty cash-fl
   expect(screen.getByText('שמירת השמירה החודשית נכשלה, נסה שוב')).toBeInTheDocument();
 });
 
-test('a declared cash flow next to the save button is included (parsed to a number, blank/zero categories dropped) when saving', () => {
-  const onSaveMonthlySnapshot = jest.fn();
-  render(<MonthlyTrackerView {...makeProps({ onSaveMonthlySnapshot })} />);
-  fireEvent.change(document.getElementById('save-cashflow-bank'), { target: { value: '6000' } });
-  fireEvent.click(screen.getByText('שמור שמירה חודשית'));
-  expect(onSaveMonthlySnapshot).toHaveBeenCalledWith({ bank: 6000 }, expect.objectContaining({ asOfDate: todayISO() }));
+// Deposits and withdrawals are never typed in here - every account's come
+// from its own table, by date.
+test('there is no field to type deposits or withdrawals into - they come from the tables', () => {
+  render(<MonthlyTrackerView {...makeProps({ onAddManualMonthlySnapshot: jest.fn() })} />);
+  expect(document.querySelector('[id*="cashflow"]')).toBeNull();
+  expect(monthlyScope().getByText(/הפקדות ומשיכות נלקחות אוטומטית מהטבלאות/)).toBeInTheDocument();
+  fireEvent.click(screen.getByText('➕ הוספה ידנית'));
+  expect(document.querySelector('[id*="cashflow"]')).toBeNull();
 });
 
 test('shows whether the current month is already saved', () => {
@@ -257,8 +259,6 @@ describe('"➕ הוספה ידנית" (manual backfill of a forgotten past month
     fireEvent.change(within(bankSection).getByPlaceholderText('שם (למשל עו"ש)'), { target: { value: 'עו"ש' } });
     fireEvent.change(within(bankSection).getByPlaceholderText('שווי (₪)'), { target: { value: '3000' } });
 
-    fireEvent.change(document.getElementById('manual-add-cashflow-cashFunds'), { target: { value: '-500' } });
-
     fireEvent.click(screen.getByText('שמור'));
     expect(onAddManualMonthlySnapshot).toHaveBeenCalledTimes(1);
     const [month, totalValueILS, breakdown] = onAddManualMonthlySnapshot.mock.calls[0];
@@ -272,8 +272,8 @@ describe('"➕ הוספה ידנית" (manual backfill of a forgotten past month
     expect(breakdown.israeli).toEqual([]);
     expect(breakdown.american).toEqual([]);
     expect(breakdown.pension).toEqual([]);
-    // Only the liquid categories can carry a declared flow now.
-    expect(breakdown.cashFlows).toEqual({ cashFunds: -500 });
+    // No flows are declared by hand any more.
+    expect(breakdown.cashFlows).toBeUndefined();
 
     // the await inside handleSubmitManualAdd resolves asynchronously and
     // then closes the form - wait for that state update to flush
@@ -281,18 +281,6 @@ describe('"➕ הוספה ידנית" (manual backfill of a forgotten past month
     await waitFor(() => expect(screen.queryByLabelText('חודש')).toBeNull());
   });
 
-  test('there is no cash-flow field for stocks or provident funds - those flows come from the main tables', () => {
-    render(<MonthlyTrackerView {...makeProps({ onAddManualMonthlySnapshot: jest.fn() })} />);
-    fireEvent.click(screen.getByText('➕ הוספה ידנית'));
-
-    expect(document.getElementById('manual-add-cashflow-cashFunds')).not.toBeNull();
-    expect(document.getElementById('manual-add-cashflow-bank')).not.toBeNull();
-    expect(document.getElementById('manual-add-cashflow-bankSavings')).not.toBeNull();
-
-    expect(document.getElementById('manual-add-cashflow-israeli')).toBeNull();
-    expect(document.getElementById('manual-add-cashflow-american')).toBeNull();
-    expect(document.getElementById('manual-add-cashflow-pension')).toBeNull();
-  });
 
   test('a row with no value entered yet is dropped, not saved as a fake 0', async () => {
     const onAddManualMonthlySnapshot = jest.fn().mockResolvedValue(true);
@@ -460,8 +448,6 @@ test('editing the shown month: "ערוך" turns every row into inputs, and savin
   const input = within(card).getByDisplayValue('27000');
   fireEvent.change(input, { target: { value: '29000' } });
 
-  fireEvent.change(document.getElementById('edit-cashflow-bank'), { target: { value: '7000' } });
-
   fireEvent.click(within(card).getByText('שמור עריכה'));
   expect(onUpdateMonthlySnapshot).toHaveBeenCalledTimes(1);
   const [month, totalValueILS, breakdown] = onUpdateMonthlySnapshot.mock.calls[0];
@@ -469,7 +455,7 @@ test('editing the shown month: "ערוך" turns every row into inputs, and savin
   expect(breakdown.american.find((i) => i.key === 'PLTR').value).toBe(29000);
   // total recomputed as the sum of all (possibly edited) items
   expect(totalValueILS).toBe(22000 + 29000 + 44000 + 5000 + 12000);
-  expect(breakdown.cashFlows).toEqual({ bank: 7000 });
+  expect(breakdown.cashFlows).toEqual({});
 
   // the await inside handleSaveEditedMonth resolves asynchronously and
   // then exits edit mode - wait for that state update to flush (inside
@@ -634,7 +620,7 @@ test('the categories whose figures are derived are marked as such while editing'
 // the flows that were declared at the time. Opening it to correct an
 // unrelated figure must not quietly throw them away - the comparison
 // that month feeds has to keep producing the number it always did.
-test('editing a legacy month preserves its declared stock/pension flows, which no longer have a field', async () => {
+test('editing a legacy month preserves every flow it was saved with by hand, none of which has a field now', async () => {
   const onUpdateMonthlySnapshot = jest.fn().mockResolvedValue(true);
   const legacyAugust = {
     ...august,
@@ -659,28 +645,6 @@ test('editing a legacy month preserves its declared stock/pension flows, which n
   await waitFor(() => expect(within(card).queryByText('שמור עריכה')).toBeNull());
 });
 
-test('a legacy flow on a liquid category is still editable, and the edit wins over the stored value', async () => {
-  const onUpdateMonthlySnapshot = jest.fn().mockResolvedValue(true);
-  const legacyAugust = {
-    ...august,
-    breakdown: { ...august.breakdown, cashFlows: { israeli: 5000, bank: 1000 } }
-  };
-  render(
-    <MonthlyTrackerView
-      {...makeProps({ monthlySnapshots: [july, legacyAugust], onUpdateMonthlySnapshot })}
-    />
-  );
-
-  fireEvent.click(within(historyCards()[0]).getByText('ערוך'));
-  expect(document.getElementById('edit-cashflow-bank').value).toBe('1000');
-  fireEvent.change(document.getElementById('edit-cashflow-bank'), { target: { value: '4000' } });
-
-  fireEvent.click(within(historyCards()[0]).getByText('שמור עריכה'));
-  const [, , breakdown] = onUpdateMonthlySnapshot.mock.calls[0];
-  expect(breakdown.cashFlows).toEqual({ israeli: 5000, bank: 4000 });
-
-  await waitFor(() => expect(within(historyCards()[0]).queryByText('שמור עריכה')).toBeNull());
-});
 
 test('re-saving the current month also preserves its legacy declared flows', () => {
   const onSaveMonthlySnapshot = jest.fn();
@@ -700,29 +664,18 @@ test('re-saving the current month also preserves its legacy declared flows', () 
     />
   );
 
-  fireEvent.change(document.getElementById('save-cashflow-bank'), { target: { value: '250' } });
   fireEvent.click(monthlyScope().getByText('עדכן שמירה חודשית'));
-
-  // The legacy American flow survives; the freshly declared bank figure
-  // replaces the stored one.
-  expect(onSaveMonthlySnapshot).toHaveBeenCalledWith({ american: 7000, bank: 250 }, expect.objectContaining({ asOfDate: todayISO() }));
+  expect(onSaveMonthlySnapshot).toHaveBeenCalledWith({ american: 7000, bank: 100 }, expect.objectContaining({ asOfDate: todayISO() }));
 });
 
-test('the edit form offers a cash-flow field only for the liquid categories', () => {
+test('the edit form has no cash-flow fields', () => {
   render(
     <MonthlyTrackerView
       {...makeProps({ monthlySnapshots: [july, august], onUpdateMonthlySnapshot: jest.fn() })}
     />
   );
   fireEvent.click(within(historyCards()[0]).getByText('ערוך'));
-
-  expect(document.getElementById('edit-cashflow-bank')).not.toBeNull();
-  expect(document.getElementById('edit-cashflow-cashFunds')).not.toBeNull();
-  expect(document.getElementById('edit-cashflow-bankSavings')).not.toBeNull();
-
-  expect(document.getElementById('edit-cashflow-israeli')).toBeNull();
-  expect(document.getElementById('edit-cashflow-american')).toBeNull();
-  expect(document.getElementById('edit-cashflow-pension')).toBeNull();
+  expect(document.querySelector('[id*="cashflow"]')).toBeNull();
 });
 
 // AUTOMATIC FILL: the monthly tracker stops being a typing exercise.
@@ -820,7 +773,7 @@ test('editing the shown month: "ביטול" discards changes without calling onU
   expect(within(card).getByText('ערוך')).toBeInTheDocument();
 });
 
-test('editing a month that already has declared cash flows pre-fills the inputs, and resubmitting without changing them round-trips the same values', async () => {
+test('editing a month that was saved with declared cash flows keeps them as they were', async () => {
   const augustWithCashFlows = { ...august, breakdown: { ...august.breakdown, cashFlows: { bank: 6000 } } };
   const onUpdateMonthlySnapshot = jest.fn().mockResolvedValue(true);
   render(
@@ -830,16 +783,9 @@ test('editing a month that already has declared cash flows pre-fills the inputs,
   );
   const card = historyCards()[0];
   fireEvent.click(within(card).getByText('ערוך'));
-
-  expect(document.getElementById('edit-cashflow-bank').value).toBe('6000');
-
   fireEvent.click(within(card).getByText('שמור עריכה'));
   const [, , breakdown] = onUpdateMonthlySnapshot.mock.calls[0];
   expect(breakdown.cashFlows).toEqual({ bank: 6000 });
-
-  // let the async handleSaveEditedMonth's post-await state updates
-  // (exiting edit mode) flush before the test ends, same as the other
-  // edit-and-save test above
   await waitFor(() => expect(within(card).queryByText('שמור עריכה')).toBeNull());
 });
 

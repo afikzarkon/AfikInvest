@@ -8,7 +8,7 @@ import { applyLedgerValueEditPayload } from '../utils/portfolioMath';
 // 'currentValue' edit through applyLedgerValueEditPayload (see
 // handleInlineEdit in App.js) - so this test exercises the real
 // end-to-end contract, not just the component's isolated rendering.
-function Harness({ initialFund, initialCashFunds = [], initialBankBalances = [] }) {
+function Harness({ initialFund, initialCashFunds = [], initialBankBalances = [], onEditTransaction }) {
   const [pensionFunds, setPensionFunds] = useState(initialFund ? [initialFund] : []);
   const [cashFunds, setCashFunds] = useState(initialCashFunds);
   const [bankBalances, setBankBalances] = useState(initialBankBalances);
@@ -45,6 +45,7 @@ function Harness({ initialFund, initialCashFunds = [], initialBankBalances = [] 
       formatDate={(d) => d}
       formatPriceWithSign={(v) => String(v)}
       handleDelete={() => {}}
+      onEditTransaction={onEditTransaction}
     />
   );
 }
@@ -193,106 +194,5 @@ describe('FinancialAccountsTables - pension CPI columns', () => {
     // expand the fund to reveal its one deposit row
     fireEvent.click(container.querySelector('.expand-button'));
     expect(getByText('104.1')).toBeInTheDocument();
-  });
-});
-
-describe('FinancialAccountsTables - cash fund ledger (deposits + withdrawals)', () => {
-  test('editing "שווי נוכחי" rolls the old value/date into previous, exactly like a pension fund', () => {
-    const fund = {
-      id: 10,
-      fundName: 'כספית שקלית',
-      securityId: '5119609',
-      currentValue: 5000,
-      currentValueDate: '2024-01-01',
-      deposits: [{ date: '2024-01-01', amount: 5000 }]
-    };
-    const { container } = render(<Harness initialCashFunds={[fund]} />);
-    const row = container.querySelector('tbody tr');
-    const currentValueCell = row.children[2];
-
-    fireEvent.click(currentValueCell);
-    const numberInput = currentValueCell.querySelector('input[type="number"]');
-    const dateInput = currentValueCell.querySelector('input[type="date"]');
-    fireEvent.change(numberInput, { target: { value: '5200' } });
-    fireEvent.change(dateInput, { target: { value: '2024-02-01' } });
-    fireEvent.keyDown(dateInput, { key: 'Enter' });
-
-    expect(currentValueCell.textContent).toBe('5200 ₪');
-    expect(row.children[3].textContent).toBe('2024-02-01'); // currentValueDate
-    expect(row.children[4].textContent).toBe('5000 ₪'); // rolled into previousValue
-  });
-
-  test('a withdrawal (negative deposit amount) shows in the expanded ledger labeled "(משיכה)"', () => {
-    const fund = {
-      id: 11,
-      fundName: 'כספית שקלית',
-      securityId: '5119609',
-      currentValue: 2000,
-      currentValueDate: '2024-02-01',
-      deposits: [
-        { date: '2024-01-01', amount: 5000 },
-        { date: '2024-01-20', amount: -3000 }
-      ]
-    };
-    const { container, getByText } = render(<Harness initialCashFunds={[fund]} />);
-    fireEvent.click(container.querySelector('.expand-button'));
-
-    expect(getByText('5000 ₪')).toBeInTheDocument();
-    expect(getByText((content) => content.includes('-3000') && content.includes('משיכה'))).toBeInTheDocument();
-  });
-
-  test('renders a legacy cash fund with no currentValue/deposits fields at all without crashing', () => {
-    const legacyFund = { id: 12, fundName: 'כספית ישנה', securityId: '123', amount: 800, updateDate: '2023-01-01' };
-    const { container } = render(<Harness initialCashFunds={[legacyFund]} />);
-    const row = container.querySelector('tbody tr');
-    expect(row.children[2].textContent).toBe('800 ₪'); // falls back to `amount`
-    expect(row.children[4].textContent).toBe('0 ₪'); // no previousValue yet
-  });
-});
-
-describe('FinancialAccountsTables - checking account (עו"ש) ledger', () => {
-  test('editing "שווי נוכחי" rolls the old value/date into previous', () => {
-    const account = {
-      id: 20,
-      currentValue: 10000,
-      currentValueDate: '2024-01-01',
-      deposits: [{ date: '2024-01-01', amount: 10000 }]
-    };
-    const { container } = render(<Harness initialBankBalances={[account]} />);
-    const row = container.querySelector('tbody tr');
-    const currentValueCell = row.children[0];
-
-    fireEvent.click(currentValueCell);
-    const numberInput = currentValueCell.querySelector('input[type="number"]');
-    const dateInput = currentValueCell.querySelector('input[type="date"]');
-    fireEvent.change(numberInput, { target: { value: '7000' } });
-    fireEvent.change(dateInput, { target: { value: '2024-01-31' } });
-    fireEvent.keyDown(dateInput, { key: 'Enter' });
-
-    expect(currentValueCell.textContent).toContain('7000 ₪');
-    expect(row.children[1].textContent).toBe('2024-01-31');
-    expect(row.children[2].textContent).toBe('10000 ₪'); // rolled into previousValue
-  });
-
-  test('a withdrawal shows in the expanded ledger labeled "(משיכה)"', () => {
-    const account = {
-      id: 21,
-      currentValue: 7000,
-      currentValueDate: '2024-01-31',
-      deposits: [
-        { date: '2024-01-01', amount: 10000 },
-        { date: '2024-01-15', amount: -3000 }
-      ]
-    };
-    const { container, getByText } = render(<Harness initialBankBalances={[account]} />);
-    fireEvent.click(container.querySelector('.expand-button'));
-    expect(getByText((content) => content.includes('-3000') && content.includes('משיכה'))).toBeInTheDocument();
-  });
-
-  test('renders a legacy bank balance with no currentValue/deposits fields at all without crashing', () => {
-    const legacyAccount = { id: 22, amount: 2000, updateDate: '2023-01-01' };
-    const { container } = render(<Harness initialBankBalances={[legacyAccount]} />);
-    const row = container.querySelector('tbody tr');
-    expect(row.children[0].textContent).toContain('2000 ₪');
   });
 });
