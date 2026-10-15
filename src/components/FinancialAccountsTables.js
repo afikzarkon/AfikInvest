@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import ScrollableTable from './ScrollableTable';
+import EditableCell from './EditableCell';
 import { calculatePensionRealGainTax, calculateBankSavingsFundTax, monthKeyFromDate } from '../utils/cpiTax';
 import { calculateLedgerPeriodReturn, hasAmbiguousLedgerPeriod } from '../utils/portfolioMath';
 import { computeBankSavingsFundValue } from '../utils/bankSavingsFund';
@@ -105,9 +106,14 @@ function FinancialAccountsTables({
   // Deletes a ledger row recorded through the transactions ledger, so the
   // row and its history line go together (see deleteDeposit).
   onDeleteTransaction,
-  // Opens the entry form on the transaction behind a ledger row, to
-  // correct its date or amount (see startMovementEdit).
-  onEditTransaction
+  // The recorded transactions, so a movement row's correction can be sent
+  // as an edit of the transaction behind it (see correctLedgerMovement).
+  transactions = [],
+  // Edits the transaction behind a ledger row - reverted and re-applied in
+  // one step on the server (App.js's handleUpdateTransaction). Optional:
+  // without it those rows stay read-only, like the rest of the ledger
+  // without its other callbacks.
+  onUpdateTransaction
 }) {
   const formatPercent = (value) => {
     if (value === null || value === undefined || Number.isNaN(value)) {
@@ -244,68 +250,125 @@ function FinancialAccountsTables({
     return dates.length ? dates[dates.length - 1] : '';
   };
 
-  // CORRECTING A LEDGER ROW: its date or its amount.
+  // CORRECTING A MOVEMENT ROW: its date or its amount.
   //
-  // A row recorded through the transactions ledger is corrected THROUGH it
-  // - the entry form opens on that transaction and the edit reverts and
-  // re-applies it in one step, so the history and the account cannot
-  // disagree. A row from before the ledger (no txId) has no transaction
-  // behind it and is edited in place.
+  // A movement row is corrected the way every other value in the app is:
+  // the page's "מצב עריכה" makes its cells clickable, and a click turns
+  // one into an input in place. These are the same EditableCell the two
+  // stock tables use for their own rows and detail rows, so a movement row
+  // behaves - and looks - like every other editable row on the site. There
+  // is no per-row "עריכה" button and no editor beside the row.
+  //
+  // What a commit DOES depends on what is behind the row:
+  //
+  //   - A row recorded through the transactions ledger (txId) has a
+  //     transaction behind it, and that transaction is the truth. The
+  //     correction goes to the server as one revert-and-re-apply
+  //     (App.js's handleUpdateTransaction), so the history and the account
+  //     cannot disagree.
+  //   - A row from before the ledger has no transaction behind it, and is
+  //     written straight into the account's deposits.
+  //
+  // Both commit when the cell is left or Enter is pressed, not per
+  // keystroke: a ledger correction is a server round-trip. EditableCell's
+  // handleInlineEdit only moves the typed value into movementDraft, which
+  // holds the one cell being edited.
   const [movementDraft, setMovementDraft] = useState(null);
-  const movementKey = (exchange, item, index) => `${exchange}:${item.id}:${index}`;
-  const isEditingMovement = (exchange, item, index) =>
-    isEditMode && !!movementDraft && movementDraft.key === movementKey(exchange, item, index);
-  const startMovementEdit = (item, index, exchange) => {
-    const row = (Array.isArray(item.deposits) ? item.deposits : [])[index];
-    if (!row) return;
-    if (row.txId && onEditTransaction) {
-      onEditTransaction(row.txId);
+  // editingField is one value for the whole page, so a movement cell names
+  // its table too: two accounts in different tables can carry the same id,
+  // and without the table in the key a click would open the matching cell
+  // in both at once.
+  const movementRowId = (exchange, item, index) => `${exchange}-${item.id}-deposit-${index}`;
+  const movementCellId = (exchange, item, index, field) => `${movementRowId(exchange, item, index)}-${field}`;
+
+  // The ledger row's direction belongs to its transaction's TYPE, and the
+  // server refuses an edit that changes the type ("an edit cannot change
+  // the transaction type - delete it and record a new one", see
+  // server/transactionRoutes.js's PUT). So tx.amount carries the magnitude
+  // only, and turning a deposit into a withdrawal by typing a minus is not
+  // a correction the ledger can make - it is said so, rather than quietly
+  // changing the magnitude and leaving the direction as it was.
+  const correctLedgerMovement = async (row, date, amount) => {
+    const tx = (transactions || []).find((t) => String(t.id) === String(row.txId));
+    if (!tx) {
+      window.alert('העסקה לא נמצאה ביומן העסקאות - רעננו את הדף ונסו שוב.');
       return;
     }
-    setMovementDraft({ key: movementKey(exchange, item, index), date: row.date || '', amount: String(row.amount ?? '') });
+    const wasNegative = Number(row.amount) < 0;
+    if (wasNegative !== (amount < 0)) {
+      window.alert('לא ניתן להפוך הפקדה למשיכה (או להפך) דרך עריכה - מחקו את התנועה ורשמו אותה מחדש.');
+      return;
+    }
+    const result = await onUpdateTransaction(row.txId, { ...tx, date, amount: Math.abs(amount) });
+    if (result && !result.ok) window.alert(result.error || 'עדכון התנועה נכשל');
   };
-  const saveMovementEdit = (item, index, exchange) => {
-    const amount = parseFloat(movementDraft.amount);
-    if (!movementDraft.date || !Number.isFinite(amount) || amount === 0) return;
-    const updated = item.deposits.map((d, j) => (j === index ? { ...d, date: movementDraft.date, amount } : d));
-    handleInlineEdit(item.id, 'deposits', updated, exchange);
+
+  const commitMovementEdit = (item, index, exchange, field) => {
+    const draft = movementDraft;
+    const row = (Array.isArray(item.deposits) ? item.deposits : [])[index];
     setMovementDraft(null);
+    finishInlineEdit();
+    // Enter commits and closes the cell, and the blur that follows the
+    // input unmounting arrives with the draft already gone.
+    if (!draft || !row || draft.cellId !== movementCellId(exchange, item, index, field)) return;
+
+    const date = field === 'date' ? draft.value : row.date || '';
+    const amount = field === 'amount' ? parseFloat(draft.value) : Number(row.amount);
+    // Emptied, or typed into something unusable: the row stays as it was.
+    if (!date || !Number.isFinite(amount) || amount === 0) return;
+    if (date === (row.date || '') && amount === Number(row.amount)) return;
+
+    if (row.txId) {
+      correctLedgerMovement(row, date, amount);
+      return;
+    }
+    const updated = item.deposits.map((d, j) => (j === index ? { ...d, date, amount } : d));
+    handleInlineEdit(item.id, 'deposits', updated, exchange);
   };
-  const renderMovementDate = (item, d, index, exchange) =>
-    isEditingMovement(exchange, item, index) ? (
-      <input
-        type="date"
-        aria-label="תאריך התנועה"
-        value={movementDraft.date}
-        onChange={(e) => setMovementDraft((m) => ({ ...m, date: e.target.value }))}
+
+  // A ledger row can only be corrected when there is somewhere to send the
+  // correction. Without onUpdateTransaction those rows stay read-only, the
+  // way the whole ledger is without the other callbacks.
+  const movementCellEditable = (row) => !row.txId || !!onUpdateTransaction;
+
+  const renderMovementCell = (item, d, index, exchange, field, { label, style } = {}) => {
+    const stored = field === 'date' ? d.date || '' : String(d.amount ?? '');
+    const cellId = movementCellId(exchange, item, index, field);
+    const open = movementDraft && movementDraft.cellId === cellId;
+    const displayValue = field === 'date'
+      ? (d.date ? formatDate(d.date) : '-')
+      : `${formatPriceWithSign(d.amount)} ₪ ${d.amount < 0 ? '(משיכה)' : ''}`;
+    return (
+      <EditableCell
+        id={movementRowId(exchange, item, index)}
+        field={field}
+        exchange={exchange}
+        value={open ? movementDraft.value : stored}
+        type={field === 'date' ? 'date' : 'number'}
+        step={field === 'amount' ? '0.01' : undefined}
+        editingField={movementCellEditable(d) ? editingField : null}
+        isEditMode={isEditMode && movementCellEditable(d)}
+        handleCellClick={(id, cellField, cellExchange) => {
+          if (!isEditMode || !movementCellEditable(d)) return;
+          setMovementDraft({ cellId, value: stored });
+          handleCellClick(id, cellField, cellExchange);
+        }}
+        handleInlineEdit={(id, cellField, value) => setMovementDraft({ cellId, value })}
+        finishInlineEdit={() => commitMovementEdit(item, index, exchange, field)}
+        handleKeyDown={(e) => {
+          if (e.key === 'Enter') commitMovementEdit(item, index, exchange, field);
+        }}
+        displayValue={displayValue}
+        label={label}
+        ariaLabel={field === 'date' ? 'תאריך התנועה' : 'סכום התנועה (משיכה במינוס)'}
+        style={style}
       />
-    ) : d.date ? formatDate(d.date) : '-';
-  const renderMovementAmount = (item, d, index, exchange) =>
-    isEditingMovement(exchange, item, index) ? (
-      <input
-        type="number"
-        step="0.01"
-        aria-label="סכום התנועה (משיכה במינוס)"
-        value={movementDraft.amount}
-        onChange={(e) => setMovementDraft((m) => ({ ...m, amount: e.target.value }))}
-      />
-    ) : `${formatPriceWithSign(d.amount)} ₪ ${d.amount < 0 ? '(משיכה)' : ''}`;
-  const renderMovementButtons = (item, d, index, exchange) =>
-    isEditingMovement(exchange, item, index) ? (
-      <>
-        <button type="button" className="monthly-toolbar-btn" onClick={() => saveMovementEdit(item, index, exchange)}>שמירה</button>{' '}
-        <button type="button" className="monthly-toolbar-btn" onClick={() => setMovementDraft(null)}>ביטול</button>
-      </>
-    ) : (
-      <button
-        type="button"
-        className="monthly-toolbar-btn"
-        aria-label={`עריכת התנועה מ-${d.date ? formatDate(d.date) : ''}`}
-        onClick={() => startMovementEdit(item, index, exchange)}
-      >
-        עריכה
-      </button>
     );
+  };
+  const renderMovementDate = (item, d, index, exchange, options) =>
+    renderMovementCell(item, d, index, exchange, 'date', options);
+  const renderMovementAmount = (item, d, index, exchange, options) =>
+    renderMovementCell(item, d, index, exchange, 'amount', options);
 
   const [expandedBankSavingsFunds, setExpandedBankSavingsFunds] = useState({});
   const toggleBankSavingsFundExpanded = (fundId) => {
@@ -529,8 +592,8 @@ function FinancialAccountsTables({
                     )}
                     {isExpanded && deposits.map((d, i) => (
                       <tr key={i} className={`${isEditMode ? 'editable-row' : ''} detail-row`}>
-                        <td style={{ paddingLeft: '20px' }} data-label={DEPOSIT_COL.date}>{renderMovementDate(item, d, i, 'pension')}</td>
-                        <td data-label={DEPOSIT_COL.amount}>{renderMovementAmount(item, d, i, 'pension')}</td>
+                        {renderMovementDate(item, d, i, 'pension', { label: DEPOSIT_COL.date, style: { paddingLeft: '20px' } })}
+                        {renderMovementAmount(item, d, i, 'pension', { label: DEPOSIT_COL.amount })}
                         <td></td>
                         <td></td>
                         <td></td>
@@ -548,7 +611,6 @@ function FinancialAccountsTables({
                         <td></td>
                         {isEditMode && (
                           <td>
-                            {renderMovementButtons(item, d, i, 'pension')}{' '}
                             <button onClick={() => deleteDeposit(item, i, 'pension')} className="delete-button">מחק הפקדה</button>
                           </td>
                         )}
@@ -699,8 +761,8 @@ function FinancialAccountsTables({
                       )}
                       {isExpanded && deposits.map((d, i) => (
                         <tr key={i} className={`${isEditMode ? 'editable-row' : ''} detail-row`}>
-                          <td style={{ paddingLeft: '20px' }} data-label={DEPOSIT_COL.date}>{renderMovementDate(item, d, i, 'cash_fund')}</td>
-                          <td data-label={DEPOSIT_COL.amount}>{renderMovementAmount(item, d, i, 'cash_fund')}</td>
+                          {renderMovementDate(item, d, i, 'cash_fund', { label: DEPOSIT_COL.date, style: { paddingLeft: '20px' } })}
+                          {renderMovementAmount(item, d, i, 'cash_fund', { label: DEPOSIT_COL.amount })}
                           <td></td>
                           <td></td>
                           <td></td>
@@ -710,7 +772,6 @@ function FinancialAccountsTables({
                           {showAdditionalData && <td></td>}
                           {isEditMode && (
                             <td>
-                              {renderMovementButtons(item, d, i, 'cash_fund')}{' '}
                               <button onClick={() => deleteDeposit(item, i, 'cash_fund')} className="delete-button">מחק</button>
                             </td>
                           )}
@@ -771,12 +832,11 @@ function FinancialAccountsTables({
                       )}
                       {isExpanded && deposits.map((d, i) => (
                         <tr key={i} className={`${isEditMode ? 'editable-row' : ''} detail-row`}>
-                          <td style={{ paddingLeft: '20px' }} data-label={DEPOSIT_COL.amount}>{renderMovementAmount(item, d, i, 'bank')}</td>
-                          <td data-label={DEPOSIT_COL.date}>{renderMovementDate(item, d, i, 'bank')}</td>
+                          {renderMovementAmount(item, d, i, 'bank', { label: DEPOSIT_COL.amount, style: { paddingLeft: '20px' } })}
+                          {renderMovementDate(item, d, i, 'bank', { label: DEPOSIT_COL.date })}
                           <td></td>
                           {isEditMode && (
                             <td>
-                              {renderMovementButtons(item, d, i, 'bank')}{' '}
                               <button onClick={() => deleteDeposit(item, i, 'bank')} className="delete-button">מחק</button>
                             </td>
                           )}
@@ -907,8 +967,8 @@ function FinancialAccountsTables({
                     )}
                     {isExpanded && deposits.map((d, i) => (
                       <tr key={i} className={`${isEditMode ? 'editable-row' : ''} detail-row`}>
-                        <td style={{ paddingLeft: '20px' }} data-label={DEPOSIT_COL.date}>{renderMovementDate(item, d, i, 'bank_savings')}</td>
-                        <td data-label={DEPOSIT_COL.amount}>{renderMovementAmount(item, d, i, 'bank_savings')}</td>
+                        {renderMovementDate(item, d, i, 'bank_savings', { label: DEPOSIT_COL.date, style: { paddingLeft: '20px' } })}
+                        {renderMovementAmount(item, d, i, 'bank_savings', { label: DEPOSIT_COL.amount })}
                         <td></td>
                         <td></td>
                         <td></td>
@@ -918,7 +978,6 @@ function FinancialAccountsTables({
                         {showAdditionalData && <td></td>}
                         {isEditMode && (
                           <td>
-                            {renderMovementButtons(item, d, i, 'bank_savings')}{' '}
                             <button onClick={() => deleteBankSavingsDeposit(item, i)} className="delete-button">מחק הפקדה</button>
                           </td>
                         )}

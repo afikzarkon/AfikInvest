@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import { render, fireEvent } from '@testing-library/react';
 import FinancialAccountsTables from './FinancialAccountsTables';
-import { applyLedgerValueEditPayload } from '../utils/portfolioMath';
+import { applyAccountFieldEdit } from '../utils/portfolioMath';
 
 // Mirrors how App.js actually wires editingField/handleInlineEdit for
-// ledger items - pension funds, cash funds, and bank balances all route a
-// 'currentValue' edit through applyLedgerValueEditPayload (see
-// handleInlineEdit in App.js) - so this test exercises the real
+// ledger items - pension funds, cash funds, and bank balances all route
+// every field edit through applyAccountFieldEdit (see handleInlineEdit in
+// App.js) - so this test exercises the real
 // end-to-end contract, not just the component's isolated rendering.
-function Harness({ initialFund, initialCashFunds = [], initialBankBalances = [], onEditTransaction }) {
+function Harness({ initialFund, initialCashFunds = [], initialBankBalances = [], transactions = [], onUpdateTransaction }) {
   const [pensionFunds, setPensionFunds] = useState(initialFund ? [initialFund] : []);
   const [cashFunds, setCashFunds] = useState(initialCashFunds);
   const [bankBalances, setBankBalances] = useState(initialBankBalances);
@@ -17,11 +17,7 @@ function Harness({ initialFund, initialCashFunds = [], initialBankBalances = [],
   const handleCellClick = (id, field) => setEditingField(`${id}-${field}`);
   const finishInlineEdit = () => setEditingField(null);
   const makeHandleInlineEdit = (setItems) => (id, field, value) => {
-    setItems((items) => items.map((it) => {
-      if (it.id !== id) return it;
-      if (field === 'currentValue') return applyLedgerValueEditPayload(it, value);
-      return { ...it, [field]: value };
-    }));
+    setItems((items) => items.map((it) => (it.id === id ? applyAccountFieldEdit(it, field, value) : it)));
   };
   const handleInlineEdit = (id, field, value, exchange) => {
     if (exchange === 'cash_fund') return makeHandleInlineEdit(setCashFunds)(id, field, value);
@@ -45,7 +41,8 @@ function Harness({ initialFund, initialCashFunds = [], initialBankBalances = [],
       formatDate={(d) => d}
       formatPriceWithSign={(v) => String(v)}
       handleDelete={() => {}}
-      onEditTransaction={onEditTransaction}
+      transactions={transactions}
+      onUpdateTransaction={onUpdateTransaction}
     />
   );
 }

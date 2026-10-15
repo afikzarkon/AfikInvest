@@ -7,8 +7,10 @@ import {
   calculatePensionPeriodReturn,
   hasAmbiguousPensionPeriod,
   applyLedgerValueUpdate,
-  calculateLedgerPeriodReturn
+  calculateLedgerPeriodReturn,
+  applyAccountFieldEdit
 } from './portfolioMath';
+import { liquidBalanceOn, recordedBalances } from '../shared/liquidBalance';
 
 describe('calculateAmericanStockMetrics', () => {
   const baseStock = {
@@ -364,5 +366,65 @@ describe('applyLedgerValueUpdate / calculateLedgerPeriodReturn (cash fund / chec
     expect(result.depositsInPeriod).toBe(-3000);
     expect(result.adjustedPreviousValue).toBe(7000);
     expect(result.percent).toBeGreaterThan(0); // real gain, not a loss
+  });
+});
+
+// A movement removed or corrected outside the transactions ledger used to
+// leave the account anchored to the figure that movement had produced:
+// the balance stayed where the deleted withdrawal had put it, and the
+// deleted movement's date still read as the last activity, because
+// liquidBalance.js measures from the latest RECORDED balance and nothing
+// had recomputed it.
+describe('applyAccountFieldEdit: a ledger-derived value follows its ledger', () => {
+  // An account opened through the ledger: 4,000 on 01/10, then 2,000
+  // withdrawn on 14/10, which is what syncLedgerValue had recorded.
+  const afterWithdrawal = () => ({
+    id: 1,
+    valueFromLedger: true,
+    currentValue: 2000,
+    amount: 2000,
+    currentValueDate: '2026-10-14',
+    updateDate: '2026-10-14',
+    previousValue: 0,
+    previousValueDate: '',
+    deposits: [
+      { date: '2026-10-01', amount: 4000, txId: 'tx-open' },
+      { date: '2026-10-14', amount: -2000, txId: 'tx-wd' }
+    ]
+  });
+
+  test('deleting the withdrawal puts the balance and the date back', () => {
+    const account = afterWithdrawal();
+    const kept = account.deposits.filter((d) => d.txId !== 'tx-wd');
+    const next = applyAccountFieldEdit(account, 'deposits', kept);
+
+    expect(liquidBalanceOn(next, '2026-10-15')).toBe(4000);
+    expect(recordedBalances(next)).toEqual([{ date: '2026-10-01', value: 4000 }]);
+    expect(next.currentValueDate).toBe('2026-10-01');
+    expect(next.updateDate).toBe('2026-10-01');
+  });
+
+  test('correcting a movement amount re-derives the balance', () => {
+    const account = afterWithdrawal();
+    const corrected = account.deposits.map((d) => (d.txId === 'tx-wd' ? { ...d, amount: -500 } : d));
+    const next = applyAccountFieldEdit(account, 'deposits', corrected);
+
+    expect(liquidBalanceOn(next, '2026-10-15')).toBe(3500);
+    expect(next.currentValueDate).toBe('2026-10-14');
+  });
+
+  // A value the USER recorded from a statement is a measurement, not a sum:
+  // a movement is added on top of it, never rewrites it (liquidBalance.js).
+  test('a recorded statement value is left alone', () => {
+    const account = { ...afterWithdrawal(), valueFromLedger: undefined, currentValue: 2000, currentValueDate: '2026-10-14' };
+    const kept = account.deposits.filter((d) => d.txId !== 'tx-wd');
+    const next = applyAccountFieldEdit(account, 'deposits', kept);
+
+    expect(next.currentValue).toBe(2000);
+    expect(next.currentValueDate).toBe('2026-10-14');
+  });
+
+  test('a plain field is still a plain write', () => {
+    expect(applyAccountFieldEdit({ id: 1, fundName: 'a' }, 'fundName', 'b').fundName).toBe('b');
   });
 });

@@ -104,3 +104,62 @@ test('a ledger-made previous value follows an edited deposit dated before it', (
   expect(p.cashFunds[0].previousValue).toBe(17000);
   expect(p.cashFunds[0].currentValue).toBe(15000); // the statement is untouched
 });
+
+// The reported case: a current account opened with 4,000 on 01/10 and then
+// 2,000 withdrawn on 14/10 carried a recorded balance of 2,000 for 14/10.
+// The withdrawal was removed from `deposits` by something that did not
+// re-derive that balance, so the account went on reading 2,000, with the
+// deleted movement's date as its last activity, against a single remaining
+// movement of +4,000.
+test('a ledger value left behind by a deleted movement is re-derived on load', () => {
+  const stale = {
+    cashFunds: [],
+    pensionFunds: [],
+    bankBalances: [{
+      id: 1,
+      valueFromLedger: true,
+      currentValue: 2000,
+      amount: 2000,
+      currentValueDate: '2026-10-14',
+      updateDate: '2026-10-14',
+      deposits: [{ date: '2026-10-01', amount: 4000, txId: 'tx-open' }]
+    }]
+  };
+  const healed = normalizeLedgerAccounts(stale).bankBalances[0];
+  expect(healed.currentValue).toBe(4000);
+  expect(healed.amount).toBe(4000);
+  expect(healed.currentValueDate).toBe('2026-10-01');
+  expect(healed.updateDate).toBe('2026-10-01');
+});
+
+// A value the USER recorded is a measurement, not a sum: loading the
+// portfolio must not rewrite it from the movements.
+test('a recorded statement value is not re-derived on load', () => {
+  const recorded = {
+    cashFunds: [],
+    pensionFunds: [],
+    bankBalances: [{
+      id: 2,
+      currentValue: 2000,
+      amount: 2000,
+      currentValueDate: '2026-10-14',
+      updateDate: '2026-10-14',
+      deposits: [{ date: '2026-10-01', amount: 4000, txId: 'tx-open' }]
+    }]
+  };
+  const after = normalizeLedgerAccounts(recorded).bankBalances[0];
+  expect(after.currentValue).toBe(2000);
+  expect(after.currentValueDate).toBe('2026-10-14');
+});
+
+// Nothing to derive from: the flag alone must not zero a real value.
+test('an account with the flag but no ledger rows is left alone', () => {
+  const odd = {
+    cashFunds: [],
+    pensionFunds: [],
+    bankBalances: [{ id: 3, valueFromLedger: true, currentValue: 5000, amount: 5000, currentValueDate: '2026-10-14', deposits: [] }]
+  };
+  const after = normalizeLedgerAccounts(odd).bankBalances[0];
+  expect(after.currentValue).toBe(5000);
+  expect(after.currentValueDate).toBe('2026-10-14');
+});

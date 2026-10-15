@@ -1,6 +1,7 @@
 import { indexedCostBasis, calculateLinkedRealResult } from './cpiTax';
 import { calculateModifiedDietzReturn } from './modifiedDietz';
 import { israelToday } from './marketSession';
+import { syncLedgerValue } from '../shared/transactionLedger';
 
 export const TAX_RATE = 0.25;
 
@@ -130,6 +131,32 @@ export const applyLedgerValueEditPayload = (item, payload) => {
   const newValue = hasDate ? payload.value : payload;
   const newDate = hasDate ? payload.date : israelToday();
   return applyLedgerValueUpdate(item, newValue, newDate);
+};
+
+// EVERY edit to one field of a ledger-backed account, in one place.
+//
+// Two of them are not a plain field write:
+//
+//   - "שווי נוכחי" closes a period, so it goes through
+//     applyLedgerValueEditPayload above.
+//   - `deposits` IS the ledger. A value the ledger DERIVES - the balance
+//     and the date that balance is for - has to be derived again, which is
+//     transactionLedger.js's syncLedgerValue.
+//
+// Without that second rule, a movement removed or corrected outside the
+// transactions ledger (FinancialAccountsTables' deleteDeposit fallback and
+// its movement-cell edit, for a row with no transaction behind it) left the
+// account anchored to the figure that movement had produced. Deleting a
+// 2,000 withdrawal left the balance where the withdrawal had put it, and
+// the deleted movement's date still showing as the last activity, because
+// shared/liquidBalance.js reads the balance as "the latest RECORDED balance
+// plus the movements after it" - and that recorded balance was never
+// recomputed.
+export const applyAccountFieldEdit = (item, field, value) => {
+  if (field === 'currentValue') return applyLedgerValueEditPayload(item, value);
+  const next = { ...item, [field]: value };
+  if (field === 'deposits') syncLedgerValue(next);
+  return next;
 };
 
 // תשואת התקופה (מעדכון קודם לעדכון נוכחי), מנוטרלת מהפקדות/משיכות

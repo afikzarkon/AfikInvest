@@ -29,7 +29,11 @@ function EditableCell({
   // row and every value needs its own label, since the header row is no
   // longer above it (see App.css's max-width: 720px block, which renders
   // this through content: attr(data-label)).
-  label
+  label,
+  // The input's accessible name, for a cell whose column header does not
+  // say enough on its own - a movement row's "סכום" column, say, where the
+  // sign carries the direction. Defaults to the column label.
+  ariaLabel
 }) {
   const isEditing = editingField === `${id}-${field}`;
   const cellClassName = [isEditMode ? 'editable-cell' : '', className].filter(Boolean).join(' ');
@@ -49,6 +53,7 @@ function EditableCell({
       {isEditing ? (
         <input
           type={type}
+          aria-label={ariaLabel || label}
           value={value}
           onChange={handleChange}
           onBlur={finishInlineEdit}

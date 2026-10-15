@@ -2,7 +2,7 @@ import './App.css';
 import React, { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { formatPriceWithSign, normalizeIsraeliStocksFromStorage } from './utils/formatters';
 import { calculatePortfolioSummary } from './utils/portfolioSummary';
-import { applyLedgerValueEditPayload } from './utils/portfolioMath';
+import { applyAccountFieldEdit } from './utils/portfolioMath';
 import { calculatePortfolioAnalysis } from './utils/portfolioAnalysis';
 import { apiUrl } from './apiBase';
 import { useAuth } from './hooks/useAuth';
@@ -325,15 +325,6 @@ function App() {
   const TABLE_TO_ASSET_CLASS = { pension: 'pension', cash_fund: 'cashFunds', bank: 'bank', bank_savings: 'bankSavings' };
   const handleOpenLedgerEntry = (itemType, account) =>
     openAssetEntry({ assetClass: TABLE_TO_ASSET_CLASS[itemType] || itemType, assetId: account.id, action: 'DEPOSIT' });
-  // "עריכה" on a ledger row in the tables: the form, filled in with the
-  // transaction behind that row, so its date and amount are corrected
-  // through the ledger (revert + re-apply in one step).
-  const handleEditLedgerMovement = (txId) => {
-    const tx = (transactions || []).find((t) => t.id === txId);
-    if (tx) openAssetEntry({ transaction: tx });
-    else window.alert('העסקה לא נמצאה ביומן העסקאות - רעננו את הדף ונסו שוב.');
-  };
-
   // A bookmarked/typed /add opens the form over the dashboard.
   useEffect(() => {
     if (activePage !== 'add') return;
@@ -552,39 +543,30 @@ function App() {
         // (ראו calculatePensionPeriodReturn), לא כאן.
         // value מגיע כ-{ value, date } מדיאלוג העריכה ב-FinancialAccountsTables
         // (שמבקש את שניהם באותה פעולה, ראו applyLedgerValueEditPayload).
-        if (field === 'currentValue') {
-          return applyLedgerValueEditPayload(item, value);
-        }
-        return { ...item, [field]: value };
+        return applyAccountFieldEdit(item, field, value);
       });
       setPensionFunds(updatedPensionFunds);
       setHasUnsavedChanges(true);
     } else if (exchange === 'bank') {
-      // "שווי נוכחי" עובר דרך applyLedgerValueEditPayload בדיוק כמו קופת
-      // גמל - ראו ההערה על exchange === 'pension' למעלה. שאר השדות
-      // מתעדכנים ישירות.
+      // "שווי נוכחי" סוגר תקופה ו-deposits הוא הפנקס עצמו, ולכן שניהם
+      // עוברים דרך applyAccountFieldEdit כמו בכל חשבון אחר - ראו ההערה
+      // על exchange === 'pension' למעלה. שאר השדות מתעדכנים ישירות.
       const updatedBankBalances = bankBalances.map(item => {
         if (item.id !== id) return item;
-        if (field === 'currentValue') {
-          return applyLedgerValueEditPayload(item, value);
-        }
-        return { ...item, [field]: value };
+        return applyAccountFieldEdit(item, field, value);
       });
       setBankBalances(updatedBankBalances);
       setHasUnsavedChanges(true);
     } else if (exchange === 'cash_fund') {
       const updatedCashFunds = cashFunds.map(item => {
         if (item.id !== id) return item;
-        if (field === 'currentValue') {
-          return applyLedgerValueEditPayload(item, value);
-        }
-        return { ...item, [field]: value };
+        return applyAccountFieldEdit(item, field, value);
       });
       setCashFunds(updatedCashFunds);
       setHasUnsavedChanges(true);
     } else if (exchange === 'bank_savings') {
       const updatedBankSavingsFunds = bankSavingsFunds.map(item =>
-        item.id === id ? { ...item, [field]: value } : item
+        item.id === id ? applyAccountFieldEdit(item, field, value) : item
       );
       setBankSavingsFunds(updatedBankSavingsFunds);
       setHasUnsavedChanges(true);
@@ -697,7 +679,8 @@ function App() {
     toggleGroup,
     onOpenLedgerEntry: handleOpenLedgerEntry,
     onDeleteTransaction: handleDeleteTransaction,
-    onEditTransaction: handleEditLedgerMovement
+    transactions,
+    onUpdateTransaction: handleUpdateTransaction
   };
 
   // THE EXPORT IS ALWAYS THE WHOLE PORTFOLIO.

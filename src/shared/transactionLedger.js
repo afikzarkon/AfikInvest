@@ -424,6 +424,16 @@ function normalizeLedgerAccounts(portfolio) {
     out[key] = p[key].map((account) => {
       const copy = Object.assign({}, account);
       repairOpeningEcho(copy);
+      // A value the ledger DERIVES has to equal what the ledger holds. It
+      // can fall out of step when something wrote `deposits` without
+      // re-deriving it, and a stale one is invisible: the balance just
+      // reads as the figure some movement left behind, long after that
+      // movement was deleted. Re-deriving it here heals such an account
+      // the next time the portfolio is loaded or a transaction is
+      // recorded. Only for an account that still HAS ledger rows - with
+      // none there is nothing to derive from, and zeroing a value on the
+      // strength of a flag alone would destroy it.
+      if (Array.isArray(copy.deposits) && copy.deposits.length) syncLedgerValue(copy);
       return JSON.stringify(copy) === JSON.stringify(account) ? account : copy;
     });
   });
@@ -710,6 +720,7 @@ exports.ACCOUNT_CLASSES = ACCOUNT_CLASSES;
 exports.LOT_METHODS = LOT_METHODS;
 exports.LedgerError = LedgerError;
 exports.normalizeLedgerAccounts = normalizeLedgerAccounts;
+exports.syncLedgerValue = syncLedgerValue;
 exports.normalizeTransaction = normalizeTransaction;
 exports.selectLotsForSale = selectLotsForSale;
 exports.applyTransaction = applyTransaction;

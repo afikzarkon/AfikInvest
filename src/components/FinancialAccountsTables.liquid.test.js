@@ -1,23 +1,20 @@
 import { useState } from 'react';
 import { render, fireEvent } from '@testing-library/react';
 import FinancialAccountsTables from './FinancialAccountsTables';
-import { applyLedgerValueEditPayload } from '../utils/portfolioMath';
+import { applyAccountFieldEdit } from '../utils/portfolioMath';
 
 // The money-market fund and current-account tables, wired the way App.js
-// wires them: a 'currentValue' edit goes through applyLedgerValueEditPayload,
-// anything else replaces the field.
-function Harness({ initialCashFunds = [], initialBankBalances = [], onEditTransaction, isEditMode = true }) {
+// wires them: every field edit goes through applyAccountFieldEdit, so a
+// 'currentValue' edit closes a period and a 'deposits' write re-derives a
+// ledger-made balance, exactly as App.js's handleInlineEdit does.
+function Harness({ initialCashFunds = [], initialBankBalances = [], transactions = [], onUpdateTransaction, isEditMode = true }) {
   const [cashFunds, setCashFunds] = useState(initialCashFunds);
   const [bankBalances, setBankBalances] = useState(initialBankBalances);
   const [editingField, setEditingField] = useState(null);
 
   const edit = (setItems) => (id, field, value) =>
     setItems((items) =>
-      items.map((it) => {
-        if (it.id !== id) return it;
-        if (field === 'currentValue') return applyLedgerValueEditPayload(it, value);
-        return { ...it, [field]: value };
-      })
+      items.map((it) => (it.id === id ? applyAccountFieldEdit(it, field, value) : it))
     );
   const handleInlineEdit = (id, field, value, exchange) =>
     exchange === 'bank' ? edit(setBankBalances)(id, field, value) : edit(setCashFunds)(id, field, value);
@@ -39,7 +36,8 @@ function Harness({ initialCashFunds = [], initialBankBalances = [], onEditTransa
       formatDate={(d) => d}
       formatPriceWithSign={(v) => String(v)}
       handleDelete={() => {}}
-      onEditTransaction={onEditTransaction}
+      transactions={transactions}
+      onUpdateTransaction={onUpdateTransaction}
     />
   );
 }
@@ -157,48 +155,98 @@ describe('money-market fund (כספית שקלית)', () => {
   });
 });
 
-describe('correcting a ledger row', () => {
-  // Like every other change to a table, from the page's "מצב עריכה" - not
-  // a button sitting beside every row all the time.
-  test('the edit buttons are there only in edit mode', () => {
-    const fund = { id: 16, fundName: 'כספית', securityId: '1', currentValue: 500, currentValueDate: '2026-10-01', deposits: [{ date: '2026-10-01', amount: 500, txId: 'tx-2' }] };
-    const viewing = render(<Harness initialCashFunds={[fund]} isEditMode={false} />);
-    fireEvent.click(viewing.container.querySelector('.expand-button'));
-    expect(viewing.queryByRole('button', { name: /עריכת התנועה/ })).toBeNull();
+describe('correcting a movement row', () => {
+  const depositCell = (container, label) => container.querySelector(`td[data-label="${label}"]`);
+  const expand = (container) => fireEvent.click(container.querySelector('.expand-button'));
+  const typeInto = (cell, value) => {
+    fireEvent.click(cell);
+    const input = cell.querySelector('input');
+    fireEvent.change(input, { target: { value } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+  };
+
+  const ledgerTx = { id: 'tx-1', type: 'DEPOSIT', date: '2026-10-01', assetClass: 'cashFunds', assetId: '14', amount: 500 };
+  const ledgerFund = {
+    id: 14,
+    fundName: 'כספית',
+    securityId: '1',
+    valueFromLedger: true,
+    currentValue: 500,
+    currentValueDate: '2026-10-01',
+    deposits: [{ date: '2026-10-01', amount: 500, txId: 'tx-1' }]
+  };
+
+  // Like every other value in the app, a movement is corrected from the
+  // page's "מצב עריכה" - the cell itself becomes the input. There is no
+  // button beside the row and no editor next to it.
+  test('the cells are click-to-edit in edit mode, and plain text outside it', () => {
+    const viewing = render(<Harness initialCashFunds={[ledgerFund]} transactions={[ledgerTx]} onUpdateTransaction={jest.fn()} isEditMode={false} />);
+    expand(viewing.container);
+    expect(viewing.queryByRole('button', { name: /עריכ/ })).toBeNull();
+    expect(depositCell(viewing.container, 'תאריך הפקדה').className).not.toContain('editable-cell');
+    fireEvent.click(depositCell(viewing.container, 'תאריך הפקדה'));
+    expect(depositCell(viewing.container, 'תאריך הפקדה').querySelector('input')).toBeNull();
     viewing.unmount();
 
-    const editing = render(<Harness initialCashFunds={[fund]} isEditMode={true} />);
-    fireEvent.click(editing.container.querySelector('.expand-button'));
-    expect(editing.getByRole('button', { name: 'עריכת התנועה מ-2026-10-01' })).toBeInTheDocument();
+    const editing = render(<Harness initialCashFunds={[ledgerFund]} transactions={[ledgerTx]} onUpdateTransaction={jest.fn()} />);
+    expand(editing.container);
+    expect(editing.queryByRole('button', { name: /עריכ/ })).toBeNull();
+    expect(depositCell(editing.container, 'תאריך הפקדה').className).toContain('editable-cell');
+    fireEvent.click(depositCell(editing.container, 'תאריך הפקדה'));
+    expect(editing.getByLabelText('תאריך התנועה')).toBeInTheDocument();
   });
 
-  test('a row recorded through the ledger opens the entry form on its transaction', () => {
-    const onEditTransaction = jest.fn();
-    const fund = {
-      id: 14,
-      fundName: 'כספית',
-      securityId: '1',
-      valueFromLedger: true,
-      currentValue: 500,
-      currentValueDate: '2026-10-01',
-      deposits: [{ date: '2026-10-01', amount: 500, txId: 'tx-1' }]
-    };
-    const { container, getByRole } = render(<Harness initialCashFunds={[fund]} onEditTransaction={onEditTransaction} />);
-    fireEvent.click(container.querySelector('.expand-button'));
-    fireEvent.click(getByRole('button', { name: 'עריכת התנועה מ-2026-10-01' }));
-    expect(onEditTransaction).toHaveBeenCalledWith('tx-1');
+  test('a row recorded through the ledger is corrected through its transaction', () => {
+    const onUpdateTransaction = jest.fn();
+    const { container } = render(<Harness initialCashFunds={[ledgerFund]} transactions={[ledgerTx]} onUpdateTransaction={onUpdateTransaction} />);
+    expand(container);
+    typeInto(depositCell(container, 'תאריך הפקדה'), '2026-10-05');
+    expect(onUpdateTransaction).toHaveBeenCalledWith('tx-1', { ...ledgerTx, date: '2026-10-05', amount: 500 });
+  });
+
+  // tx.amount is a magnitude - the direction is the transaction's TYPE
+  // (transactionLedger.js's DEPOSIT/WITHDRAWAL branch), so a withdrawal
+  // shown as -300 is sent as 450, not -450.
+  test('a withdrawal sends its magnitude, keeping its direction', () => {
+    const onUpdateTransaction = jest.fn();
+    const tx = { id: 'tx-9', type: 'WITHDRAWAL', date: '2026-10-02', assetClass: 'cashFunds', assetId: '14', amount: 300 };
+    const fund = { ...ledgerFund, deposits: [{ date: '2026-10-02', amount: -300, txId: 'tx-9' }] };
+    const { container } = render(<Harness initialCashFunds={[fund]} transactions={[tx]} onUpdateTransaction={onUpdateTransaction} />);
+    expand(container);
+    typeInto(depositCell(container, 'סכום'), '-450');
+    expect(onUpdateTransaction).toHaveBeenCalledWith('tx-9', { ...tx, date: '2026-10-02', amount: 450 });
+  });
+
+  // The server refuses an edit that changes the transaction type, so the
+  // sign is not ours to flip here (server/transactionRoutes.js's PUT).
+  test('turning a deposit into a withdrawal by typing a minus is refused', () => {
+    const alerted = jest.spyOn(window, 'alert').mockImplementation(() => {});
+    const onUpdateTransaction = jest.fn();
+    const { container } = render(<Harness initialCashFunds={[ledgerFund]} transactions={[ledgerTx]} onUpdateTransaction={onUpdateTransaction} />);
+    expand(container);
+    typeInto(depositCell(container, 'סכום'), '-500');
+    expect(onUpdateTransaction).not.toHaveBeenCalled();
+    expect(alerted).toHaveBeenCalledWith(expect.stringContaining('לא ניתן להפוך הפקדה למשיכה'));
+    alerted.mockRestore();
+  });
+
+  // Without somewhere to send the correction, a ledger row stays read-only.
+  test('a ledger row is not editable when there is no way to edit its transaction', () => {
+    const { container, queryByLabelText } = render(<Harness initialCashFunds={[ledgerFund]} transactions={[ledgerTx]} />);
+    expand(container);
+    expect(depositCell(container, 'תאריך הפקדה').className).not.toContain('editable-cell');
+    fireEvent.click(depositCell(container, 'תאריך הפקדה'));
+    expect(queryByLabelText('תאריך התנועה')).toBeNull();
   });
 
   test('a row from before the ledger is corrected in place - its date and its amount', () => {
     const account = { id: 23, amount: 1000, updateDate: '2024-01-01', deposits: [{ date: '2024-02-01', amount: 300 }] };
-    const { container, getByRole, getByLabelText } = render(<Harness initialBankBalances={[account]} />);
-    fireEvent.click(container.querySelector('.expand-button'));
-    fireEvent.click(getByRole('button', { name: 'עריכת התנועה מ-2024-02-01' }));
-    fireEvent.change(getByLabelText('תאריך התנועה'), { target: { value: '2024-02-05' } });
-    fireEvent.change(getByLabelText('סכום התנועה (משיכה במינוס)'), { target: { value: '450' } });
-    fireEvent.click(getByRole('button', { name: 'שמירה' }));
+    const { container } = render(<Harness initialBankBalances={[account]} />);
+    expand(container);
+    typeInto(depositCell(container, 'סכום'), '450');
     expect(container.querySelector('tbody tr').children[0].textContent).toContain('1450 ₪');
-    expect(getByRole('button', { name: 'עריכת התנועה מ-2024-02-05' })).toBeInTheDocument();
+    typeInto(depositCell(container, 'תאריך הפקדה'), '2024-02-05');
+    expect(depositCell(container, 'תאריך הפקדה').textContent).toContain('2024-02-05');
   });
 });
 
