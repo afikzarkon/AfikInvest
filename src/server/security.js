@@ -130,8 +130,11 @@ function warnAboutConfiguration() {
   if (!configuredOrigins().length) {
     console.warn('security: APP_URL / CORS_ORIGINS not set - browsers on other origins cannot call the API');
   }
-  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-    console.warn('security: EMAIL_USER / EMAIL_PASS not set - welcome and password-reset emails are disabled');
+  const { gmailApiConfigured } = require('./emailService');
+  if (!process.env.EMAIL_USER || (!process.env.EMAIL_PASS && !gmailApiConfigured())) {
+    console.warn('security: EMAIL_USER plus GMAIL_* (or EMAIL_PASS) not set - welcome and password-reset emails are disabled');
+  } else if (!gmailApiConfigured()) {
+    console.warn('security: sending mail over SMTP - hosts like Render free block SMTP ports; set GMAIL_* to use the Gmail API');
   }
 }
 
