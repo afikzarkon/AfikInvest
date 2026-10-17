@@ -22,6 +22,7 @@ import { monthKeyFromDate } from './utils/cpiTax';
 import { useRoute } from './hooks/useRoute';
 import HomeView from './components/HomeView';
 import AuthView from './components/AuthView';
+import ResetPasswordView from './components/ResetPasswordView';
 import AppShell from './components/AppShell';
 import ThemeToggleButton from './components/ThemeToggleButton';
 import BetaNoticeModal from './components/BetaNoticeModal';
@@ -52,6 +53,18 @@ const TransactionsView = lazy(() => import('./components/TransactionsView'));
 const AlertsView = lazy(() => import('./components/AlertsView'));
 const RecommendationsView = lazy(() => import('./components/RecommendationsView'));
 const ValuationView = lazy(() => import('./components/ValuationView'));
+const SecuritySettingsView = lazy(() => import('./components/SecuritySettingsView'));
+
+const RESET_PASSWORD_PATH = '/reset-password';
+
+// The token from a password-reset email link (/reset-password?token=...),
+// or null when this is not that page.
+function resetTokenFromUrl() {
+  if (typeof window === 'undefined' || window.location.pathname.replace(/\/+$/, '') !== RESET_PASSWORD_PATH) {
+    return null;
+  }
+  return new URLSearchParams(window.location.search).get('token') || '';
+}
 
 const LEGACY_KEYS = [
   'israeliStocks',
@@ -107,6 +120,16 @@ function clearLegacyPortfolioKeys() {
 function App() {
   const { user, authLoading, authHeader, login, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  // null unless the page was opened from a reset email.
+  const [resetToken, setResetToken] = useState(resetTokenFromUrl);
+  const [authNotice, setAuthNotice] = useState('');
+  // Out of the address bar (and so out of history and Referer headers) as
+  // soon as it has been read.
+  useEffect(() => {
+    if (resetToken && window.location.search) {
+      window.history.replaceState({}, '', RESET_PASSWORD_PATH);
+    }
+  }, [resetToken]);
   const {
     israeliStocks,
     setIsraeliStocks,
@@ -617,13 +640,37 @@ function App() {
     );
   }
 
+  // Before the signed-in check: the link works whether or not this browser
+  // has a session, and a reset revokes that session anyway.
+  if (resetToken !== null) {
+    const finishReset = async (notice) => {
+      if (user) await handleLogout();
+      window.history.replaceState({}, '', '/');
+      setAuthNotice(notice);
+      setResetToken(null);
+    };
+    return (
+      <div className="App">
+        <div className="auth-theme-toggle-wrap">
+          <ThemeToggleButton theme={theme} onToggleTheme={toggleTheme} />
+        </div>
+        <ResetPasswordView token={resetToken} onDone={finishReset} />
+      </div>
+    );
+  }
+
   if (!user) {
     return (
       <div className="App">
         <div className="auth-theme-toggle-wrap">
           <ThemeToggleButton theme={theme} onToggleTheme={toggleTheme} />
         </div>
-        <AuthView onAuthenticated={login} />
+        <AuthView
+          key={authNotice}
+          onAuthenticated={login}
+          initialMode={authNotice ? 'login' : 'register'}
+          initialNotice={authNotice}
+        />
       </div>
     );
   }
@@ -804,6 +851,9 @@ function App() {
             formatPriceWithSign={formatPriceWithSign}
           />
         );
+
+      case 'security':
+        return <SecuritySettingsView user={user} authHeader={authHeader} onSessionChange={login} />;
 
       case 'transactions':
         return (

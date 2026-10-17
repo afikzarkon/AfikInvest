@@ -1,10 +1,16 @@
 // server.js
 require('dotenv').config();
 const express = require('express');
-const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const { bootstrapServices } = require('./server/bootstrap');
 const { mountAuthRoutes } = require('./server/authRoutes');
+const {
+  corsMiddleware,
+  helmetMiddleware,
+  crossSiteRequestGuard,
+  createSessionGuard,
+  warnAboutConfiguration
+} = require('./server/security');
 const { mountPortfolioRoutes } = require('./server/portfolioRoutes');
 const { mountQuotesRoutes } = require('./server/quotesRoutes');
 const { mountCpiRoutes } = require('./server/cpiRoutes');
@@ -26,9 +32,18 @@ const { createValuationService, createDefaultSources } = require('./server/valua
 
 const app = express();
 app.set('trust proxy', 1);
-app.use(cors({ origin: true, credentials: true }));
+// Security headers, the CORS allowlist (APP_URL / CORS_ORIGINS) and the
+// cross-site request check run ahead of every route - see server/security.js.
+app.use(helmetMiddleware());
+app.use(corsMiddleware());
 app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
+app.use(crossSiteRequestGuard());
+// Registered here so it precedes every route; it gets the store to check
+// sessions against once bootstrap finishes.
+const sessionGuard = createSessionGuard();
+app.use(sessionGuard.middleware);
+warnAboutConfiguration();
 
 mountQuotesRoutes(app);
 mountCpiRoutes(app);
@@ -44,7 +59,8 @@ const PORT = Number(process.env.PORT) || 5000;
 
 bootstrapServices()
   .then(({ store, features, marketData, runner }) => {
-    mountAuthRoutes(app, store);
+    sessionGuard.setStore(store);
+    mountAuthRoutes(app, store, { sessionGuard });
     mountPortfolioRoutes(app, store);
     mountSnapshotRoutes(app, store);
     mountMonthlySnapshotRoutes(app, store);

@@ -173,6 +173,14 @@ function SideNav({ activePage, onNavigate, user, onLogout, theme, onToggleTheme,
             <span className="side-nav-user-email" title={user.email}>
               {user.email}
             </span>
+            <button
+              type="button"
+              className={`side-nav-logout ${activePage === 'security' ? 'is-active' : ''}`}
+              onClick={() => onNavigate('security')}
+              aria-current={activePage === 'security' ? 'page' : undefined}
+            >
+              אבטחה
+            </button>
             <button type="button" className="side-nav-logout" onClick={onLogout}>
               התנתקות
             </button>

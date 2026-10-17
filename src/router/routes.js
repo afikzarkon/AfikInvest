@@ -94,7 +94,9 @@ export const ROUTES = [
   // Reachable from the "+ הוספת מידע" action rather than the sidebar, but a
   // real route all the same so the form survives a refresh and the browser's
   // back button leaves it the way it leaves any other page.
-  { key: 'add', path: '/add', label: 'הוספת מידע', hint: 'הוספה ועריכה', icon: 'home', hidden: true }
+  { key: 'add', path: '/add', label: 'הוספת מידע', hint: 'הוספה ועריכה', icon: 'home', hidden: true },
+  // Opened from the account area at the foot of the sidebar.
+  { key: 'security', path: '/security', label: 'אבטחה', hint: 'אימות דו-שלבי', icon: 'shield', hidden: true }
 ];
 
 // The sidebar's visible structure. Grouped rather than one flat list of

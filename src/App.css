@@ -3138,6 +3138,137 @@ h3 {
   cursor: not-allowed;
 }
 
+.auth-submit-danger {
+  background: var(--sw-red);
+}
+
+/* Secondary text action under a form: "forgot password", "back", "cancel". */
+.auth-link {
+  align-self: center;
+  border: none;
+  background: none;
+  padding: 4px 8px;
+  font-family: inherit;
+  font-size: 0.9rem;
+  color: var(--sw-text-secondary);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.auth-link:hover {
+  color: var(--sw-text);
+}
+
+.auth-notice {
+  background: var(--sw-green-soft);
+  color: var(--sw-green);
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.auth-step-text {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.55;
+  color: var(--sw-text-secondary);
+  text-align: right;
+}
+
+.auth-code-input {
+  text-align: center;
+  font-size: 1.4rem;
+  letter-spacing: 0.4em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Security settings page (2FA). */
+.security-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.security-card {
+  max-width: 520px;
+  width: 100%;
+  background: var(--sw-surface);
+  border: 1px solid var(--sw-border);
+  border-radius: var(--sw-radius, 16px);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.security-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.security-card-title {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--sw-text);
+}
+
+.security-badge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.security-badge.is-on {
+  background: var(--sw-green-soft);
+  color: var(--sw-green);
+}
+
+.security-badge.is-off {
+  background: var(--sw-surface-2);
+  color: var(--sw-text-muted);
+}
+
+.security-steps {
+  margin: 0;
+  padding-inline-start: 20px;
+  font-size: 0.92rem;
+  line-height: 1.6;
+  color: var(--sw-text-secondary);
+}
+
+/* The QR code keeps a white quiet zone in both themes - scanners need it. */
+.security-qr {
+  align-self: center;
+  background: #ffffff;
+  padding: 8px;
+  border-radius: 12px;
+  max-width: 100%;
+  height: auto;
+}
+
+.security-secret {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+}
+
+.security-secret code {
+  font-size: 0.95rem;
+  letter-spacing: 0.05em;
+  word-break: break-all;
+  color: var(--sw-text);
+}
+
+.side-nav-logout.is-active {
+  border-color: var(--sw-accent);
+  color: var(--sw-text);
+}
+
 .user-bar {
   display: flex;
   align-items: center;

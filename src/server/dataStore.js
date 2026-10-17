@@ -90,7 +90,50 @@ function openSqlite(dbPathOverride) {
     );
   `);
   db.exec(TRANSACTIONS_TABLE_SQLITE);
+  migrateSqliteAuth(db);
   return db;
+}
+
+// Columns and table behind session revocation, 2FA and password reset.
+// SQLite has no ADD COLUMN IF NOT EXISTS, so check the existing columns.
+function migrateSqliteAuth(db) {
+  const have = new Set(db.prepare('PRAGMA table_info(users)').all().map((c) => c.name));
+  const add = [
+    ['token_version', 'INTEGER NOT NULL DEFAULT 0'],
+    ['totp_secret', 'TEXT'],
+    ['totp_enabled', 'INTEGER NOT NULL DEFAULT 0'],
+    ['totp_last_step', 'INTEGER']
+  ];
+  add.forEach(([name, type]) => {
+    if (!have.has(name)) db.exec(`ALTER TABLE users ADD COLUMN ${name} ${type}`);
+  });
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      token_hash TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      expires_at INTEGER NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS password_reset_tokens_user_idx ON password_reset_tokens (user_id);
+  `);
+}
+
+const AUTH_USER_COLUMNS =
+  'id, email, password_hash, token_version, totp_secret, totp_enabled, totp_last_step';
+
+// One shape for both databases (SQLite stores booleans as 0/1, Postgres
+// returns BIGINT as a string).
+function toAuthUser(row) {
+  if (!row) return null;
+  return {
+    id: Number(row.id),
+    email: row.email,
+    password_hash: row.password_hash,
+    token_version: Number(row.token_version) || 0,
+    totp_secret: row.totp_secret || null,
+    totp_enabled: row.totp_enabled === true || Number(row.totp_enabled) === 1,
+    totp_last_step: row.totp_last_step == null ? null : Number(row.totp_last_step)
+  };
 }
 
 function sqliteStore(db) {
@@ -113,10 +156,70 @@ function sqliteStore(db) {
       return { id: Number(r.lastInsertRowid) };
     },
     async findUserForLogin(email) {
-      return (
-        db.prepare('SELECT id, email, password_hash FROM users WHERE email = ?').get(email) ||
-        null
+      return toAuthUser(db.prepare(`SELECT ${AUTH_USER_COLUMNS} FROM users WHERE email = ?`).get(email));
+    },
+    async getAuthUser(userId) {
+      return toAuthUser(db.prepare(`SELECT ${AUTH_USER_COLUMNS} FROM users WHERE id = ?`).get(userId));
+    },
+    // A pending secret: stored, but not enforced until enableTotp.
+    async setPendingTotpSecret(userId, encryptedSecret) {
+      db.prepare('UPDATE users SET totp_secret = ?, totp_enabled = 0, totp_last_step = NULL WHERE id = ?').run(
+        encryptedSecret,
+        userId
       );
+    },
+    // Turning 2FA on also revokes every other session.
+    async enableTotp(userId) {
+      db.prepare(
+        'UPDATE users SET totp_enabled = 1, token_version = token_version + 1 WHERE id = ? AND totp_secret IS NOT NULL'
+      ).run(userId);
+    },
+    async disableTotp(userId) {
+      db.prepare('UPDATE users SET totp_enabled = 0, totp_secret = NULL, totp_last_step = NULL WHERE id = ?').run(
+        userId
+      );
+    },
+    // Records a used TOTP time step; false when that step (or a later one)
+    // was already used, so one code cannot be replayed.
+    async claimTotpStep(userId, step) {
+      const r = db
+        .prepare('UPDATE users SET totp_last_step = ? WHERE id = ? AND (totp_last_step IS NULL OR totp_last_step < ?)')
+        .run(step, userId, step);
+      return r.changes > 0;
+    },
+    // One live reset token per user: a new request replaces the old one.
+    async createPasswordReset(userId, tokenHash, expiresAt) {
+      db.transaction(() => {
+        db.prepare('DELETE FROM password_reset_tokens WHERE user_id = ?').run(userId);
+        db.prepare('INSERT INTO password_reset_tokens (token_hash, user_id, expires_at) VALUES (?, ?, ?)').run(
+          tokenHash,
+          userId,
+          expiresAt
+        );
+      })();
+    },
+    async findPasswordReset(tokenHash, now) {
+      const row = db
+        .prepare('SELECT user_id FROM password_reset_tokens WHERE token_hash = ? AND expires_at > ?')
+        .get(tokenHash, now);
+      return row ? { userId: Number(row.user_id) } : null;
+    },
+    // Single use: the token goes in the same transaction that sets the new
+    // password and revokes every existing session.
+    async consumePasswordReset(tokenHash, now, passwordHash) {
+      return db.transaction(() => {
+        const row = db
+          .prepare('SELECT user_id FROM password_reset_tokens WHERE token_hash = ? AND expires_at > ?')
+          .get(tokenHash, now);
+        if (!row) return null;
+        const userId = Number(row.user_id);
+        db.prepare('DELETE FROM password_reset_tokens WHERE user_id = ?').run(userId);
+        db.prepare('UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?').run(
+          passwordHash,
+          userId
+        );
+        return { userId };
+      })();
     },
     async getPortfolioPayload(userId) {
       const row = db.prepare('SELECT payload FROM user_portfolios WHERE user_id = ?').get(userId);
@@ -285,6 +388,22 @@ async function pgStore(connectionString) {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+  await pool.query(`
+    ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS totp_secret TEXT,
+      ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+      ADD COLUMN IF NOT EXISTS totp_last_step BIGINT;
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      token_hash TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      expires_at BIGINT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query('CREATE INDEX IF NOT EXISTS password_reset_tokens_user_idx ON password_reset_tokens (user_id)');
   await pool.query(`
     CREATE TABLE IF NOT EXISTS user_portfolios (
       user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
@@ -643,11 +762,89 @@ async function pgStore(connectionString) {
       return { id: Number(rows[0].id) };
     },
     async findUserForLogin(email) {
-      const { rows } = await pool.query(
-        'SELECT id, email, password_hash FROM users WHERE email = $1',
-        [email]
+      const { rows } = await pool.query(`SELECT ${AUTH_USER_COLUMNS} FROM users WHERE email = $1`, [email]);
+      return toAuthUser(rows[0]);
+    },
+    async getAuthUser(userId) {
+      const { rows } = await pool.query(`SELECT ${AUTH_USER_COLUMNS} FROM users WHERE id = $1`, [userId]);
+      return toAuthUser(rows[0]);
+    },
+    // See the SQLite versions of the 2FA and reset methods.
+    async setPendingTotpSecret(userId, encryptedSecret) {
+      await pool.query(
+        'UPDATE users SET totp_secret = $1, totp_enabled = FALSE, totp_last_step = NULL WHERE id = $2',
+        [encryptedSecret, userId]
       );
-      return rows[0] || null;
+    },
+    async enableTotp(userId) {
+      await pool.query(
+        'UPDATE users SET totp_enabled = TRUE, token_version = token_version + 1 WHERE id = $1 AND totp_secret IS NOT NULL',
+        [userId]
+      );
+    },
+    async disableTotp(userId) {
+      await pool.query(
+        'UPDATE users SET totp_enabled = FALSE, totp_secret = NULL, totp_last_step = NULL WHERE id = $1',
+        [userId]
+      );
+    },
+    async claimTotpStep(userId, step) {
+      const r = await pool.query(
+        'UPDATE users SET totp_last_step = $1 WHERE id = $2 AND (totp_last_step IS NULL OR totp_last_step < $1)',
+        [step, userId]
+      );
+      return r.rowCount > 0;
+    },
+    async createPasswordReset(userId, tokenHash, expiresAt) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query('DELETE FROM password_reset_tokens WHERE user_id = $1', [userId]);
+        await client.query(
+          'INSERT INTO password_reset_tokens (token_hash, user_id, expires_at) VALUES ($1, $2, $3)',
+          [tokenHash, userId, expiresAt]
+        );
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
+    },
+    async findPasswordReset(tokenHash, now) {
+      const { rows } = await pool.query(
+        'SELECT user_id FROM password_reset_tokens WHERE token_hash = $1 AND expires_at > $2',
+        [tokenHash, now]
+      );
+      return rows[0] ? { userId: Number(rows[0].user_id) } : null;
+    },
+    async consumePasswordReset(tokenHash, now, passwordHash) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const { rows } = await client.query(
+          'DELETE FROM password_reset_tokens WHERE token_hash = $1 AND expires_at > $2 RETURNING user_id',
+          [tokenHash, now]
+        );
+        if (!rows[0]) {
+          await client.query('ROLLBACK');
+          return null;
+        }
+        const userId = Number(rows[0].user_id);
+        await client.query('DELETE FROM password_reset_tokens WHERE user_id = $1', [userId]);
+        await client.query('UPDATE users SET password_hash = $1, token_version = token_version + 1 WHERE id = $2', [
+          passwordHash,
+          userId
+        ]);
+        await client.query('COMMIT');
+        return { userId };
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
     },
     async getPortfolioPayload(userId) {
       const client = await pool.connect();
