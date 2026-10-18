@@ -108,3 +108,62 @@ test('the route: a bad symbol is refused, a good one returns the snapshot', asyn
     await new Promise((r) => server.close(r));
   }
 });
+
+describe('the last 10-year yield, kept for when the source is down', () => {
+  const { createReferenceMemory } = require('./dcfSnapshot');
+  const deps = (riskFree, memory) => ({
+    get: async (url, config) => ({ data: timeseries(config.params.type.startsWith('quarterly') ? 'quarterly' : 'annual') }),
+    plainGet: async () => ({ data: {} }),
+    quoteSummary: async () => quote,
+    riskFree,
+    memory
+  });
+  const tnx = (pct) => async () => ({ data: { chart: { result: [{ meta: { regularMarketPrice: pct, regularMarketTime: 1792353601 } }] } } });
+  const down = async () => {
+    throw new Error('chart down');
+  };
+
+  test('a fetched yield is remembered; when the chart fails it comes back as rfLastSaved, never as rf', async () => {
+    const memory = createReferenceMemory();
+    const first = await fetchDcfSnapshot('NOW', deps(tnx(5.098), memory));
+    expect(first.rf.value).toBeCloseTo(0.05098, 12);
+    expect(first.rfLastSaved).toBeNull();
+    const second = await fetchDcfSnapshot('NOW', deps(down, memory));
+    expect(second.rf).toBeNull();
+    expect(second.rfLastSaved).toMatchObject({ value: first.rf.value, asOf: first.rf.asOf });
+  });
+
+  test('nothing remembered yet: neither', async () => {
+    const snap = await fetchDcfSnapshot('NOW', deps(down, createReferenceMemory()));
+    expect(snap.rf).toBeNull();
+    expect(snap.rfLastSaved).toBeNull();
+  });
+
+  test('persisted in the market_reference table, so a restarted server still has it', async () => {
+    const Database = require('better-sqlite3');
+    const { makeSqliteSql } = require('./sqlAdapter');
+    const db = new Database(':memory:');
+    const sql = makeSqliteSql(db);
+    await sql.exec('CREATE TABLE IF NOT EXISTS market_reference (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL)');
+    const before = createReferenceMemory();
+    before.attach(sql);
+    await before.set('rf', { value: 0.051, asOf: '2026-10-16' });
+    await before.set('rf', { value: 0.05098, asOf: '2026-10-18' });
+    const after = createReferenceMemory();
+    after.attach(sql);
+    expect(await after.get('rf')).toEqual({ value: 0.05098, asOf: '2026-10-18' });
+    db.close();
+  });
+});
+
+test('cash components are fetched; strategic investments are not', () => {
+  const { QUARTER_FIELDS: fields } = require('./dcfSnapshot');
+  expect(fields).toMatchObject({
+    cash: 'CashAndCashEquivalents',
+    shortTermInvestments: 'OtherShortTermInvestments',
+    longTermMarketable: 'InvestmentinFinancialAssets',
+    availableForSale: 'AvailableForSaleSecurities'
+  });
+  expect(Object.values(fields)).not.toEqual(expect.arrayContaining(['LongTermEquityInvestment']));
+  expect(Object.values(fields)).not.toContain('InvestmentsAndAdvances');
+});

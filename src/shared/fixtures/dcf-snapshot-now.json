@@ -1,0 +1,180 @@
+{
+  "ticker": "NOW",
+  "retrievedAt": "2026-10-18T19:04:37.396Z",
+  "name": "ServiceNow, Inc.",
+  "currency": "USD",
+  "financialCurrency": "USD",
+  "price": {
+    "value": 141.97,
+    "asOf": "2026-10-16",
+    "source": "Yahoo Finance - מחיר אחרון (quoteSummary.price)"
+  },
+  "sharesOutstanding": 1033862000,
+  "betaRaw": {
+    "value": 0.99,
+    "asOf": "2026-10-18",
+    "source": "Yahoo Finance - בטא 5 שנים, חודשית (defaultKeyStatistics.beta)"
+  },
+  "consensus": {
+    "rev0y": {
+      "value": 16217916410,
+      "periodEnd": "2026-12-31",
+      "analysts": 45
+    },
+    "rev1y": {
+      "value": 19266483710,
+      "periodEnd": "2027-12-31",
+      "analysts": 46
+    },
+    "asOf": "2026-10-18",
+    "source": "Yahoo Finance - קונצנזוס אנליסטים (earningsTrend.revenueEstimate)"
+  },
+  "rf": {
+    "value": 0.05098,
+    "asOf": "2026-10-16",
+    "source": "אג\"ח ממשלת ארה\"ב ל-10 שנים (^TNX), Yahoo Finance"
+  },
+  "rfLastSaved": null,
+  "profile": {
+    "sector": "Technology",
+    "industry": "Software - Application",
+    "quoteType": "EQUITY",
+    "source": "Yahoo Finance - פרופיל החברה (assetProfile)"
+  },
+  "quarters": [
+    {
+      "periodEnd": "2025-06-30",
+      "currency": "USD",
+      "shortTermInvestments": 3008000000,
+      "cash": 3124000000,
+      "cashAndShortTerm": 6132000000,
+      "longTermMarketable": 4655000000,
+      "capex": -190000000,
+      "basicShares": 1037595000,
+      "dilutedShares": 1045000000,
+      "netIncome": 385000000,
+      "operatingCashFlow": 716000000,
+      "sbc": 499000000,
+      "availableForSale": 4655000000,
+      "revenue": 3215000000,
+      "longTermDebt": 1490000000
+    },
+    {
+      "periodEnd": "2025-09-30",
+      "currency": "USD",
+      "shortTermInvestments": 2686000000,
+      "cash": 2725000000,
+      "cashAndShortTerm": 5411000000,
+      "longTermMarketable": 4266000000,
+      "capex": -244000000,
+      "basicShares": 1040755000,
+      "dilutedShares": 1050000000,
+      "netIncome": 502000000,
+      "operatingCashFlow": 813000000,
+      "sbc": 492000000,
+      "availableForSale": 4266000000,
+      "revenue": 3407000000,
+      "longTermDebt": 1491000000
+    },
+    {
+      "periodEnd": "2025-12-31",
+      "currency": "USD",
+      "shortTermInvestments": 2558000000,
+      "cash": 3726000000,
+      "cashAndShortTerm": 6284000000,
+      "longTermMarketable": 3771000000,
+      "capex": -238000000,
+      "basicShares": 1047278000,
+      "dilutedShares": 1047000000,
+      "netIncome": 401000000,
+      "operatingCashFlow": 2238000000,
+      "sbc": 494000000,
+      "availableForSale": 3771000000,
+      "revenue": 3568000000,
+      "longTermDebt": 1491000000
+    },
+    {
+      "periodEnd": "2026-03-31",
+      "currency": "USD",
+      "shortTermInvestments": 2480000000,
+      "cash": 2702000000,
+      "cashAndShortTerm": 5182000000,
+      "longTermMarketable": 2724000000,
+      "capex": -141000000,
+      "basicShares": 1031308000,
+      "dilutedShares": 1040000000,
+      "netIncome": 469000000,
+      "operatingCashFlow": 1670000000,
+      "sbc": 547000000,
+      "availableForSale": 2724000000,
+      "revenue": 3770000000,
+      "longTermDebt": 1491000000
+    },
+    {
+      "periodEnd": "2026-06-30",
+      "currency": "USD",
+      "currentDebt": 2082000000,
+      "shortTermInvestments": 2161000000,
+      "cash": 2503000000,
+      "cashAndShortTerm": 4664000000,
+      "longTermMarketable": 2043000000,
+      "capex": -114000000,
+      "basicShares": 1033862000,
+      "dilutedShares": 1034000000,
+      "netIncome": 298000000,
+      "operatingCashFlow": 587000000,
+      "sbc": 652000000,
+      "availableForSale": 2043000000,
+      "revenue": 3987000000,
+      "longTermDebt": 5435000000
+    }
+  ],
+  "annual": [
+    {
+      "periodEnd": "2022-12-31",
+      "currency": "USD",
+      "revenue": 7245000000,
+      "operatingCashFlow": 2723000000,
+      "capex": -550000000,
+      "sbc": 1401000000,
+      "netIncome": 325000000
+    },
+    {
+      "periodEnd": "2023-12-31",
+      "currency": "USD",
+      "revenue": 8971000000,
+      "operatingCashFlow": 3398000000,
+      "capex": -697000000,
+      "sbc": 1604000000,
+      "netIncome": 1731000000
+    },
+    {
+      "periodEnd": "2024-12-31",
+      "currency": "USD",
+      "revenue": 10984000000,
+      "operatingCashFlow": 4267000000,
+      "capex": -892000000,
+      "sbc": 1746000000,
+      "netIncome": 1425000000
+    },
+    {
+      "periodEnd": "2025-12-31",
+      "currency": "USD",
+      "revenue": 13278000000,
+      "operatingCashFlow": 5444000000,
+      "capex": -911000000,
+      "sbc": 1955000000,
+      "netIncome": 1748000000
+    }
+  ],
+  "sources": {
+    "quarters": "Yahoo Finance - דוחות רבעוניים (fundamentals-timeseries)",
+    "annual": "Yahoo Finance - דוחות שנתיים (fundamentals-timeseries)"
+  },
+  "diagnostics": {
+    "quarters": "ok",
+    "annual": "ok",
+    "quote": "ok",
+    "riskFree": "ok"
+  }
+}

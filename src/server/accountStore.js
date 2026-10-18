@@ -117,6 +117,18 @@ const MIGRATIONS = [
         created_at TEXT NOT NULL
       )`
     ]
+  },
+  {
+    // Market reference figures kept between runs - the last 10-year
+    // Treasury yield fetched, for when the source is down (dcfSnapshot.js).
+    id: '2026-10-market-reference-v1',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS market_reference (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`
+    ]
   }
 ];
 

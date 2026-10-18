@@ -9,7 +9,14 @@
 //   statements    fundamentals-timeseries, quarterly and annual
 //   quote         quoteSummary: price, defaultKeyStatistics (beta, shares),
 //                 earningsTrend (revenue consensus 0y / +1y), assetProfile
-//   risk-free     the ^TNX chart (10-year Treasury yield, in percent)
+//   risk-free     the ^TNX chart (10-year Treasury yield, in percent); the
+//                 last value fetched is kept (createReferenceMemory) and
+//                 offered as rfLastSaved when the chart is unavailable
+//
+// Cash, for the DCF, is cash and equivalents + short-term investments +
+// long-term marketable securities. The balance-sheet lines for those are
+// fetched separately; equity-method and other strategic investments
+// (LongTermEquityInvestment, InvestmentsAndAdvances) deliberately are not.
 //
 // The parsers are pure and exported, tested on recorded shapes.
 const axios = require('axios');
@@ -30,6 +37,11 @@ const QUARTER_FIELDS = {
   dilutedShares: 'DilutedAverageShares',
   basicShares: 'OrdinarySharesNumber',
   cash: 'CashAndCashEquivalents',
+  shortTermInvestments: 'OtherShortTermInvestments',
+  cashAndShortTerm: 'CashCashEquivalentsAndShortTermInvestments',
+  longTermMarketable: 'InvestmentinFinancialAssets',
+  availableForSale: 'AvailableForSaleSecurities',
+  heldToMaturity: 'HeldToMaturitySecurities',
   currentDebt: 'CurrentDebt',
   longTermDebt: 'LongTermDebt'
 };
@@ -141,6 +153,43 @@ async function fetchTimeseries(symbol, prefix, fields, years, { get, plainGet })
   throw lastError;
 }
 
+// The last value of a market reference figure, kept between runs: in
+// memory, and in the market_reference table once a database is attached
+// (server.js attaches it after bootstrap; accountStore.js's migration
+// creates the table). A failing database never fails a snapshot.
+function createReferenceMemory() {
+  let sql = null;
+  const mem = new Map();
+  return {
+    attach(sqlHandle) {
+      sql = sqlHandle;
+    },
+    async get(key) {
+      if (sql) {
+        try {
+          const row = await sql.get('SELECT value FROM market_reference WHERE key = ?', [key]);
+          if (row) return JSON.parse(row.value);
+        } catch {
+          // Fall back to this process's own copy.
+        }
+      }
+      return mem.get(key) || null;
+    },
+    async set(key, value) {
+      mem.set(key, value);
+      if (!sql) return;
+      try {
+        await sql.run(
+          'INSERT INTO market_reference (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at',
+          [key, JSON.stringify(value), new Date().toISOString()]
+        );
+      } catch {
+        // Kept in memory; the database copy is a convenience.
+      }
+    }
+  };
+}
+
 const defaultDeps = {
   get: (url, config) => fetchYahooWithCrumbRetry(url, config.params),
   plainGet: axios.get,
@@ -162,6 +211,14 @@ async function fetchDcfSnapshot(symbol, deps = {}) {
   ]);
   const status = (r) => (r.status === 'fulfilled' ? 'ok' : `error: ${(r.reason && r.reason.message) || r.reason}`);
   const quote = sR.status === 'fulfilled' ? parseQuote(sR.value, retrievedDay) : {};
+  // The yield: today's, which is then remembered; or, when the chart is
+  // down, the last one remembered - offered separately, never in its place.
+  const rf = rR.status === 'fulfilled' ? parseRiskFree(rR.value.data) : null;
+  let rfLastSaved = null;
+  if (d.memory) {
+    if (rf) await d.memory.set('rf', rf);
+    else rfLastSaved = await d.memory.get('rf');
+  }
   return {
     ticker: symbol,
     retrievedAt,
@@ -172,7 +229,8 @@ async function fetchDcfSnapshot(symbol, deps = {}) {
     sharesOutstanding: quote.sharesOutstanding ?? null,
     betaRaw: quote.betaRaw || null,
     consensus: quote.consensus || null,
-    rf: rR.status === 'fulfilled' ? parseRiskFree(rR.value.data) : null,
+    rf,
+    rfLastSaved,
     profile: quote.profile || null,
     quarters: qR.status === 'fulfilled' ? qR.value : [],
     annual: aR.status === 'fulfilled' ? aR.value : [],
@@ -183,14 +241,14 @@ async function fetchDcfSnapshot(symbol, deps = {}) {
 
 // Cached per symbol: 12 hours, 15 minutes when a source failed, so a
 // refusing source gets another chance soon.
-function createDcfSnapshotService({ fetch = fetchDcfSnapshot, now = () => Date.now() } = {}) {
+function createDcfSnapshotService({ fetch = fetchDcfSnapshot, now = () => Date.now(), memory = null } = {}) {
   const cache = new Map();
   const inFlight = new Map();
   return async function getDcfSnapshot(symbol) {
     const hit = cache.get(symbol);
     if (hit && now() - hit.ts < hit.ttl) return hit.data;
     if (inFlight.has(symbol)) return inFlight.get(symbol);
-    const p = fetch(symbol)
+    const p = fetch(symbol, memory ? { memory } : {})
       .then((data) => {
         const partial = Object.values(data.diagnostics).some((s) => s !== 'ok');
         cache.set(symbol, { data, ts: now(), ttl: partial ? 15 * 60 * 1000 : 12 * 60 * 60 * 1000 });
@@ -202,4 +260,4 @@ function createDcfSnapshotService({ fetch = fetchDcfSnapshot, now = () => Date.n
   };
 }
 
-module.exports = { QUARTER_FIELDS, ANNUAL_FIELDS, SOURCES, parseTimeseries, parseQuote, parseRiskFree, fetchDcfSnapshot, createDcfSnapshotService };
+module.exports = { QUARTER_FIELDS, ANNUAL_FIELDS, SOURCES, parseTimeseries, parseQuote, parseRiskFree, fetchDcfSnapshot, createDcfSnapshotService, createReferenceMemory };

@@ -45,6 +45,16 @@ describe('migrations', () => {
     }
   });
 
+  test('the market reference table is created, empty, and the reference memory reads and writes it', async () => {
+    const { store } = await freshStores();
+    expect(await store.sql.all('SELECT key FROM market_reference')).toEqual([]);
+    const { createReferenceMemory } = require('./dcfSnapshot');
+    const memory = createReferenceMemory();
+    memory.attach(store.sql);
+    await memory.set('rf', { value: 0.0512, asOf: '2026-10-16' });
+    expect(await store.sql.get('SELECT value FROM market_reference WHERE key = ?', ['rf'])).toEqual({ value: JSON.stringify({ value: 0.0512, asOf: '2026-10-16' }) });
+  });
+
   test('insertUser records a provider-verified address and an account without a password', async () => {
     const { store } = await freshStores();
     const { id } = await store.insertUser('g@example.com', 'random', { emailVerified: true, passwordSet: false });

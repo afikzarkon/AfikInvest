@@ -32,7 +32,7 @@ const { mountInternalJobRoutes } = require('./server/internalJobRoutes');
 const { mountPreferenceRoutes } = require('./server/preferenceRoutes');
 const { mountValuationRoutes } = require('./server/valuationRoutes');
 const { createValuationService, createDefaultSources } = require('./server/valuationService');
-const { createDcfSnapshotService } = require('./server/dcfSnapshot');
+const { createDcfSnapshotService, createReferenceMemory } = require('./server/dcfSnapshot');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -57,13 +57,17 @@ mountAnalystRoutes(app);
 mountDividendRoutes(app);
 mountStockSearchRoutes(app);
 mountHistoricalPricesRoutes(app);
-mountValuationRoutes(app, { valuation: createValuationService({ sources: createDefaultSources() }), dcfSnapshot: createDcfSnapshotService() });
+// The last 10-year yield, kept for when its source is down; persisted once
+// the database is up (attached after bootstrap below).
+const referenceMemory = createReferenceMemory();
+mountValuationRoutes(app, { valuation: createValuationService({ sources: createDefaultSources() }), dcfSnapshot: createDcfSnapshotService({ memory: referenceMemory }) });
 
 const PORT = Number(process.env.PORT) || 5000;
 
 bootstrapServices()
   .then(({ store, features, accounts, marketData, runner }) => {
     sessionGuard.setStore(store, accounts);
+    referenceMemory.attach(store.sql);
     const mailer = createEmailService();
     const auth = mountAuthRoutes(app, store, { sessionGuard, accounts, mailer });
     mountAccountRoutes(app, { store, accounts, features, mailer, auth });
