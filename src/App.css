@@ -8575,7 +8575,11 @@ button.dcf-scenario-card:hover {
   white-space: nowrap;
 }
 
+/* position: the cells' visually-hidden labels are absolutely positioned;
+   without a positioned ancestor inside the scrolling table they escaped it
+   and widened the whole page on a phone. */
 .dcf-years .dcf-field {
+  position: relative;
   min-width: 76px;
 }
 
