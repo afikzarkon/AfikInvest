@@ -2,11 +2,15 @@ import React, { useState } from 'react';
 import ScrollableTable from './ScrollableTable';
 import EditableCell from './EditableCell';
 import { calculatePensionRealGainTax, calculateBankSavingsFundTax, monthKeyFromDate } from '../utils/cpiTax';
-import { calculateLedgerPeriodReturn, hasAmbiguousLedgerPeriod } from '../utils/portfolioMath';
+import {
+  calculateLedgerPeriodReturn,
+  calculateLiquidPeriodReturn,
+  calculateLiquidTotalReturn,
+  hasAmbiguousLedgerPeriod
+} from '../utils/portfolioMath';
 import { computeBankSavingsFundValue } from '../utils/bankSavingsFund';
 import { todayISO } from '../utils/portfolioDates';
 import { liquidBalanceOn, movementsSinceLastBalance, recordedBalances } from '../shared/liquidBalance';
-import { openingBalanceOfLedgerAccount } from '../utils/ledgerAccountHistory';
 
 // The four ledger-backed account tables: provident funds, money-market
 // funds, current accounts and bank savings.
@@ -228,16 +232,46 @@ function FinancialAccountsTables({
   // What has been paid in, net of withdrawals.
   const netMovements = (item) => (Array.isArray(item.deposits) ? item.deposits : []).reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
 
-  // A money-market fund's return since the money went in: today's value
-  // against everything paid in, net of withdrawals. Only when the ledger
-  // starts the account - an account recorded with a balance before its
-  // first ledger entry carries money whose cost the app never saw.
-  const overallLiquidReturn = (item) => {
-    const paidIn = netMovements(item);
-    const hasLedger = Array.isArray(item.deposits) && item.deposits.length > 0;
-    if (!hasLedger || paidIn <= 0 || openingBalanceOfLedgerAccount(item) !== 0) return null;
-    const profit = liquidBalanceOn(item, todayISO()) - paidIn;
-    return { profit, percent: (profit / paidIn) * 100 };
+  // A money-market fund's two return cells: since the previous value update
+  // (time-weighted, net of the movements in between) and since the money
+  // went in - each with the profit in shekels under it.
+  // See portfolioMath.js's calculateLiquidPeriodReturn/calculateLiquidTotalReturn.
+  const returnTone = (r) => (r && r.percent > 0 ? 'profit-positive' : r && r.percent < 0 ? 'profit-negative' : '');
+  const renderReturnValue = (r, note = null) =>
+    r ? (
+      <>
+        {formatPercent(r.percent)}
+        <small className="form-help" style={{ display: 'block' }}>{`${formatPriceWithSign(r.profit)} ₪`}</small>
+        {note}
+      </>
+    ) : '-';
+  const renderLiquidReturnCells = (item, labels) => {
+    const period = calculateLiquidPeriodReturn(item);
+    const overall = calculateLiquidTotalReturn(item, todayISO());
+    const opened = firstMovementDate(item);
+    return (
+      <>
+        <td className={returnTone(period)} data-label={labels.periodReturn}>
+          {hasAmbiguousLedgerPeriod(item) && (
+            <span
+              className="ambiguous-period-warning"
+              title='תאריך "שווי קודם" זהה לתאריך "שווי נוכחי" - כל הפקדה/משיכה שקדמה לתאריך הזה, גם אם קדמה זמן רב, לא נלקחת בחשבון בחישוב הזה.'
+            >
+              ⚠️{' '}
+            </span>
+          )}
+          {renderReturnValue(
+            period,
+            period && period.sinceOpening && opened ? (
+              <small className="form-help" style={{ display: 'block' }}>{`מאז הפתיחה (${formatDate(opened)})`}</small>
+            ) : null
+          )}
+        </td>
+        <td className={returnTone(overall)} data-label={labels.totalReturn}>
+          {renderReturnValue(overall)}
+        </td>
+      </>
+    );
   };
 
   // The latest day anything was recorded on an account - a movement, or a
@@ -646,13 +680,6 @@ function FinancialAccountsTables({
                 {cashFunds.map(item => {
                   const deposits = Array.isArray(item.deposits) ? item.deposits : [];
                   const previousValue = item.previousValue ?? 0;
-                  // "Since the previous update" needs two values to measure
-                  // between - before the first statement there is only the
-                  // ledger's own sum, and nothing to measure.
-                  const periodReturn = calculateLedgerPeriodReturn(item);
-                  const periodReturnPercent = previousValue > 0 && !item.valueFromLedger ? periodReturn.percent : null;
-                  const ambiguousPeriod = hasAmbiguousLedgerPeriod(item);
-                  const overall = overallLiquidReturn(item);
                   const isExpanded = !!expandedCashFunds[item.id];
                   const columnCount = (showAdditionalData ? 9 : 7) + (isEditMode ? 1 : 0);
                   return (
@@ -721,26 +748,7 @@ function FinancialAccountsTables({
                         <td data-label={CASH_COL.currentDate}>
                           {item.valueFromLedger ? 'לפי ההפקדות' : item.currentValueDate ? formatDate(item.currentValueDate) : '-'}
                         </td>
-                        <td className={periodReturnPercent > 0 ? 'profit-positive' : periodReturnPercent < 0 ? 'profit-negative' : ''} data-label={CASH_COL.periodReturn}>
-                          {ambiguousPeriod && (
-                            <span
-                              className="ambiguous-period-warning"
-                              title='תאריך "שווי קודם" זהה לתאריך "שווי נוכחי" - כל הפקדה/משיכה שקדמה לתאריך הזה, גם אם קדמה זמן רב, לא נלקחת בחשבון בחישוב הזה.'
-                            >
-                              ⚠️{' '}
-                            </span>
-                          )}
-                          {formatPercent(periodReturnPercent)}
-                          {renderSinceOpeningNote(item, periodReturnPercent)}
-                        </td>
-                        <td className={overall && overall.percent > 0 ? 'profit-positive' : overall && overall.percent < 0 ? 'profit-negative' : ''} data-label={CASH_COL.totalReturn}>
-                          {overall ? (
-                            <>
-                              {formatPercent(overall.percent)}
-                              <small className="form-help" style={{ display: 'block' }}>{`${formatPriceWithSign(overall.profit)} ₪`}</small>
-                            </>
-                          ) : '-'}
-                        </td>
+                        {renderLiquidReturnCells(item, CASH_COL)}
                         {/* previousValue/previousValueDate הן תצוגה בלבד בכוונה - ראו
                             הערת השדות המקבילים בטבלת קופות הגמל למעלה. */}
                         {showAdditionalData && <td data-label={CASH_COL.previous}>{renderPreviousValue(item, previousValue)}</td>}

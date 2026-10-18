@@ -55,6 +55,31 @@ function HomeView({
 
   const cardProps = { summary, formatPriceWithSign };
 
+  // Which categories the user holds.
+  const present = {
+    israeli: israeliStocks.length > 0,
+    american: americanStocks.length > 0,
+    cash: cashFunds.length > 0,
+    pension: pensionFunds.length > 0,
+    bank: bankBalances.length > 0,
+    bankSavings: bankSavingsFunds.length > 0
+  };
+  // The markets first - they are read against each other - then the
+  // accounts that do not move with the market.
+  const categoryCards = [
+    present.israeli && { key: 'israeli', to: 'israeli-stocks', card: <IsraeliMarketCard {...cardProps} /> },
+    present.american && { key: 'american', to: 'us-stocks', card: <AmericanMarketCard {...cardProps} /> },
+    present.pension && { key: 'pension', to: 'provident-funds', card: <ProvidentFundsCard {...cardProps} /> },
+    (present.cash || present.bank) && {
+      key: 'liquid',
+      to: 'cash-and-checking',
+      card: <CashAndCheckingCard {...cardProps} showCash={present.cash} showBank={present.bank} />
+    },
+    present.bankSavings && { key: 'bank-savings', to: 'bank-savings', card: <BankSavingsCard {...cardProps} /> }
+  ].filter(Boolean);
+  const categoryRows = [];
+  for (let i = 0; i < categoryCards.length; i += 2) categoryRows.push(categoryCards.slice(i, i + 2));
+
   // Says which markets the daily figure is made of, since a market that has
   // not traded today contributes 0 rather than its last session's change
   // (see utils/marketSession.js).
@@ -186,40 +211,26 @@ function HomeView({
                     Then the markets, paired - they are read against each
                     other. Then the accounts that are not traded. */}
                 <div className="summary-row summary-row-single">
-                  <CapitalStateCard {...cardProps} />
+                  <CapitalStateCard {...cardProps} present={present} />
                 </div>
 
                 <div className="summary-row summary-row-single">
-                  <NetInvestmentCard {...cardProps} />
+                  <NetInvestmentCard {...cardProps} present={present} />
                 </div>
 
-                <div className="summary-row">
-                  <CardLink to="israeli-stocks">
-                    <IsraeliMarketCard {...cardProps} />
-                  </CardLink>
-                  <CardLink to="us-stocks">
-                    <AmericanMarketCard {...cardProps} />
-                  </CardLink>
-                </div>
-
-                {/* The accounts that do not move with the market. Their
-                    values are inside the total at the top, so leaving them
-                    off would make the overview describe less than it is
-                    totalling. */}
-                <div className="summary-row">
-                  <CardLink to="provident-funds">
-                    <ProvidentFundsCard {...cardProps} />
-                  </CardLink>
-                  <CardLink to="cash-and-checking">
-                    <CashAndCheckingCard {...cardProps} />
-                  </CardLink>
-                </div>
-
-                <div className="summary-row summary-row-single">
-                  <CardLink to="bank-savings">
-                    <BankSavingsCard {...cardProps} />
-                  </CardLink>
-                </div>
+                {/* The categories, two to a row in this order - each only
+                    when the user holds it, so the overview shows what they
+                    entered rather than a card of zeros for everything else.
+                    An odd card out takes the whole row. */}
+                {categoryRows.map((row) => (
+                  <div key={row.map((c) => c.key).join('-')} className={`summary-row${row.length === 1 ? ' summary-row-single' : ''}`}>
+                    {row.map((c) => (
+                      <CardLink key={c.key} to={c.to}>
+                        {c.card}
+                      </CardLink>
+                    ))}
+                  </div>
+                ))}
               </div>
             </div>
           )}

@@ -94,7 +94,7 @@ describe('money-market fund (כספית שקלית)', () => {
     // The previous value is the deposits' own sum, so it says so, and the
     // return is measured from the opening.
     expect(row.children[7].textContent).toBe('16500 ₪סכום ההפקדות');
-    expect(row.children[5].textContent).toBe('-9.09%מאז הפתיחה (2026-10-04)');
+    expect(row.children[5].textContent).toBe('-9.09%-1500 ₪מאז הפתיחה (2026-10-04)');
     expect(row.children[6].textContent).toContain('-9.09%');
     expect(row.children[6].textContent).toContain('-1500 ₪');
   });
@@ -124,7 +124,7 @@ describe('money-market fund (כספית שקלית)', () => {
     const { container } = render(<Harness initialCashFunds={[fund]} />);
     const row = container.querySelector('tbody tr');
     recordValue(row.children[3], '70000', '2026-10-14');
-    expect(row.children[5].textContent).toBe('24.75%מאז הפתיחה (2026-04-02)');
+    expect(row.children[5].textContent).toBe('24.75%10000 ₪מאז הפתיחה (2026-04-02)');
     expect(row.children[6].textContent).toContain('16.67%'); // overall: 10,000 on 60,000 paid in
   });
 

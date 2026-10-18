@@ -25,20 +25,28 @@ function SummaryCard({ children }) {
   return <div className="summary-section summary-col">{children}</div>;
 }
 
-export function CapitalStateCard({ summary, formatPriceWithSign }) {
+// Which categories the user holds - each card leaves out the rows of one
+// they don't. All of them unless said otherwise.
+export const ALL_CATEGORIES = { israeli: true, american: true, cash: true, pension: true, bank: true, bankSavings: true };
+
+export function CapitalStateCard({ summary, formatPriceWithSign, present = ALL_CATEGORIES }) {
+  const row = (shown, label, value) =>
+    shown ? (
+      <div className="summary-item"><span className="summary-label">{label}:</span><span className="summary-value">{formatPriceWithSign(value)} ₪</span></div>
+    ) : null;
   return (
     <SummaryCard>
         <h3 className="summary-section-title">סה"כ מצב ההון</h3>
-        <div className="summary-item"><span className="summary-label">בורסה ישראלית:</span><span className="summary-value">{formatPriceWithSign(summary.capitalIsraeliILS)} ₪</span></div>
-        <div className="summary-item"><span className="summary-label">בורסה אמריקאית:</span><span className="summary-value">{formatPriceWithSign(summary.capitalAmericanILS)} ₪</span></div>
-        <div className="summary-item"><span className="summary-label">כספית שקלית:</span><span className="summary-value">{formatPriceWithSign(summary.capitalCashFundsILS)} ₪</span></div>
-        <div className="summary-item"><span className="summary-label">קופת גמל:</span><span className="summary-value">{formatPriceWithSign(summary.capitalPensionILS)} ₪</span></div>
-        <div className="summary-item"><span className="summary-label">עו"ש:</span><span className="summary-value">{formatPriceWithSign(summary.capitalBankILS)} ₪</span></div>
+        {row(present.israeli, 'בורסה ישראלית', summary.capitalIsraeliILS)}
+        {row(present.american, 'בורסה אמריקאית', summary.capitalAmericanILS)}
+        {row(present.cash, 'כספית שקלית', summary.capitalCashFundsILS)}
+        {row(present.pension, 'קופת גמל', summary.capitalPensionILS)}
+        {row(present.bank, 'עו"ש', summary.capitalBankILS)}
         {/* capitalTotalILS has always counted bank savings; this row was
             missing, so the components visibly did not add up to the total
             underneath them for anyone holding one. */}
-        <div className="summary-item"><span className="summary-label">קופת חיסכון בבנק:</span><span className="summary-value">{formatPriceWithSign(summary.capitalBankSavingsILS)} ₪</span></div>
-        <div className="summary-item"><span className="summary-label">סה"כ מצב ההון:</span><span className="summary-value">{formatPriceWithSign(summary.capitalTotalILS)} ₪</span></div>
+        {row(present.bankSavings, 'קופת חיסכון בבנק', summary.capitalBankSavingsILS)}
+        {row(true, 'סה"כ מצב ההון', summary.capitalTotalILS)}
     </SummaryCard>
   );
 }
@@ -85,13 +93,35 @@ export function BankSavingsCard({ summary, formatPriceWithSign }) {
 // as distinct from what it is worth: a current account is a balance, and a
 // money-market fund is held at its updated value. A "profit" row would have
 // nothing behind it.
-export function CashAndCheckingCard({ summary, formatPriceWithSign }) {
+//
+// The money-market funds have their return since the previous value update
+// and their return since the money went in (portfolioSummary.js), with the
+// profit in shekels beside the percentage. showCash/showBank leave out a
+// category the user does not hold, rather than a row of zeros for it.
+export function CashAndCheckingCard({ summary, formatPriceWithSign, showCash = true, showBank = true }) {
   const liquidTotal = (summary.capitalCashFundsILS || 0) + (summary.capitalBankILS || 0);
+  const returnRow = (label, percent, profit) => (
+    <div className="summary-item">
+      <span className="summary-label">{label}:</span>
+      <span className={`summary-value ${percentClass(percent)}`}>
+        {percentText(percent)}
+        {percent != null && profit != null ? ` (${formatPriceWithSign(profit)} ₪)` : ''}
+      </span>
+    </div>
+  );
   return (
     <SummaryCard>
         <h3 className="summary-section-title">קרן כספית שקלית ועו"ש (₪)</h3>
-        <div className="summary-item"><span className="summary-label">כספית שקלית:</span><span className="summary-value">{formatPriceWithSign(summary.capitalCashFundsILS)} ₪</span></div>
-        <div className="summary-item"><span className="summary-label">עו"ש:</span><span className="summary-value">{formatPriceWithSign(summary.capitalBankILS)} ₪</span></div>
+        {showCash && (
+          <>
+            <div className="summary-item"><span className="summary-label">כספית שקלית:</span><span className="summary-value">{formatPriceWithSign(summary.capitalCashFundsILS)} ₪</span></div>
+            {returnRow('כספית - תשואה מעדכון קודם', summary.cashFundsPeriodReturnPercent, summary.cashFundsPeriodProfitILS)}
+            {returnRow('כספית - תשואה כללית', summary.cashFundsTotalReturnPercent, summary.cashFundsTotalProfitILS)}
+          </>
+        )}
+        {showBank && (
+          <div className="summary-item"><span className="summary-label">עו"ש:</span><span className="summary-value">{formatPriceWithSign(summary.capitalBankILS)} ₪</span></div>
+        )}
         <div className="summary-item"><span className="summary-label">סה"כ נזיל:</span><span className="summary-value">{formatPriceWithSign(liquidTotal)} ₪</span></div>
         <div className="summary-item"><span className="summary-label">שיעור מהתיק:</span><span className="summary-value">{percentText(returnPercent(liquidTotal, summary.capitalTotalILS))}</span></div>
     </SummaryCard>
@@ -132,18 +162,22 @@ export function AmericanMarketCard({ summary, formatPriceWithSign }) {
   );
 }
 
-export function NetInvestmentCard({ summary, formatPriceWithSign }) {
+export function NetInvestmentCard({ summary, formatPriceWithSign, present = ALL_CATEGORIES }) {
+  const totalReturn = returnPercent(summary.totalProfitILS, summary.totalPurchaseILS);
   return (
     <SummaryCard>
         <h3 className="summary-section-title">סיכום השקעות נטו (₪)</h3>
         <div className="summary-item"><span className="summary-label">סה"כ השקעה בש"ח:</span><span className="summary-value">{formatPriceWithSign(summary.totalPurchaseILS)} ₪</span></div>
         <div className="summary-item"><span className="summary-label">סה"כ שווי בש"ח:</span><span className="summary-value">{formatPriceWithSign(summary.totalCurrentValueILS)} ₪</span></div>
         <div className="summary-item"><span className="summary-label">סה"כ רווח והפסד בש"ח:</span><span className={`summary-value ${summary.totalProfitILS >= 0 ? 'profit-positive' : 'profit-negative'}`}>{formatPriceWithSign(summary.totalProfitILS)} ₪</span></div>
+        <div className="summary-item"><span className="summary-label">תשואה כללית:</span><span className={`summary-value ${percentClass(totalReturn)}`}>{percentText(totalReturn)}</span></div>
         <div className="summary-item"><span className="summary-label">סה"כ רווח ריאלי חייב במס:</span><span className={`summary-value ${summary.totalRealGainILS >= 0 ? 'profit-positive' : 'profit-negative'}`}>{formatPriceWithSign(summary.totalRealGainILS)} ₪</span></div>
         <div className="summary-item"><span className="summary-label">סה"כ רווח אינפלציוני פטור ממס:</span><span className="summary-value">{formatPriceWithSign(summary.totalInflationaryGainILS)} ₪</span></div>
         <div className="summary-item"><span className="summary-label">סה"כ מס לשלם:</span><span className="summary-value profit-negative">{formatPriceWithSign(-summary.totalTaxILS)} ₪</span></div>
         <div className="summary-item"><span className="summary-label">סה"כ רווח והפסד לאחר מס:</span><span className={`summary-value ${summary.totalProfitAfterTaxILS >= 0 ? 'profit-positive' : 'profit-negative'}`}>{formatPriceWithSign(summary.totalProfitAfterTaxILS)} ₪</span></div>
-        <div className="summary-item"><span className="summary-label">השפעת הדולר על התיק:</span><span className={`summary-value ${summary.totalExchangeImpact >= 0 ? 'profit-positive' : 'profit-negative'}`}>{formatPriceWithSign(summary.totalExchangeImpact)} ₪</span></div>
+        {present.american && (
+          <div className="summary-item"><span className="summary-label">השפעת הדולר על התיק:</span><span className={`summary-value ${summary.totalExchangeImpact >= 0 ? 'profit-positive' : 'profit-negative'}`}>{formatPriceWithSign(summary.totalExchangeImpact)} ₪</span></div>
+        )}
     </SummaryCard>
   );
 }

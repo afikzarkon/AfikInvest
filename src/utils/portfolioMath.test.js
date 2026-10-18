@@ -8,7 +8,9 @@ import {
   hasAmbiguousPensionPeriod,
   applyLedgerValueUpdate,
   calculateLedgerPeriodReturn,
-  applyAccountFieldEdit
+  applyAccountFieldEdit,
+  calculateLiquidPeriodReturn,
+  calculateLiquidTotalReturn
 } from './portfolioMath';
 import { liquidBalanceOn, recordedBalances } from '../shared/liquidBalance';
 
@@ -427,4 +429,103 @@ describe('applyAccountFieldEdit: a ledger-derived value follows its ledger', () 
   test('a plain field is still a plain write', () => {
     expect(applyAccountFieldEdit({ id: 1, fundName: 'a' }, 'fundName', 'b').fundName).toBe('b');
   });
+});
+
+// A money-market fund's return since the previous value update, time-
+// weighted: (current - previous - net movements) / (previous + each movement
+// x the share of the period it was invested).
+describe('calculateLiquidPeriodReturn', () => {
+  // 10,000 on 01/10, 12,000 on 31/10, and a 1,000 deposit on 16/10 - half
+  // the period: 1,000 / (10,000 + 500), about +9.52%.
+  test('weights a deposit by the share of the period it was invested', () => {
+    const fund = {
+      previousValue: 10000,
+      previousValueDate: '2026-10-01',
+      currentValue: 12000,
+      currentValueDate: '2026-10-31',
+      deposits: [
+        { date: '2026-01-01', amount: 9000 },
+        { date: '2026-10-16', amount: 1000 }
+      ]
+    };
+    const r = calculateLiquidPeriodReturn(fund);
+    expect(r).toMatchObject({ profit: 1000, sinceOpening: false });
+    expect(r.base).toBeCloseTo(10500, 6);
+    expect(r.percent).toBeCloseTo(9.5238, 4);
+  });
+
+  test('a withdrawal is weighted the same way', () => {
+    const fund = {
+      previousValue: 10000,
+      previousValueDate: '2026-10-01',
+      currentValue: 9600,
+      currentValueDate: '2026-10-31',
+      deposits: [{ date: '2026-10-16', amount: -500 }]
+    };
+    const r = calculateLiquidPeriodReturn(fund);
+    expect(r.profit).toBe(100);
+    expect(r.base).toBeCloseTo(9750, 6);
+  });
+
+  test('a movement on the day of the previous update is in that update; one on the current day counts for no time', () => {
+    const fund = {
+      previousValue: 10000,
+      previousValueDate: '2026-10-01',
+      currentValue: 11100,
+      currentValueDate: '2026-10-31',
+      deposits: [
+        { date: '2026-10-01', amount: 5000 },
+        { date: '2026-10-31', amount: 1000 }
+      ]
+    };
+    expect(calculateLiquidPeriodReturn(fund)).toMatchObject({ profit: 100, base: 10000, percent: 1 });
+  });
+
+  test('nothing to measure until a value is recorded', () => {
+    expect(calculateLiquidPeriodReturn({ valueFromLedger: true, currentValue: 500, currentValueDate: '2026-01-01', deposits: [{ date: '2026-01-01', amount: 500 }] })).toBeNull();
+    expect(calculateLiquidPeriodReturn(null)).toBeNull();
+  });
+
+  test('with the ledger sum as the previous value, it is measured from the opening', () => {
+    const fund = {
+      previousValueFromLedger: true,
+      previousValue: 60000,
+      previousValueDate: '2026-10-10',
+      currentValue: 70000,
+      currentValueDate: '2026-10-14',
+      deposits: [
+        { date: '2026-04-02', amount: 40000 },
+        { date: '2026-10-10', amount: 20000 }
+      ]
+    };
+    const r = calculateLiquidPeriodReturn(fund);
+    expect(r).toMatchObject({ profit: 10000, sinceOpening: true });
+    expect(r.percent).toBeCloseTo(24.75, 2); // 10,000 / (40,000 + 20,000 x 4/195)
+  });
+});
+
+describe('calculateLiquidTotalReturn', () => {
+  test('the balance today against everything paid in', () => {
+    const fund = {
+      currentValue: 12000,
+      currentValueDate: '2026-11-06',
+      deposits: [
+        { date: '2026-01-01', amount: 10000 },
+        { date: '2026-10-20', amount: 1000 },
+        { date: '2026-11-10', amount: 500 }
+      ]
+    };
+    // 12,000 + the 500 after the update = 12,500, on 11,500 paid in.
+    expect(calculateLiquidTotalReturn(fund, '2026-11-15')).toMatchObject({ profit: 1000, base: 11500 });
+  });
+
+  test('none for an account that carried a balance before its ledger', () => {
+    const legacy = { currentValue: 5000, currentValueDate: '2026-01-01', deposits: [{ date: '2026-02-01', amount: 100 }] };
+    expect(calculateLiquidTotalReturn(legacy, '2026-03-01')).toBeNull();
+  });
+});
+
+test('a legacy account dated by updateDate keeps that date as the previous one', () => {
+  const next = applyLedgerValueUpdate({ amount: 2000, updateDate: '2023-01-01', deposits: [] }, 2100, '2023-06-30');
+  expect(next).toMatchObject({ previousValue: 2000, previousValueDate: '2023-01-01', currentValue: 2100, currentValueDate: '2023-06-30' });
 });

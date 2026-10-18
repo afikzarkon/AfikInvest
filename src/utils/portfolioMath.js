@@ -2,6 +2,8 @@ import { indexedCostBasis, calculateLinkedRealResult } from './cpiTax';
 import { calculateModifiedDietzReturn } from './modifiedDietz';
 import { israelToday } from './marketSession';
 import { syncLedgerValue } from '../shared/transactionLedger';
+import { liquidBalanceOn } from '../shared/liquidBalance';
+import { openingBalanceOfLedgerAccount } from './ledgerAccountHistory';
 
 export const TAX_RATE = 0.25;
 
@@ -105,7 +107,9 @@ export const sumDepositsInRange = (deposits, fromDateExclusive, toDateInclusive)
 // הפקדות נופלו בתוך התקופה ומנטרל אותן.
 export const applyLedgerValueUpdate = (item, newCurrentValue, newCurrentValueDate) => {
   const oldCurrentValue = item.currentValue ?? item.amount ?? 0;
-  const oldCurrentValueDate = item.currentValueDate || '';
+  // An account recorded before currentValueDate existed (current accounts,
+  // older money-market funds) dates its balance with updateDate.
+  const oldCurrentValueDate = item.currentValueDate || item.updateDate || '';
   // A value the ledger made (the sum of the deposits, before any statement
   // - see transactionLedger.js's syncLedgerValue) becomes the previous
   // value marked as such, and the account's value is the statement's from
@@ -189,7 +193,7 @@ export const calculateLedgerPeriodReturn = (item) => {
   const previousValue = sinceOpening ? 0 : item.previousValue ?? 0;
   const periodStart = sinceOpening ? openingDate : item.previousValueDate;
   const periodDeposits = filterDepositsInRange(deposits, sinceOpening ? '' : item.previousValueDate, item.currentValueDate);
-  const { netCashFlow: depositsInPeriod, percent: dietzPercent } = calculateModifiedDietzReturn({
+  const { netCashFlow: depositsInPeriod, weightedCashFlow, gain, percent: dietzPercent } = calculateModifiedDietzReturn({
     beginningValue: previousValue,
     endingValue: currentValue,
     cashFlows: periodDeposits,
@@ -201,7 +205,43 @@ export const calculateLedgerPeriodReturn = (item) => {
   // + weighted deposits) is exactly 0 - a brand-new item with no previous
   // value yet, where "period return" isn't a meaningful number anyway.
   const percent = dietzPercent ?? 0;
-  return { adjustedPreviousValue, depositsInPeriod, percent };
+  // gain and base (the Modified Dietz numerator and denominator) let a
+  // caller show the profit in shekels and sum several accounts' returns.
+  return { adjustedPreviousValue, depositsInPeriod, percent, gain, base: previousValue + weightedCashFlow };
+};
+
+// A money-market fund's return since its previous value update, time-
+// weighted (calculateLedgerPeriodReturn's Modified Dietz):
+//
+//     profit = current value - previous value - net movements in between
+//     base   = previous value + each movement x the share of the period it
+//              was invested (withdrawals the same way, negative)
+//     return = profit / base
+//
+// 10,000 before, 12,000 now, and a 1,000 deposit in the middle of the
+// period: 1,000 / (10,000 + 500), about +9.5%.
+//
+// Null until there is a value update to measure to: an account whose value
+// is still its ledger's (valueFromLedger) has only ever been what was paid
+// in. When the previous value is the ledger's own sum, the period starts at
+// the opening (sinceOpening).
+export const calculateLiquidPeriodReturn = (item) => {
+  if (!item || item.valueFromLedger || !((item.previousValue ?? 0) > 0)) return null;
+  const { gain, base, percent } = calculateLedgerPeriodReturn(item);
+  if (!(base > 0)) return null;
+  return { profit: gain, base, percent, sinceOpening: !!item.previousValueFromLedger };
+};
+
+// The same fund's return since the money went in: its balance on `day`
+// against everything paid in, net of withdrawals. Only when the ledger
+// starts the account - one recorded with a balance before its first ledger
+// entry carries money whose cost the app never saw.
+export const calculateLiquidTotalReturn = (item, day = israelToday()) => {
+  const deposits = Array.isArray(item && item.deposits) ? item.deposits : [];
+  const paidIn = deposits.reduce((sum, d) => sum + (Number(d && d.amount) || 0), 0);
+  if (!deposits.length || !(paidIn > 0) || openingBalanceOfLedgerAccount(item) !== 0) return null;
+  const profit = liquidBalanceOn(item, day) - paidIn;
+  return { profit, base: paidIn, percent: (profit / paidIn) * 100 };
 };
 
 // Detects a ledger item whose "previous" and "current" value snapshots

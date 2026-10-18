@@ -19,7 +19,14 @@ function CashAndCheckingPage({ cashFunds = [], bankBalances = [], summary, ...re
       sections={['cash', 'bank']}
       isEmpty={cashFunds.length === 0 && bankBalances.length === 0}
       emptyMessage='עדיין לא נוספו קרנות כספיות או חשבונות עו"ש'
-      summaryCard={<CashAndCheckingCard summary={summary} formatPriceWithSign={formatPriceWithSign} />}
+      summaryCard={
+        <CashAndCheckingCard
+          summary={summary}
+          formatPriceWithSign={formatPriceWithSign}
+          showCash={cashFunds.length > 0}
+          showBank={bankBalances.length > 0}
+        />
+      }
     />
   );
 }

@@ -254,3 +254,25 @@ describe('calculatePortfolioSummary', () => {
     });
   });
 });
+
+describe('money-market fund returns', () => {
+  test('summed over the accounts that have one, against what each is measured from', () => {
+    const cashFunds = [
+      {
+        previousValue: 10000,
+        previousValueDate: '2026-10-06',
+        currentValue: 12000,
+        currentValueDate: '2026-11-06',
+        deposits: [{ date: '2026-10-01', amount: 10000 }, { date: '2026-10-20', amount: 1000 }]
+      },
+      { valueFromLedger: true, currentValue: 3000, currentValueDate: '2026-10-01', deposits: [{ date: '2026-10-01', amount: 3000 }] }
+    ];
+    const s = calculatePortfolioSummary([], [], [], cashFunds, [], {}, [], { today: '2026-11-15' });
+    expect(s.cashFundsPeriodProfitILS).toBe(1000);
+    // The second fund has no update to measure from. The 1,000 of 20/10 was
+    // invested for 17 of the period's 31 days.
+    expect(s.cashFundsPeriodReturnPercent).toBeCloseTo((1000 / (10000 + (1000 * 17) / 31)) * 100, 10);
+    expect(s.cashFundsTotalProfitILS).toBe(1000); // 15,000 held on 14,000 paid in
+    expect(s.cashFundsTotalReturnPercent).toBeCloseTo((1000 / 14000) * 100, 10);
+  });
+});

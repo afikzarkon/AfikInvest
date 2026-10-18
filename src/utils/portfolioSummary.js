@@ -3,7 +3,13 @@
 // the only difference is that the stock/fund arrays are now explicit
 // parameters instead of closed-over component state.
 
-import { TAX_RATE, calculateAmericanStockMetrics, calculatePensionPeriodReturn } from './portfolioMath';
+import {
+  TAX_RATE,
+  calculateAmericanStockMetrics,
+  calculatePensionPeriodReturn,
+  calculateLiquidPeriodReturn,
+  calculateLiquidTotalReturn
+} from './portfolioMath';
 import { normalizeIsraeliPrice } from './formatters';
 import { calculateStockRealGainTax, calculatePensionRealGainTax, calculateBankSavingsFundTax, monthKeyFromDate } from './cpiTax';
 import { computeBankSavingsFundValue } from './bankSavingsFund';
@@ -168,6 +174,20 @@ export const calculatePortfolioSummary = (
   // Total capital by category
   // Recorded balance + the ledger movements since it (see shared/liquidBalance.js).
   const cashFundsTotalILS = cashFunds.reduce((sum, item) => sum + liquidBalanceOn(item, today), 0);
+
+  // The money-market funds' two returns, for their summary card: each
+  // fund's profit (calculateLiquidPeriodReturn / calculateLiquidTotalReturn)
+  // summed, over the sum of what each was measured against. Funds with
+  // nothing to measure are left out of both; null when none has anything.
+  const aggregateReturn = (items, measure) => {
+    const measured = items.map(measure).filter(Boolean);
+    const base = measured.reduce((s, r) => s + r.base, 0);
+    if (!measured.length || !(base > 0)) return { profitILS: null, percent: null };
+    const profitILS = measured.reduce((s, r) => s + r.profit, 0);
+    return { profitILS, percent: (profitILS / base) * 100 };
+  };
+  const cashFundsPeriodReturn = aggregateReturn(cashFunds, calculateLiquidPeriodReturn);
+  const cashFundsTotalReturn = aggregateReturn(cashFunds, (item) => calculateLiquidTotalReturn(item, today));
   // סך ההשקעה בקופות גמל נגזר תמיד מפנקס ההפקדות (deposits) - בדיוק
   // כמו "סה\"כ רכישה" במניות שנגזר מרשימת הרכישות, לא שדה שמתעדכן ידנית.
   const pensionInitialInvestmentILS = pensionFunds.reduce((sum, item) => {
@@ -356,6 +376,10 @@ export const calculatePortfolioSummary = (
     pensionInflationaryGainILS,
     pensionUpdateProfitILS,
     capitalBankILS: bankBalancesTotalILS,
+    cashFundsPeriodReturnPercent: cashFundsPeriodReturn.percent,
+    cashFundsPeriodProfitILS: cashFundsPeriodReturn.profitILS,
+    cashFundsTotalReturnPercent: cashFundsTotalReturn.percent,
+    cashFundsTotalProfitILS: cashFundsTotalReturn.profitILS,
     capitalBankSavingsILS: bankSavingsCurrentValueILS,
     bankSavingsInitialInvestmentILS,
     bankSavingsCurrentValueILS,

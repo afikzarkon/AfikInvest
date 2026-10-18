@@ -14,8 +14,9 @@ const americanStocks = [
 const pensionFunds = [{ id: 100, fundName: 'Pension A', initialInvestment: 10000, currentValue: 12000, previousValue: 11500, updateDate: '2024-01-01' }];
 const cashFunds = [{ id: 200, fundName: 'Cash Fund', updateDate: '2024-01-01', amount: 5000 }];
 const bankBalances = [{ id: 300, updateDate: '2024-01-01', amount: 20000 }];
+const bankSavingsFunds = [{ id: 400, fundName: 'Savings', interestRate: 3, isLinkedToIndex: false, deposits: [{ date: '2024-01-01', amount: 1000 }] }];
 
-const summary = calculatePortfolioSummary(israeliStocks, americanStocks, pensionFunds, cashFunds, bankBalances);
+const summary = calculatePortfolioSummary(israeliStocks, americanStocks, pensionFunds, cashFunds, bankBalances, {}, bankSavingsFunds);
 
 function makeProps(overrides = {}) {
   return {
@@ -36,6 +37,7 @@ function makeProps(overrides = {}) {
     pensionFunds,
     cashFunds,
     bankBalances,
+    bankSavingsFunds,
     handleAddInfo: noop,
     isEditMode: false,
     setIsEditMode: noop,
@@ -102,6 +104,41 @@ test('the summary cards account for every asset class in the total', () => {
   });
 });
 
+// Only what the user entered: a category they do not hold has no card and
+// no row in the capital card, rather than a block of zeros.
+test('leaves out the cards and rows of categories the user does not hold', () => {
+  const onlyIsraeliAndBank = calculatePortfolioSummary(israeliStocks, [], [], [], bankBalances);
+  const { container } = render(
+    <HomeView
+      {...makeProps({
+        onNavigate: noop,
+        summary: onlyIsraeliAndBank,
+        americanStocks: [],
+        pensionFunds: [],
+        cashFunds: [],
+        bankSavingsFunds: []
+      })}
+    />
+  );
+  const titles = Array.from(container.querySelectorAll('.summary-section-title')).map((el) => el.textContent);
+  expect(titles.some((t) => /בורסה ישראל/.test(t))).toBe(true);
+  expect(titles.some((t) => /כספית שקלית ועו"ש/.test(t))).toBe(true);
+  [/בורסה אמריקאית/, /קופות גמל/, /קופת חיסכון בבנק/].forEach((title) => {
+    expect(titles.some((t) => title.test(t))).toBe(false);
+  });
+  // The two cards left share one row.
+  const rows = Array.from(container.querySelectorAll('.summary-row')).filter((r) => r.querySelector('.summary-card-link'));
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).not.toHaveClass('summary-row-single');
+
+  const labels = Array.from(container.querySelectorAll('.summary-label')).map((el) => el.textContent);
+  expect(labels).toContain('בורסה ישראלית:');
+  expect(labels).toContain('עו"ש:');
+  ['בורסה אמריקאית:', 'קופת גמל:', 'כספית שקלית:', 'קופת חיסכון בבנק:', 'השפעת הדולר על התיק:'].forEach((label) => {
+    expect(labels).not.toContain(label);
+  });
+});
+
 // A card with nowhere to go should not pretend to be a control.
 test('renders the cards as plain figures when there is nowhere to navigate', () => {
   const { container } = render(<HomeView {...makeProps({ onNavigate: undefined })} />);
@@ -119,6 +156,7 @@ test('shows the no-data message for an empty portfolio', () => {
         pensionFunds: [],
         cashFunds: [],
         bankBalances: [],
+        bankSavingsFunds: [],
         summary: emptySummary
       })}
     />
@@ -222,6 +260,7 @@ test('hides export buttons for an empty portfolio', () => {
         pensionFunds: [],
         cashFunds: [],
         bankBalances: [],
+        bankSavingsFunds: [],
         summary: emptySummary
       })}
     />
@@ -301,7 +340,7 @@ test('gives the headline figure the featured block, and fills the row beside it'
 test('an empty portfolio shows no KPI tiles rather than a row of zeroes', () => {
   const { container } = render(
     <HomeView
-      {...makeProps({ israeliStocks: [], americanStocks: [], pensionFunds: [], cashFunds: [], bankBalances: [] })}
+      {...makeProps({ israeliStocks: [], americanStocks: [], pensionFunds: [], cashFunds: [], bankBalances: [], bankSavingsFunds: [] })}
     />
   );
   expect(container.querySelectorAll('.kpi-tile').length).toBe(0);
@@ -355,6 +394,7 @@ test('offers to load a sample portfolio when the portfolio is empty', () => {
         pensionFunds: [],
         cashFunds: [],
         bankBalances: [],
+        bankSavingsFunds: [],
         onLoadSamplePortfolio
       })}
     />
