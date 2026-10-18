@@ -1,7 +1,7 @@
 // Store factories for integration tests: always the real SQLite store (in
 // memory), plus the real Postgres store when TEST_DATABASE_URL points at a
 // throwaway database - e.g.
-//   TEST_DATABASE_URL=postgres://test@localhost:5433/stockview_test npm test
+//   TEST_DATABASE_URL=postgres://test@localhost:5433/afikinvest_test npm test
 // Each Postgres store lives in a throwaway schema; the URL must still name a
 // database containing "test".
 const { sqliteStore, openSqlite, pgStore } = require('../dataStore');

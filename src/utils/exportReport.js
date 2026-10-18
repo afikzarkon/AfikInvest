@@ -43,7 +43,7 @@ function addSheetFromRows(workbook, sheetName, rows) {
 // data: { summary, israeliStocks, americanStocks, pensionFunds, cashFunds, bankBalances }
 export function buildPortfolioWorkbook(data) {
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = 'StockView';
+  workbook.creator = 'AfikInvest';
   workbook.created = new Date();
 
   addSheetFromRows(workbook, 'סיכום', buildSummaryExportRows(data.summary));
@@ -66,7 +66,7 @@ export async function downloadPortfolioExcel(data) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `stockview-portfolio-${todayFileStamp()}.xlsx`;
+  link.download = `afikinvest-portfolio-${todayFileStamp()}.xlsx`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -90,7 +90,7 @@ function registerHebrewFont(doc) {
 // default reads the string as "visual left-to-right" and converts it to
 // logical order. For a string that is already in visual order (which is
 // what toPdfDisplayText below produces) that conversion reverses every
-// Latin and digit run inside it: "StockView" was printed as "weiVkcotS",
+// Latin and digit run inside it: "AfikInvest" was printed as "tsevnIkifA",
 // "0.27%" as "%72.0" and "ESPP" as "PPSE". Decoding the glyph order in the
 // generated PDF showed it - the text handed to jsPDF was right, and this
 // pass is what broke it.
@@ -115,7 +115,7 @@ function drawTextAsGiven(doc) {
 //
 // A whole-string reversal is wrong for any string that mixes Hebrew with
 // digits or Latin, and plenty do - the cover's date, the footer's
-// "הופק ב-StockView", the disclaimer's "(Beta)", the tile notes
+// "הופק ב-AfikInvest", the disclaimer's "(Beta)", the tile notes
 // ("12.5% משוקלל"), "מדד S&P 500" and every "name (security id)" cell.
 // So this is a small RTL-paragraph reordering (the parts of the Unicode
 // Bidi Algorithm these strings exercise):
@@ -264,7 +264,7 @@ function drawCoverHeader(doc, asOf) {
   // The product name stays Latin and stays on its own text() call - see
   // toPdfDisplayText's note on why a mixed-script string is not safe here.
   doc.setFontSize(13);
-  doc.text('StockView', MARGIN, 15);
+  doc.text('AfikInvest', MARGIN, 15);
   doc.setFontSize(8);
   doc.text('Portfolio Report', MARGIN, 21);
 
@@ -286,7 +286,7 @@ function stampFooters(doc) {
     doc.setTextColor(...MUTED);
     doc.text(`${page} / ${pageCount}`, MARGIN, PAGE_HEIGHT - 9);
     doc.text(
-      toPdfDisplayText('הופק ב-StockView · אומדן בלבד, אינו ייעוץ מס או השקעות'),
+      toPdfDisplayText('הופק ב-AfikInvest · אומדן בלבד, אינו ייעוץ מס או השקעות'),
       RIGHT,
       PAGE_HEIGHT - 9,
       { align: 'right' }
@@ -710,5 +710,5 @@ export function buildPortfolioPdfDoc(data) {
 
 export function downloadPortfolioPdf(data) {
   const doc = buildPortfolioPdfDoc(data);
-  doc.save(`stockview-portfolio-${todayFileStamp()}.pdf`);
+  doc.save(`afikinvest-portfolio-${todayFileStamp()}.pdf`);
 }

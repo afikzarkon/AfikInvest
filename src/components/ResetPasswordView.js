@@ -115,7 +115,7 @@ function ResetPasswordView({ token, onDone }) {
   return (
     <div className="auth-screen">
       <div className="auth-card">
-        <h1 className="auth-title">StockView</h1>
+        <h1 className="auth-title">AfikInvest</h1>
         <p className="auth-subtitle">בחירת סיסמה חדשה</p>
         {body}
       </div>

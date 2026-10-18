@@ -50,7 +50,7 @@ function BetaNoticeModal({ onAcknowledge }) {
 
         <div className="beta-modal-body" id="beta-modal-body">
           <p className="beta-modal-lead">
-            StockView נמצאת כרגע בשלב פיתוח ובדיקות. היא מסופקת כסביבת ניסיון (sandbox) בלבד - לא
+            AfikInvest נמצאת כרגע בשלב פיתוח ובדיקות. היא מסופקת כסביבת ניסיון (sandbox) בלבד - לא
             כמערכת פיננסית לשימוש אמיתי.
           </p>
 

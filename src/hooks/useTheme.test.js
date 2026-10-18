@@ -1,7 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { useTheme, resolveInitialTheme } from './useTheme';
 
-const STORAGE_KEY = 'stockview_theme';
+const STORAGE_KEY = 'afikinvest_theme';
 
 // A controllable matchMedia, so the OS preference can be set and changed
 // the way a real system day/night switch would.

@@ -20,7 +20,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-const STORAGE_KEY = 'stockview_theme';
+const STORAGE_KEY = 'afikinvest_theme';
 const DARK_QUERY = '(prefers-color-scheme: dark)';
 
 function readStoredTheme() {

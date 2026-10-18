@@ -1,4 +1,4 @@
-# מדריך טכני מלא לפרויקט StockView
+# מדריך טכני מלא לפרויקט AfikInvest
 
 מסמך זה סוקר **כל קובץ** בפרויקט: מה הוא מייצג, מה תפקידו, ופירוט מלא (עם נוסחאות ואלגוריתמים) של כל המערכות והחישובים שמומשו בו. הוא נכתב על ידי מעבר אוטומטי, קובץ-אחר-קובץ, על כל בסיס הקוד.
 
@@ -25,7 +25,7 @@
 
 **לוגיקה מפורטת**
 
-- `"name": "stockview"`, `"version": "0.1.1"`, `"private": true` (מונע פרסום בטעות ל-npm registry).
+- `"name": "afikinvest"`, `"version": "0.1.1"`, `"private": true` (מונע פרסום בטעות ל-npm registry).
 - `"proxy": "http://127.0.0.1:5000"` — הגדרת Create React App: בסביבת פיתוח (`npm start`, פורט 3000), כל בקשת API שלא נמצאת כקובץ סטטי מנותבת (proxy) אוטומטית לשרת ה-Node המקומי בפורט 5000 — כך שבמצב dev אין צורך ב-CORS או כתובת מוחלטת.
 - **dependencies** (רצות גם ב-production, כולל שרת וגם קליינט מאחר שזה מונורepo אחד):
   - `@supabase/supabase-js` — קליינט Supabase, לתמיכה במסד PostgreSQL בענן (חלופה ל-SQLite, ראו `.env.example` ו-`DATABASE_URL`).
@@ -154,7 +154,7 @@
 
 **תפקיד**
 
-קובץ התיעוד הבסיסי של הריפו — במקרה הזה זהו ה-README ה**גנרי המוגדר כברירת מחדל על ידי Create React App** בעת יצירת הפרויקט (`npx create-react-app`), ולא תועד/הותאם מחדש לפרויקט stockview הספציפי. אין בו שום מידע ספציפי לתחום המניות/תיקים של האפליקציה.
+קובץ התיעוד הבסיסי של הריפו — במקרה הזה זהו ה-README ה**גנרי המוגדר כברירת מחדל על ידי Create React App** בעת יצירת הפרויקט (`npx create-react-app`), ולא תועד/הותאם מחדש לפרויקט afikinvest הספציפי. אין בו שום מידע ספציפי לתחום המניות/תיקים של האפליקציה.
 
 **לוגיקה מפורטת**
 
@@ -165,7 +165,7 @@
   - `npm run build` — בונה גרסת production ל-`build/` (מוזער/minified, עם hash בשמות קבצים).
   - `npm run eject` — אזהרה מפורשת שזו פעולה **חד-כיוונית**: מוציאה את כל תצורת ה-build (webpack, Babel, ESLint וכו') מתוך `react-scripts` לריפו עצמו, מבטלת את ההפשטה של CRA.
 - קישורים חיצוניים למידע נוסף: תיעוד CRA (code splitting, ניתוח גודל bundle, PWA, קונפיגורציה מתקדמת, deployment, ופתרון תקלה נפוצה "build fails to minify") ותיעוד React הכללי.
-- אין כאן תיאור אדריכלות, API endpoints, סכימת מסד נתונים, או הסבר על stockview עצמו — לתיעוד כזה יש לפנות לקוד/הערות בפועל (כפי שמתועד במסמך הזה).
+- אין כאן תיאור אדריכלות, API endpoints, סכימת מסד נתונים, או הסבר על afikinvest עצמו — לתיעוד כזה יש לפנות לקוד/הערות בפועל (כפי שמתועד במסמך הזה).
 
 ---
 
@@ -225,7 +225,7 @@
 
 ## חלק 2: שרת (Backend)
 
-# תיעוד טכני מפורט - שכבת השרת (Backend) של StockView
+# תיעוד טכני מפורט - שכבת השרת (Backend) של AfikInvest
 
 ---
 
@@ -648,7 +648,7 @@ function createRateLimiter({ windowMs, max, message, keyFn }) {
 - **`CACHE_TTL_MS = 24h`**.
 - **`createCpiCache()`**: יוצר קאש **per-mount** (לא module-level גלובלי) - `monthIndexCache` (Map של `YYYY-MM -> value`, בלי תפוגה כי מדד עבר שפורסם לא משתנה) ו-`latestIndexCache` (אובייקט `{month, value, fetchedAt}` עם תפוגה). ה-per-mount נועד לאפשר להריץ עותקים מבודדים (כמו בטסטים) בלי לדלוף state בין ריצות.
 - **`parseCbsResponse(data)`**: מפרסר את מבנה התגובה **האמיתי** של ה-API (מאומת מול שרת חי): `data.month` הוא מערך סדרות, ולכל סדרה `date[]` עם `{year, month, currBase: {value}}` (year/month נפרדים, לא תאריך string; הערך בתוך `currBase`, לא במערך). בונה `monthKey = "${year}-${String(month).padStart(2,'0')}"` ומחזיר `[{month, value}, ...]`.
-- **`fetchCbsSeries({startPeriod, endPeriod, last})`**: קורא ל-CBS עם `axios.get`, פרמטרים `{id: CPI_SERIES_ID, format:'json', lang:'en', download:'false'}` (+ startPeriod/endPeriod/last אם קיימים), header `User-Agent: 'stockview-app/1.0'` (**חובה** לפי תיעוד הלמ"ס), timeout 10 שניות. אם מתקבלות 0 שורות - מלוגג אזהרה עם snippet של התגובה הגולמית (עוזר לאבחון אם המבנה שונה מהצפוי או שהפרמטרים לא תקינים).
+- **`fetchCbsSeries({startPeriod, endPeriod, last})`**: קורא ל-CBS עם `axios.get`, פרמטרים `{id: CPI_SERIES_ID, format:'json', lang:'en', download:'false'}` (+ startPeriod/endPeriod/last אם קיימים), header `User-Agent: 'afikinvest-app/1.0'` (**חובה** לפי תיעוד הלמ"ס), timeout 10 שניות. אם מתקבלות 0 שורות - מלוגג אזהרה עם snippet של התגובה הגולמית (עוזר לאבחון אם המבנה שונה מהצפוי או שהפרמטרים לא תקינים).
 - **`getIndexForMonth(cache, monthKey)`**: אם `monthKey` בקאש - מחזיר ישירות. אחרת בונה `period = "${month}-${year}"` (**חשוב**: פורמט `mm-yyyy`, **לא** `yyyymm` - ה-API של הלמ"ס דורש דווקא את הפורמט הזה, וזו הייתה סיבת שגיאות 500 שנצפו בבדיקה). קורא ל-`fetchCbsSeries({startPeriod: period, endPeriod: period})`, מחפש שורה תואמת ל-`monthKey`, שומר בקאש ומחזיר `value`, או `null` אם אין התאמה.
 - **`getLatestIndex(cache)`**: אם יש קאש ולא עברה שעה (`CACHE_TTL_MS`) - מחזיר אותו. אחרת `fetchCbsSeries({last: 1})`, ממיין לפי `month` **תיאורי** (`(a,b) => a.month < b.month ? 1 : -1`), לוקח את הראשון (החדש ביותר). שומר גם ב-`latestIndexCache` וגם ב-`monthIndexCache` (חוסך fetch נפרד אם אח"כ יבקשו את החודש הזה ספציפית). אם ריק - `throw new Error('CBS API returned no CPI data')`.
 - **`mountCpiRoutes(app)`**: יוצר `cache = createCpiCache()` (מופע נפרד לכל mount).
@@ -948,7 +948,7 @@ function createRateLimiter({ windowMs, max, message, keyFn }) {
 עטיפה מינימלית ובטוחה (safe wrapper) לניהול טוקן JWT ב-`localStorage` בצד הלקוח - זהו המקום שמאפשר לשלוח את הטוקן כ-Bearer header (חלופה ל-cookie) בבקשות API. כל הפעולות עטופות ב-try/catch כדי לא לקרוס בסביבות שבהן `localStorage` חסום/לא זמין (מצב פרטיות, מגבלות דפדפן).
 
 #### מערכות ולוגיקה מפורטת
-- **`AUTH_TOKEN_KEY = 'stockview_auth_token'`**.
+- **`AUTH_TOKEN_KEY = 'afikinvest_auth_token'`**.
 - **`getAuthToken()`**: `localStorage.getItem(...)` - אם נכשל (throw) או ריק, מחזיר `''`.
 - **`setAuthToken(token)`**: אם `token` truthy, `localStorage.setItem(...)`; שגיאה מתעלמת בשקט.
 - **`clearAuthToken()`**: `localStorage.removeItem(...)`; שגיאה מתעלמת בשקט.
@@ -975,9 +975,9 @@ function createRateLimiter({ windowMs, max, message, keyFn }) {
 
 ## חלק 3: מנועי חישוב תיק ליבתיים (utils)
 
-# תיעוד טכני מפורט - מנועי החישוב הפיננסי של stockview (src/utils)
+# תיעוד טכני מפורט - מנועי החישוב הפיננסי של afikinvest (src/utils)
 
-> מסמך זה מתעד את קבצי החישוב המרכזיים בתיקיית `src/utils/` של אפליקציית ניהול תיק ההשקעות "stockview". עבור כל קובץ: תפקידו במערכת, ולאחר מכן פירוק מדויק, נוסחה-נוסחה, של כל פונקציה מיוצאת - כולל מקרי קצה, הנחות, וקומפוזיציה בין הפונקציות. קבצי הבדיקות (`*.test.js`) מתועדים בקצרה, עם ציון מקרי הבוחן המספריים המרכזיים שממחישים את ההתנהגות המיועדת.
+> מסמך זה מתעד את קבצי החישוב המרכזיים בתיקיית `src/utils/` של אפליקציית ניהול תיק ההשקעות "afikinvest". עבור כל קובץ: תפקידו במערכת, ולאחר מכן פירוק מדויק, נוסחה-נוסחה, של כל פונקציה מיוצאת - כולל מקרי קצה, הנחות, וקומפוזיציה בין הפונקציות. קבצי הבדיקות (`*.test.js`) מתועדים בקצרה, עם ציון מקרי הבוחן המספריים המרכזיים שממחישים את ההתנהגות המיועדת.
 
 ---
 
@@ -1658,7 +1658,7 @@ R = (EMV - BMV - CF) / (BMV + Σ CF_i * w_i)
 
 ## חלק 4: מנועי פיננסים/מס (utils)
 
-# תיעוד טכני מפורט — מנועי מס/פיננסים/עיצוב-דאטה ב-`src/utils/` (stockview)
+# תיעוד טכני מפורט — מנועי מס/פיננסים/עיצוב-דאטה ב-`src/utils/` (afikinvest)
 
 ---
 
@@ -1745,7 +1745,7 @@ linkageComponent = adjustedCostBasis - originalCost   (חיובי אם ההצמ�
 
 #### תפקיד
 
-מודל **DCF (Discounted Cash Flow)** דו-שלבי, פשוט ומתועד לחלוטין, להערכת שווי הוגן (Fair Value) למניה — מודל עצמאי של StockView ולא שכפול של מודל SimplyWall.st. השיטה: להצמיח את תזרים המזומנים החופשי (FCF) האחרון שדווח ל-5 שנים בקצב צמיחה שנגזר מהערכות אנליסטים, להוון את 5 השנים בתוספת ערך טרמינל (Gordon Growth) בחזרה להיום לפי עלות הון עצמי לפי CAPM, ולחלק במספר המניות להערכת שווי למניה. הקובץ מגדיר בפירוש את מגבלות המודל (הנחות מאקרו קבועות, בסיס על שנה בודדת של FCF) ומחשב דגל `isLowConfidence` כשה-FCF ההיסטורי תנודתי.
+מודל **DCF (Discounted Cash Flow)** דו-שלבי, פשוט ומתועד לחלוטין, להערכת שווי הוגן (Fair Value) למניה — מודל עצמאי של AfikInvest ולא שכפול של מודל SimplyWall.st. השיטה: להצמיח את תזרים המזומנים החופשי (FCF) האחרון שדווח ל-5 שנים בקצב צמיחה שנגזר מהערכות אנליסטים, להוון את 5 השנים בתוספת ערך טרמינל (Gordon Growth) בחזרה להיום לפי עלות הון עצמי לפי CAPM, ולחלק במספר המניות להערכת שווי למניה. הקובץ מגדיר בפירוש את מגבלות המודל (הנחות מאקרו קבועות, בסיס על שנה בודדת של FCF) ומחשב דגל `isLowConfidence` כשה-FCF ההיסטורי תנודתי.
 
 #### מערכות ולוגיקה מפורטת (כולל נוסחאות)
 
@@ -2188,7 +2188,7 @@ percent = ((currentValue - purchaseValue) / purchaseValue) × 100
 
 **`buildPortfolioWorkbook(data)`** — בונה `ExcelJS.Workbook` עם 7 גיליונות אפשריים לפי הסדר: `'סיכום'`, `'מניות ישראליות'`, `'מניות אמריקאיות'`, `'קופות גמל'`, `'קרנות כספיות'`, `'עוש'`, `'קופות חיסכון בבנק'` — כל אחד מ-`buildXxxExportRows` המתאים מ-`exportData.js`. גיליונות של קטגוריות ריקות מדולגים לגמרי.
 
-**`downloadPortfolioExcel(data)`** — בונה workbook, `xlsx.writeBuffer()`, יוצר `Blob`, `URL.createObjectURL`, יוצר `<a>` זמני עם `download='stockview-portfolio-{תאריך}.xlsx'`, מקליק, ומנקה (`revokeObjectURL`).
+**`downloadPortfolioExcel(data)`** — בונה workbook, `xlsx.writeBuffer()`, יוצר `Blob`, `URL.createObjectURL`, יוצר `<a>` זמני עם `download='afikinvest-portfolio-{תאריך}.xlsx'`, מקליק, ומנקה (`revokeObjectURL`).
 
 **`registerHebrewFont(doc)`** — פונטי ה-Latin המובנים של jsPDF (Helvetica וכו') אינם כוללים גליפים עבריים — טקסט עברי רגיל היה מוצג כלטיני-1 מקושקש (מאומת ישירות). פותר על ידי הטבעת `Alef-Regular.ttf` (מקודד base64, רישיון SIL OFL 1.1) — מכיל עברית, לטינית, ספרות, וסימן ₪.
 
@@ -2199,9 +2199,9 @@ percent = ((currentValue - purchaseValue) / purchaseValue) × 100
 
 **`addPdfTable(doc, title, rows, startY)`** — אם `rows` ריק, לא מוסיפה טבלה. בודקת אם יש מקום לכותרת+שורה אחת לפני תחתית העמוד (A4 ≈297מ"מ); אם לא — מוסיפה עמוד חדש. מציבה כותרת בעברית (מהופכת דרך `toPdfDisplayText`) בהתאמה ימנית (`align:'right'`). קוראת ל-`autoTable` עם `head`/`body` **שכל תא בהם עובר `toPdfDisplayText`** (אך `headers` הגולמיים משמשים ל-lookup `row[h]`, לא מעוותים). מבטלת בפירוש `fontStyle: 'bold'` שגיליון ברירת המחדל מפעיל לתאי כותרת (כי רק המשקל `'normal'` של Alef רשום — bold היה מחזיר גופן לא-עברי מקושקש).
 
-**`buildPortfolioPdfDoc(data)`** — בונה `jsPDF` ורושם את הפונט העברי. כותב כותרת "StockView" (LTR, בלי היפוך) וכותרת "דוח תיק השקעות" (מהופכת, ישר) ב-**שני** `text()` נפרדים (לא מחרוזת אחת מעורבת — הערה מפורשת שהיפוך שלם לא מטפל בעירוב סקריפטים). בונה 7 טבלאות ברצף: סיכום, מניות ישראליות, מניות אמריקאיות, קופות גמל, קרנות כספיות, עו"ש, קופות חיסכון בבנק — כל טבלה מקדמת את `y`. שים לב: זה דוח **סיכום** (לא dump מלא של כל הדאטה כמו ה-Excel) — PDF מיועד להיות תצוגה מודפסת נוחה, מי שרוצה את כל הדאטה אמור להשתמש בייצוא Excel.
+**`buildPortfolioPdfDoc(data)`** — בונה `jsPDF` ורושם את הפונט העברי. כותב כותרת "AfikInvest" (LTR, בלי היפוך) וכותרת "דוח תיק השקעות" (מהופכת, ישר) ב-**שני** `text()` נפרדים (לא מחרוזת אחת מעורבת — הערה מפורשת שהיפוך שלם לא מטפל בעירוב סקריפטים). בונה 7 טבלאות ברצף: סיכום, מניות ישראליות, מניות אמריקאיות, קופות גמל, קרנות כספיות, עו"ש, קופות חיסכון בבנק — כל טבלה מקדמת את `y`. שים לב: זה דוח **סיכום** (לא dump מלא של כל הדאטה כמו ה-Excel) — PDF מיועד להיות תצוגה מודפסת נוחה, מי שרוצה את כל הדאטה אמור להשתמש בייצוא Excel.
 
-**`downloadPortfolioPdf(data)`** — בונה את המסמך ומורידה עם `doc.save('stockview-portfolio-{תאריך}.pdf')`.
+**`downloadPortfolioPdf(data)`** — בונה את המסמך ומורידה עם `doc.save('afikinvest-portfolio-{תאריך}.pdf')`.
 
 ---
 
@@ -2211,9 +2211,9 @@ percent = ((currentValue - purchaseValue) / purchaseValue) × 100
 
 ## חלק 5: קומפוננטות React (UI)
 
-# תיעוד טכני מפורט — קומפוננטות ה-UI של StockView
+# תיעוד טכני מפורט — קומפוננטות ה-UI של AfikInvest
 
-מסמך זה מכיל פירוט טכני מעמיק, קובץ-קובץ, של כל קבצי ה-UI (React) בפרויקט `stockview`. הפרויקט הוא אפליקציית מעקב תיק השקעות (מניות ישראליות/אמריקאיות, קופות גמל, עו"ש, כספיות שקליות, קופות חיסכון בבנק), עם ניתוח תיק, מעקב חודשי, איזון מחדש (rebalancing) ומודול "חקר מניות" בסגנון SimplyWall.st.
+מסמך זה מכיל פירוט טכני מעמיק, קובץ-קובץ, של כל קבצי ה-UI (React) בפרויקט `afikinvest`. הפרויקט הוא אפליקציית מעקב תיק השקעות (מניות ישראליות/אמריקאיות, קופות גמל, עו"ש, כספיות שקליות, קופות חיסכון בבנק), עם ניתוח תיק, מעקב חודשי, איזון מחדש (rebalancing) ומודול "חקר מניות" בסגנון SimplyWall.st.
 
 ---
 
@@ -2226,7 +2226,7 @@ percent = ((currentValue - purchaseValue) / purchaseValue) × 100
 
 **קבועים ופונקציות עזר מודולריות (מחוץ לרכיב):**
 - `LEGACY_KEYS` — מערך שמות מפתחות ב-`localStorage` מדור קודם (`israeliStocks`, `americanStocks`, `pensionFunds`, `bankBalances`, `cashFunds`) — מהתקופה שלפני שהאפליקציה שמרה תיק בשרת.
-- `legacyImportFlagKey(userId)` — בונה מפתח `localStorage` ("stockview_legacy_import_done_<userId>") שמסמן שהמשתמש הזה כבר ביצע ייבוא חד-פעמי מהדפדפן לשרת, כדי שלא יוצע לו שוב.
+- `legacyImportFlagKey(userId)` — בונה מפתח `localStorage` ("afikinvest_legacy_import_done_<userId>") שמסמן שהמשתמש הזה כבר ביצע ייבוא חד-פעמי מהדפדפן לשרת, כדי שלא יוצע לו שוב.
 - `readLegacyPortfolioFromLocalStorage()` — קורא את חמשת המערכים מ-`localStorage`, מנרמל את מניות ישראל (`normalizeIsraeliStocksFromStorage`), ומחזיר אובייקט מאוחד (או `null` בשגיאת parsing).
 - `portfolioHasAnyRows(p)` — בודק אם לאובייקט תיק כלשהו יש שורות בכל אחד מחמשת המערכים (משמש לדעת אם יש מה לייבא).
 - `clearLegacyPortfolioKeys()` — מוחק את כל מפתחות ה-legacy מה-localStorage אחרי ייבוא מוצלח.
@@ -2299,7 +2299,7 @@ percent = ((currentValue - purchaseValue) / purchaseValue) × 100
 
 ### `src/App.test.js`
 
-בודק בסיסי בלבד — מדגם ה-Boilerplate המקורי של Create React App (`renders learn react link`) שמצפה לטקסט "learn react". בפועל טסט זה כבר לא רלוונטי לתוכן האמיתי של האפליקציה (שאינה מכילה קישור כזה) ונשאר כשריד היסטורי; לא נמצא בו תוכן שבודק התנהגות ממשית של StockView.
+בודק בסיסי בלבד — מדגם ה-Boilerplate המקורי של Create React App (`renders learn react link`) שמצפה לטקסט "learn react". בפועל טסט זה כבר לא רלוונטי לתוכן האמיתי של האפליקציה (שאינה מכילה קישור כזה) ונשאר כשריד היסטורי; לא נמצא בו תוכן שבודק התנהגות ממשית של AfikInvest.
 
 ---
 
@@ -2345,7 +2345,7 @@ percent = ((currentValue - purchaseValue) / purchaseValue) × 100
 #### לוגיקה ומערכות מפורטות
 - `body { margin:0; font-family: -apple-system, ... , sans-serif }` + anti-aliasing (`-webkit-font-smoothing`, `-moz-osx-font-smoothing`).
 - `code { font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace }`.
-- לא מכיל שום דבר ספציפי ל-StockView; `App.css` הוא זה שדורס בפועל את רוב הפונט (`Segoe UI` וכו') על `body`.
+- לא מכיל שום דבר ספציפי ל-AfikInvest; `App.css` הוא זה שדורס בפועל את רוב הפונט (`Segoe UI` וכו') על `body`.
 
 ---
 
@@ -2697,7 +2697,7 @@ percent = ((currentValue - purchaseValue) / purchaseValue) × 100
 #### לוגיקה ומערכות מפורטות
 - קבוע מודולרי `NAV_ITEMS` — 3 פריטי ניווט: `home` ("בית"), `analysis` ("ניתוח תיק"), `research` ("חקר מניות").
 - Props: `activePage`, `onNavigate`, `user`, `onLogout`, `theme`, `onToggleTheme`.
-- מבנה: `<header className="top-nav">` > `.top-nav-inner` המכיל: `.top-nav-brand` ("StockView"), `<nav className="top-nav-links">` — כפתור לכל `NAV_ITEMS` עם `className` דינמי (`active` כש-`activePage === item.key`) שקורא ל-`onNavigate(item.key)`, ו-`.top-nav-actions` — `ThemeToggleButton`, ואם `user` קיים: אימייל המשתמש + כפתור "התנתקות" (`onLogout`).
+- מבנה: `<header className="top-nav">` > `.top-nav-inner` המכיל: `.top-nav-brand` ("AfikInvest"), `<nav className="top-nav-links">` — כפתור לכל `NAV_ITEMS` עם `className` דינמי (`active` כש-`activePage === item.key`) שקורא ל-`onNavigate(item.key)`, ו-`.top-nav-actions` — `ThemeToggleButton`, ואם `user` קיים: אימייל המשתמש + כפתור "התנתקות" (`onLogout`).
 - אין state עצמי — רכיב "טיפש" גרידא.
 
 ---
@@ -2769,7 +2769,7 @@ percent = ((currentValue - purchaseValue) / purchaseValue) × 100
 
 ## חלק 6: React Hooks
 
-# תיעוד טכני מפורט — Hooks וקבצי קונפיגורציה בפרויקט stockview
+# תיעוד טכני מפורט — Hooks וקבצי קונפיגורציה בפרויקט afikinvest
 
 מסמך זה מתעד לעומק את כל ה-React Hooks של שכבת ה-data fetching בפרויקט, ואת קבצי התצורה, ה-CI/CD, וה-build הראשיים.
 
@@ -3062,7 +3062,7 @@ Hook מרכזי לניהול **חמשת מערכי ההחזקות** של התי�
 
 **לוגיקה מפורטת**
 
-- קבוע `STORAGE_KEY = 'stockview_theme'`.
+- קבוע `STORAGE_KEY = 'afikinvest_theme'`.
 - `readStoredTheme()` — פונקציה טהורה שקוראת מ-`localStorage`; מחזירה `'light'` רק אם הערך השמור הוא בדיוק `'light'`, אחרת (כולל שגיאת גישה ל-localStorage, למשל במצב פרטי) — `'dark'`.
 - State: `theme`, מאותחל באמצעות `useState(readStoredTheme)` (lazy initializer — נקרא רק פעם אחת, בעת ה-mount הראשוני).
 - Effect (תלות `[theme]`): מגדיר `document.documentElement.setAttribute('data-theme', theme)`, ומנסה לשמור ל-`localStorage` (עטוף ב-`try/catch` — אם נכשל, ה-theme פשוט לא ישמר בין רענוני עמוד, אך האפליקציה לא תיקרוס).

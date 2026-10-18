@@ -8,7 +8,7 @@ const crypto = require('crypto');
 const speakeasy = require('speakeasy');
 const QRCode = require('qrcode');
 
-const ISSUER = 'StockView';
+const ISSUER = 'AfikInvest';
 const STEP_SECONDS = 30;
 // Accept the previous and next 30s step too, for clock drift on the phone.
 const WINDOW = 1;

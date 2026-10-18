@@ -1,4 +1,4 @@
-# StockView: Advanced Features Architecture Spec
+# AfikInvest: Advanced Features Architecture Spec
 
 **Modules:** (1) Smart Alerts & Anomaly Detection · (2) TWR/MWR Performance & Recommendation Engine · (3) Event-Driven Monthly PDF Report · (4) Valuation Tools & DCF Engine
 
@@ -861,7 +861,7 @@ All four steps plus the Step 0 ledger are implemented. Where the build differs f
 | Holdings index | `server/holdingsIndex.js` | **Deviation:** derived from the stored portfolios on each scan rather than a `user_holdings` table, so it can never drift. |
 | Alerts | `shared/anomalyDetection.js`, `server/alertEngine.js`, `/alerts` | As specified. TASE volume field names are read defensively (the TASE API is undocumented). |
 | Event calendar | `shared/eventCalendar.js` | **US holdings only.** TASE dates come from Maya, which has no public API. |
-| Scheduling | `.github/workflows/scheduled-jobs.yml`, `server/internalJobRoutes.js`, `src/worker.js` | Needs the `STOCKVIEW_API_URL` and `CRON_SECRET` repository secrets, and `CRON_SECRET` on the server. |
+| Scheduling | `.github/workflows/scheduled-jobs.yml`, `server/internalJobRoutes.js`, `src/worker.js` | Needs the `AFIKINVEST_API_URL` and `CRON_SECRET` repository secrets, and `CRON_SECRET` on the server. |
 | Exact TWR / MWR | `utils/performanceReturns.js`, analytics page | Exact TWR ignores the difference between a sale's fill price and that day's close. |
 | Recommendations | `utils/recommendationEngine.js`, `/recommendations` | **Deviation:** computed in the browser (where CPI and holdings already live) rather than `GET /api/recommendations`. Preferences are stored via `/api/preferences/recommendations`. |
 | Monthly report | - | **Removed** (October 2026). See the note at the top of §3. |

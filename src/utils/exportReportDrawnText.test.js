@@ -1,7 +1,7 @@
 // What the exported PDF actually draws, read back out of the finished file.
 //
 // jsPDF's bidi plugin used to re-reorder the already-visual text, so the
-// report printed "StockView" as "weiVkcotS", "0.27%" as "%72.0" and "ESPP"
+// report printed "AfikInvest" as "tsevnIkifA", "0.27%" as "%72.0" and "ESPP"
 // as "PPSE". That happened inside jsPDF, after toPdfDisplayText had done
 // its job correctly, so a test of toPdfDisplayText alone could never catch
 // it - only the glyphs in the file show it.
@@ -78,9 +78,9 @@ beforeAll(() => {
 
 test('mixed Hebrew / English / number strings are drawn in visual order, not reversed again', () => {
   const all = drawn.join('\n');
-  expect(all).toContain(toPdfDisplayText('הופק ב-StockView · אומדן בלבד'));
+  expect(all).toContain(toPdfDisplayText('הופק ב-AfikInvest · אומדן בלבד'));
   expect(all).toContain(toPdfDisplayText('0.27% משוקלל'));
-  expect(all).not.toMatch(/weiVkcotS|%72\.0|PPSE|005 P&S/);
+  expect(all).not.toMatch(/tsevnIkifA|%72\.0|PPSE|005 P&S/);
 });
 
 test('a wrapped cell keeps its lines in reading order', () => {

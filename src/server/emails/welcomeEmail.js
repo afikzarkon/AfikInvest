@@ -12,14 +12,14 @@
 // html and text together as multipart/alternative.
 const { escapeHtml } = require('./html');
 
-const APP_NAME = 'StockView';
+const APP_NAME = 'AfikInvest';
 
 // ---------------------------------------------------------------------------
 // The copy. Every feature listed here is a page or function that exists in
 // the app (see src/router/routes.js) - add one here only once it ships.
 
 const INTRO =
-  'StockView מרכז במקום אחד את כל ההשקעות והחסכונות שלכם - מניות בארץ ובחו"ל, קופות גמל, קרן כספית, קופת חיסכון ועו"ש - ומראה בכל רגע כמה הכול שווה, כמה הרווחתם וכמה מס צפוי.';
+  'AfikInvest מרכז במקום אחד את כל ההשקעות והחסכונות שלכם - מניות בארץ ובחו"ל, קופות גמל, קרן כספית, קופת חיסכון ועו"ש - ומראה בכל רגע כמה הכול שווה, כמה הרווחתם וכמה מס צפוי.';
 
 const FEATURE_GROUPS = [
   {

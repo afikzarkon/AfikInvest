@@ -75,7 +75,7 @@ const LEGACY_KEYS = [
 ];
 
 function legacyImportFlagKey(userId) {
-  return `stockview_legacy_import_done_${userId}`;
+  return `afikinvest_legacy_import_done_${userId}`;
 }
 
 function readLegacyPortfolioFromLocalStorage() {

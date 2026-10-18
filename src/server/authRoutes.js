@@ -27,6 +27,10 @@ function getJwtSecret() {
     if (process.env.NODE_ENV === 'production') {
       throw new Error('JWT_SECRET must be set in production');
     }
+    // Kept from the app's previous name on purpose: without
+    // TOTP_ENCRYPTION_KEY, totp.js derives the key that encrypts stored 2FA
+    // secrets from this value, so changing it would lock every local
+    // development account out of its 2FA. Production always sets JWT_SECRET.
     return 'stockview-dev-secret-change-me';
   }
   return s;
@@ -135,7 +139,7 @@ function hashResetToken(token) {
 // non-existent account takes as long as one with a wrong password.
 let dummyHashPromise = null;
 function dummyHash() {
-  if (!dummyHashPromise) dummyHashPromise = bcrypt.hash('stockview-timing-equalizer', BCRYPT_ROUNDS);
+  if (!dummyHashPromise) dummyHashPromise = bcrypt.hash('afikinvest-timing-equalizer', BCRYPT_ROUNDS);
   return dummyHashPromise;
 }
 

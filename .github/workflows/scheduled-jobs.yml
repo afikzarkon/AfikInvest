@@ -6,7 +6,7 @@ name: Scheduled jobs
 # runs it (see src/server/internalJobRoutes.js).
 #
 # Setup (repository Settings -> Secrets and variables -> Actions):
-#   STOCKVIEW_API_URL  - the API base URL, e.g. https://stockview-api.onrender.com
+#   AFIKINVEST_API_URL  - the API base URL, e.g. https://api.afikinvest.com
 #   CRON_SECRET        - the same value as the server's CRON_SECRET env var
 # Until both are set every run is a no-op.
 
@@ -51,7 +51,7 @@ jobs:
 
       - name: Call the API
         env:
-          API_URL: ${{ secrets.STOCKVIEW_API_URL }}
+          API_URL: ${{ secrets.AFIKINVEST_API_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           JOB: ${{ steps.pick.outputs.job }}
         run: |
@@ -59,7 +59,7 @@ jobs:
           # would be "//api", which the server answers with 404).
           API_URL="${API_URL%/}"
           if [ -z "$API_URL" ] || [ -z "$CRON_SECRET" ]; then
-            echo "STOCKVIEW_API_URL / CRON_SECRET not configured - skipping."
+            echo "AFIKINVEST_API_URL / CRON_SECRET not configured - skipping."
             exit 0
           fi
           # The two post-close scans share one daily key; force the second

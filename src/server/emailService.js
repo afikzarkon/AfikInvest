@@ -82,7 +82,7 @@ function buildTransport(user, pass) {
   return null;
 }
 
-const APP_NAME = 'StockView';
+const APP_NAME = 'AfikInvest';
 
 // The public address of the web app, used to build links in emails. Taken
 // only from configuration - never from the request's Host header, which an
@@ -167,7 +167,7 @@ function createEmailService({ transport } = {}) {
       }
       return { skipped: true };
     }
-    return transporter.sendMail({ from: `"${APP_NAME}" <${user || 'no-reply@stockview.local'}>`, to, subject, html, text });
+    return transporter.sendMail({ from: `"${APP_NAME}" <${user || 'no-reply@afikinvest.local'}>`, to, subject, html, text });
   }
 
   return {

@@ -68,7 +68,7 @@ async function fetchCbsSeries({ startPeriod, endPeriod, last } = {}) {
 
   const response = await axios.get(CBS_BASE_URL, {
     params,
-    headers: { 'User-Agent': 'stockview-app/1.0' }, // חובה ע"פ תיעוד הלמ"ס
+    headers: { 'User-Agent': 'afikinvest-app/1.0' }, // חובה ע"פ תיעוד הלמ"ס
     timeout: 10000
   });
   const rows = parseCbsResponse(response.data);

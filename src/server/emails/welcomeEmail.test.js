@@ -9,7 +9,7 @@ const base = { name: 'דנה', email: 'dana@example.com', appUrl: 'https://app.e
 
 test('greets by name, in Hebrew, right to left, in one 600px table layout', () => {
   const { subject, html } = buildWelcomeEmail(base);
-  expect(subject).toBe('דנה, ברוכים הבאים ל-StockView!');
+  expect(subject).toBe('דנה, ברוכים הבאים ל-AfikInvest!');
   expect(html).toMatch(/<html lang="he" dir="rtl">/);
   expect(html).toMatch(/<meta charset="utf-8">/);
   expect(html).toContain('שלום דנה,');
@@ -51,7 +51,7 @@ test('a plain-text version carries the same content', () => {
 
 test('without a name the greeting stays general', () => {
   const { subject, html } = buildWelcomeEmail({ ...base, name: '  ' });
-  expect(subject).toBe('ברוכים הבאים ל-StockView!');
+  expect(subject).toBe('ברוכים הבאים ל-AfikInvest!');
   expect(html).toContain('שלום,');
 });
 

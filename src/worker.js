@@ -13,7 +13,7 @@ const POLL_MS = Number(process.env.WORKER_POLL_MS) || 15000;
 
 bootstrapServices()
   .then(({ runner, store }) => {
-    console.log(`StockView worker started (DB: ${store.kind}, poll every ${POLL_MS / 1000}s)`);
+    console.log(`AfikInvest worker started (DB: ${store.kind}, poll every ${POLL_MS / 1000}s)`);
     let stopping = false;
     const loop = async () => {
       while (!stopping) {

@@ -123,7 +123,7 @@ function SideNav({ activePage, onNavigate, user, onLogout, theme, onToggleTheme,
         <span className="side-nav-mark" aria-hidden="true">
           ₪
         </span>
-        <span className="side-nav-brand-text">StockView</span>
+        <span className="side-nav-brand-text">AfikInvest</span>
       </div>
 
       <div className="side-nav-scroll">

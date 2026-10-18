@@ -2,6 +2,9 @@
 # if quotes still fail after deploy, upgrade this service to Starter or higher.
 services:
   - type: web
+    # The Render service's name. Kept until the service is renamed in Render's
+    # dashboard: if Render manages it from this file (a Blueprint), changing it
+    # here first would create a second, empty service instead of renaming.
     name: stockview-api
     env: node
     plan: free
@@ -18,7 +21,7 @@ services:
 # service above so only the worker polls the job queue.
 #
 #  - type: worker
-#    name: stockview-worker
+#    name: afikinvest-worker
 #    env: node
 #    plan: starter
 #    rootDir: .

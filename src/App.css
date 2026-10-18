@@ -3028,6 +3028,20 @@ h3 {
   text-align: center;
 }
 
+/* The brand above the opening page's heading - the sidebar's mark and name,
+   so the logged-out page carries the same logo as the app. */
+.auth-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: -0.02em;
+  color: var(--sw-text);
+}
+
 .auth-title {
   font-size: 1.85rem;
   font-weight: 700;

@@ -224,7 +224,13 @@ function AuthView({ onAuthenticated, initialMode = 'register', initialNotice = '
   return (
     <div className="auth-screen">
       <div className="auth-card">
-        <h1 className="auth-title">StockView</h1>
+        <div className="auth-brand">
+          <span className="side-nav-mark" aria-hidden="true">
+            ₪
+          </span>
+          <span>AfikInvest</span>
+        </div>
+        <h1 className="auth-title">אפיק ההשקעות שלך</h1>
         <p className="auth-subtitle">
           {mode === 'twoFactor'
             ? 'אימות דו-שלבי'

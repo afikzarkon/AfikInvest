@@ -1,5 +1,5 @@
 {
-  "name": "stockview",
+  "name": "afikinvest",
   "version": "0.1.1",
   "private": true,
   "proxy": "http://127.0.0.1:5000",

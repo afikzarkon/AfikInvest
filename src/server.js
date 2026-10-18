@@ -75,7 +75,7 @@ bootstrapServices()
     if (process.env.JOBS_POLL !== '0') runner.start();
     console.log(`DB: ${store.kind === 'postgres' ? 'PostgreSQL (DATABASE_URL)' : 'SQLite local file'}`);
     app.listen(PORT, () => {
-      console.log(`StockView API http://localhost:${PORT}`);
+      console.log(`AfikInvest API http://localhost:${PORT}`);
     });
   })
   .catch((err) => {

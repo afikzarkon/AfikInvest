@@ -26,7 +26,7 @@ function arg(name, fallback) {
 // public/email/ as a file URL stands in for `${APP_URL}/email`.
 const localRoot = pathToFileURL(path.join(__dirname, '..', 'public')).href;
 const appUrl = String(arg('app-url', localRoot)).replace(/\/+$/, '');
-const out = path.resolve(arg('out', path.join(os.tmpdir(), 'stockview-welcome-email.html')));
+const out = path.resolve(arg('out', path.join(os.tmpdir(), 'afikinvest-welcome-email.html')));
 
 const { subject, html, text } = buildWelcomeEmail({
   name: arg('name', 'משתמש לדוגמה'),

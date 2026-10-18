@@ -1,4 +1,4 @@
-const AUTH_TOKEN_KEY = 'stockview_auth_token';
+const AUTH_TOKEN_KEY = 'afikinvest_auth_token';
 
 export function getAuthToken() {
   try {
