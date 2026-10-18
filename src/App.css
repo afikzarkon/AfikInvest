@@ -8128,6 +8128,355 @@ select {
   width: 120px;
 }
 
+/* Valuation, the plain-language layer: the summary, the multiple cards,
+   the scenario buttons and the value-against-price bars. */
+.val-intro {
+  margin: 0 0 16px;
+  color: var(--sw-text-secondary);
+  font-size: 14px;
+  line-height: 1.7;
+  max-width: 72ch;
+}
+
+.val-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: var(--sw-radius-pill);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  background: var(--sw-surface-3);
+  color: var(--sw-text-secondary);
+  border: 1px solid var(--sw-border);
+}
+
+.val-badge-cheap {
+  background: var(--sw-green-soft);
+  color: var(--sw-green);
+  border-color: var(--sw-green-border);
+}
+
+.val-badge-expensive {
+  background: var(--sw-red-soft);
+  color: var(--sw-red);
+  border-color: var(--sw-red-border);
+}
+
+.val-badge-mixed {
+  background: var(--sw-amber-soft);
+  color: var(--sw-amber);
+  border-color: var(--sw-amber-soft);
+}
+
+.val-badge-normal {
+  background: var(--sw-accent-soft);
+  color: var(--sw-accent);
+  border-color: var(--sw-accent-soft);
+}
+
+.val-summary-list {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.val-summary-list li {
+  display: grid;
+  grid-template-columns: minmax(150px, 220px) auto 1fr;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--sw-border);
+  border-radius: var(--sw-radius-sm);
+  background: var(--sw-surface-2);
+}
+
+.val-summary-q {
+  font-weight: 600;
+  color: var(--sw-text);
+}
+
+.val-summary-why {
+  color: var(--sw-text-muted);
+  font-size: 13px;
+}
+
+.val-implied,
+.val-result {
+  padding: 14px 16px;
+  border-radius: var(--sw-radius-sm);
+  border: 1px solid var(--sw-border);
+  border-inline-start: 4px solid var(--sw-accent);
+  background: var(--sw-accent-soft);
+  margin-bottom: 12px;
+}
+
+.val-implied h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+  color: var(--sw-text);
+}
+
+.val-implied p,
+.val-result p {
+  margin: 0;
+  line-height: 1.7;
+  color: var(--sw-text);
+}
+
+.val-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.val-card {
+  padding: 16px;
+  border: 1px solid var(--sw-border);
+  border-radius: var(--sw-radius);
+  background: var(--sw-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.val-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.val-card-head h3 {
+  margin: 0;
+  font-size: 15px;
+  color: var(--sw-text);
+}
+
+.val-card-big {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--sw-text);
+  line-height: 1.1;
+}
+
+.val-card-explain {
+  margin: 0;
+  font-size: 13px;
+  color: var(--sw-text-secondary);
+  line-height: 1.6;
+}
+
+.val-card-na {
+  padding: 10px 12px;
+  border-radius: var(--sw-radius-sm);
+  background: var(--sw-surface-3);
+}
+
+.val-compare {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 13px;
+}
+
+.val-compare li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid var(--sw-border);
+  color: var(--sw-text-secondary);
+}
+
+.val-compare strong {
+  color: var(--sw-text);
+}
+
+.val-range {
+  display: flex;
+  justify-content: center;
+}
+
+.val-range .range-bar {
+  max-width: 100%;
+}
+
+.val-legend {
+  margin: 10px 0 0;
+}
+
+.val-legend-now {
+  color: var(--sw-accent);
+}
+
+.val-legend-peer {
+  color: var(--sw-amber);
+}
+
+.val-legend-avg {
+  color: var(--sw-text-secondary);
+  font-weight: 700;
+}
+
+.val-details {
+  margin-top: 12px;
+}
+
+.val-details > summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--sw-accent);
+  padding: 6px 0;
+}
+
+.val-details > summary:focus-visible {
+  outline: none;
+  box-shadow: var(--sw-ring);
+  border-radius: 6px;
+}
+
+.val-steps {
+  margin: 8px 0;
+  padding-inline-start: 22px;
+  line-height: 1.8;
+  color: var(--sw-text-secondary);
+  font-size: 14px;
+}
+
+.dcf-scenarios {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.dcf-scenario {
+  padding: 8px 14px;
+  border-radius: var(--sw-radius-pill);
+  border: 1px solid var(--sw-border-strong);
+  background: var(--sw-surface);
+  color: var(--sw-text);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background var(--sw-transition), border-color var(--sw-transition);
+}
+
+.dcf-scenario:hover {
+  background: var(--sw-surface-hover-solid);
+}
+
+.dcf-scenario:focus-visible {
+  outline: none;
+  box-shadow: var(--sw-ring);
+}
+
+.dcf-scenario.is-active {
+  background: var(--sw-accent-soft);
+  border-color: var(--sw-accent);
+  color: var(--sw-accent);
+  font-weight: 700;
+}
+
+.dcf-hint {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--sw-text-muted);
+  line-height: 1.6;
+}
+
+.val-result-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-weight: 600;
+  color: var(--sw-text);
+}
+
+.val-result-sentence {
+  font-weight: 600;
+}
+
+.val-result .val-result-implied {
+  margin-top: 8px;
+  color: var(--sw-text-secondary);
+  font-size: 14px;
+}
+
+.val-bars {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.val-bar-row {
+  display: grid;
+  grid-template-columns: 120px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--sw-text-secondary);
+}
+
+.val-bar-track {
+  height: 14px;
+  border-radius: var(--sw-radius-pill);
+  background: var(--sw-surface-3);
+  overflow: hidden;
+}
+
+.val-bar {
+  display: block;
+  height: 100%;
+  border-radius: var(--sw-radius-pill);
+  transition: width var(--sw-transition);
+}
+
+.val-bar-value {
+  background: var(--sw-accent);
+}
+
+.val-bar-price {
+  background: var(--sw-text-muted);
+}
+
+.val-bar-num {
+  color: var(--sw-text);
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .val-summary-list li {
+    grid-template-columns: 1fr auto;
+  }
+
+  .val-summary-why {
+    grid-column: 1 / -1;
+  }
+
+  .val-bar-row {
+    grid-template-columns: 1fr auto;
+  }
+
+  .val-bar-track {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .val-bar,
+  .dcf-scenario {
+    transition: none;
+  }
+}
+
 /* =============================================================
    ACCOUNT: sign-in additions, settings page, onboarding, privacy
    Built only from the --sw-* tokens above, so both themes follow.

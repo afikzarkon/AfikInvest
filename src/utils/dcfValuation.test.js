@@ -88,3 +88,28 @@ test('suggested inputs: analyst growth, else history; CAPM discount rate', () =>
   expect(suggestDcfInputs({ fcfHistory: [-1, 5] })).toMatchObject({ growthRate: 0.05, growthSource: 'default' });
   expect(suggestDcfInputs({ beta: 3 }).discountRate).toBe(0.15);
 });
+
+describe('what the price assumes', () => {
+  const { impliedGrowthRate, historicalFcfGrowth } = require('./dcfValuation');
+
+  test('the implied growth gives back the market price', () => {
+    const { rate, beyond } = impliedGrowthRate({ ...input, growthRate: undefined });
+    expect(beyond).toBeNull();
+    const out = computeDcf({ ...input, growthRate: rate });
+    expect(out.intrinsicPerShare).toBeCloseTo(input.marketPrice, 6);
+    // 16.92 at 8% is above the price of 15, so the price assumes less.
+    expect(rate).toBeLessThan(0.08);
+  });
+
+  test('says which side it fell off when no growth rate gets there', () => {
+    expect(impliedGrowthRate({ ...input, marketPrice: 1e6 })).toEqual({ rate: null, beyond: 'above' });
+    expect(impliedGrowthRate({ ...input, cash: 1e6 })).toEqual({ rate: null, beyond: 'below' });
+    expect(impliedGrowthRate({ ...input, fcfHistory: [-5] }).rate).toBeNull();
+  });
+
+  test('historical FCF growth is the compound rate between the end points', () => {
+    expect(historicalFcfGrowth([100, 110, 121])).toBeCloseTo(0.1, 10);
+    expect(historicalFcfGrowth([-5, 100])).toBeNull();
+    expect(historicalFcfGrowth([100])).toBeNull();
+  });
+});

@@ -51,8 +51,8 @@ test('DCF: suggested inputs, verdict and sensitivity grid match the engine', asy
   const verdict = await screen.findByTestId('dcf-verdict');
   // suggested g = 8% (analysts), r = 4% + 1 x 5% = 9% -> the hand-checked case
   const expected = computeDcf({ fcfHistory: [90, 100, 110], growthRate: 0.08, discountRate: 0.09, terminalGrowth: 0.025, cash: 200, debt: 500, sharesDiluted: 100, marketPrice: 15 });
-  expect(verdict).toHaveTextContent('מתומחרת בחסר');
-  expect(screen.getByText(`${expected.intrinsicPerShare.toFixed(2)} USD`)).toBeInTheDocument();
+  expect(verdict).toHaveTextContent('נראית זולה');
+  expect(screen.getAllByText(`${expected.intrinsicPerShare.toFixed(2)} USD`).length).toBeGreaterThan(0);
   const grid = screen.getByRole('table', { name: 'רגישות' });
   expect(within(grid).getByText(expected.intrinsicPerShare.toFixed(2))).toHaveClass('cell-current');
 });
@@ -61,7 +61,7 @@ test('moving the discount-rate slider recomputes instantly', async () => {
   render(<ValuationView americanStocks={[{ stockName: 'XYZ' }]} />);
   await screen.findByTestId('dcf-verdict');
   fireEvent.change(screen.getByLabelText(/שיעור היוון/), { target: { value: '0.14' } });
-  expect(screen.getByTestId('dcf-verdict')).toHaveTextContent('מתומחרת ביתר');
+  expect(screen.getByTestId('dcf-verdict')).toHaveTextContent('נראית יקרה');
 });
 
 test('negative FCF is refused with an explanation', async () => {
@@ -77,4 +77,35 @@ test('any symbol can be typed; errors are shown', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'הצגה' }));
   await waitFor(() => expect(global.fetch.mock.calls[0][0]).toMatch(/\/api\/valuation\/MSFT$/));
   expect(await screen.findByText('לא ניתן היה לטעון')).toBeInTheDocument();
+});
+
+test('the answer comes first, in plain words', async () => {
+  render(<ValuationView americanStocks={[{ stockName: 'XYZ' }]} />);
+  const summary = await screen.findByRole('region', { name: 'בשורה התחתונה' });
+  // Both meaningful multiples are 20-25% above their 5-year average.
+  expect(within(summary).getByText('יקרה מהרגיל')).toBeInTheDocument();
+  expect(within(summary).getByText('נראית זולה')).toBeInTheDocument();
+  expect(within(summary).getByText(/כדי שהמחיר של היום יהיה הוגן/)).toBeInTheDocument();
+  // Each multiple is explained as dollars paid per dollar.
+  expect(screen.getByText(/על כל דולר של רווח שנתי/)).toBeInTheDocument();
+});
+
+test('"what the price assumes" moves growth to where value meets price', async () => {
+  render(<ValuationView americanStocks={[{ stockName: 'XYZ' }]} />);
+  await screen.findByTestId('dcf-verdict');
+  fireEvent.click(screen.getByRole('button', { name: 'מה המחיר מניח?' }));
+  expect(screen.getByTestId('dcf-verdict')).toHaveTextContent('קרוב למחיר הוגן');
+  expect(screen.getByRole('button', { name: 'מה המחיר מניח?' })).toHaveAttribute('aria-pressed', 'true');
+  fireEvent.click(screen.getByRole('button', { name: 'זהיר' }));
+  expect(screen.getByTestId('dcf-verdict')).toHaveTextContent('נראית יקרה');
+});
+
+test('a P/E driven by tiny earnings is called out instead of read', async () => {
+  const base = payload();
+  const multiples = [{ ...base.multiples[0], current: 911, avg5y: 184, min5y: 46, max5y: 988, vsHistoryPct: 394 }, ...base.multiples.slice(1)];
+  global.fetch = jest.fn(async () => ({ ok: true, json: async () => payload({ multiples }) }));
+  render(<ValuationView americanStocks={[{ stockName: 'XYZ' }]} />);
+  const card = await screen.findByRole('article', { name: 'מחיר מול רווח' });
+  expect(within(card).getByText(/לא משמעותי כרגע/)).toBeInTheDocument();
+  expect(within(card).queryByText('יקר מהרגיל')).toBeNull();
 });

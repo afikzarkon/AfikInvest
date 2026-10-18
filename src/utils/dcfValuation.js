@@ -118,7 +118,7 @@ export function computeDcf(input) {
   const equityValue = enterpriseValue + cash - debt;
   const intrinsicPerShare = equityValue / sharesDiluted;
   const terminalShareOfEv = pvTerminal / enterpriseValue;
-  if (terminalShareOfEv > 0.75) warnings.push(`ערך הטרמינל הוא ${Math.round(terminalShareOfEv * 100)}% מהשווי - התוצאה רגישה מאוד לשיעור ההיוון ולצמיחה לטווח ארוך`);
+  if (terminalShareOfEv > 0.75) warnings.push(`${Math.round(terminalShareOfEv * 100)}% מהשווי מגיע מהשנים שאחרי 5 השנים הקרובות (ערך הטרמינל) - שינוי קטן בהנחות מזיז את התוצאה הרבה`);
   if (equityValue <= 0) warnings.push('החוב עולה על שווי הפעילות - אין שווי למניה');
 
   const marginOfSafety = intrinsicPerShare > 0 ? (intrinsicPerShare - marketPrice) / intrinsicPerShare : null;
@@ -175,6 +175,38 @@ function rawValuePerShare({ fcfHistory, growthRate: g, discountRate: r, terminal
   }
   const tv = (fcf * (1 + gT)) / (r - gT) / (1 + r) ** years;
   return (pv + tv + cash - debt) / sharesDiluted;
+}
+
+// The stage-1 growth rate at which the model's value equals the market
+// price, with everything else as given - "what the price assumes". Value per
+// share rises with g (the base FCF is positive), so a bisection finds it.
+// null when there is no answer in [-50%, 150%] or the input cannot be valued;
+// `beyond` says which side it fell off.
+export function impliedGrowthRate(input, { lo = -0.5, hi = 1.5 } = {}) {
+  const gT = input.terminalGrowth ?? DCF_DEFAULTS.terminalGrowth;
+  const at = (g) => rawValuePerShare({ ...input, growthRate: g, terminalGrowth: gT });
+  const price = input.marketPrice;
+  if (!(price > 0) || at(lo) === null) return { rate: null, beyond: null };
+  if (at(lo) > price) return { rate: null, beyond: 'below' };
+  if (at(hi) < price) return { rate: null, beyond: 'above' };
+  let a = lo;
+  let b = hi;
+  for (let i = 0; i < 60; i += 1) {
+    const mid = (a + b) / 2;
+    if (at(mid) < price) a = mid;
+    else b = mid;
+  }
+  return { rate: (a + b) / 2, beyond: null };
+}
+
+// Compound annual growth of FCF from the first year to the last, unclamped;
+// null without two positive end points.
+export function historicalFcfGrowth(fcfHistory) {
+  const clean = (fcfHistory || []).filter(Number.isFinite);
+  const first = clean[0];
+  const last = clean[clean.length - 1];
+  if (clean.length < 2 || !(first > 0) || !(last > 0)) return null;
+  return (last / first) ** (1 / (clean.length - 1)) - 1;
 }
 
 // Suggested starting inputs (the user can overwrite them):
