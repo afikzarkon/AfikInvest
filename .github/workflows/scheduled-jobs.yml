@@ -20,6 +20,9 @@ on:
     - cron: '37 21 * * 1-5'
     # Event calendar refresh + reminders, early morning daily.
     - cron: '13 5 * * *'
+    # Account maintenance: deletions past their grace period, reminders,
+    # cleanup of expired sessions and tokens. Daily.
+    - cron: '23 4 * * *'
     # Drain anything else that is due (e.g. a retry after a failure) hourly.
     - cron: '47 * * * *'
   workflow_dispatch:
@@ -29,7 +32,7 @@ on:
         required: true
         default: 'anomaly.scan'
         type: choice
-        options: [anomaly.scan, calendar.refresh, drain]
+        options: [anomaly.scan, calendar.refresh, accounts.maintenance, drain]
 
 jobs:
   run:
@@ -45,6 +48,7 @@ jobs:
             case "${{ github.event.schedule }}" in
               '7 16 * * 1-5'|'37 21 * * 1-5') echo "job=anomaly.scan" >> "$GITHUB_OUTPUT" ;;
               '13 5 * * *') echo "job=calendar.refresh" >> "$GITHUB_OUTPUT" ;;
+              '23 4 * * *') echo "job=accounts.maintenance" >> "$GITHUB_OUTPUT" ;;
               *) echo "job=drain" >> "$GITHUB_OUTPUT" ;;
             esac
           fi

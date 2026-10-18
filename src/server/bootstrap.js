@@ -7,6 +7,8 @@ const { initAccountStore } = require('./accountStore');
 const { createMarketData } = require('./alertEngine');
 const { createJobRunner } = require('./jobRunner');
 const { createJobHandlers } = require('./jobs');
+const { runAccountMaintenance } = require('./accountJobs');
+const { createEmailService } = require('./emailService');
 
 async function bootstrapServices() {
   const store = await initDataStore();
@@ -15,7 +17,12 @@ async function bootstrapServices() {
   const marketData = createMarketData();
   const runner = createJobRunner({
     features,
-    handlers: createJobHandlers({ store, features, marketData })
+    handlers: createJobHandlers({
+      store,
+      features,
+      marketData,
+      extra: { 'accounts.maintenance': () => runAccountMaintenance({ accounts, mailer: createEmailService() }) }
+    })
   });
   return { store, features, accounts, marketData, runner };
 }

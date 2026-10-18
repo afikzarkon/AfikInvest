@@ -432,9 +432,11 @@ function mountQuotesRoutes(app) {
     return res.json({ quotes, exchangeRate });
   });
 
+  // ?currency=EUR for the euro (the main-currency setting); USD otherwise.
   app.get('/api/exchange-rate', async (req, res) => {
+    const symbol = req.query.currency === 'EUR' ? 'EURILS=X' : 'USDILS=X';
     try {
-      const payload = await getYahooPayload('USDILS=X');
+      const payload = await getYahooPayload(symbol);
       return res.json({ rate: payload.currentPrice });
     } catch (err) {
       return res.json({ rate: null });

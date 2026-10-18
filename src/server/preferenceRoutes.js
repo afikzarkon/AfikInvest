@@ -37,6 +37,38 @@ const VALIDATORS = {
       out.enabledRules = [...new Set(src.enabledRules)];
     }
     return out;
+  },
+
+  // Display: privacy mode hides money amounts across the site.
+  display(input) {
+    const src = input && typeof input === 'object' ? input : {};
+    const out = {};
+    if (src.hideAmounts !== undefined) out.hideAmounts = Boolean(src.hideAmounts);
+    return out;
+  },
+
+  // Investment defaults: the currency headline totals are shown in, and the
+  // broker fee the entry form starts a trade with.
+  investments(input) {
+    const src = input && typeof input === 'object' ? input : {};
+    const out = {};
+    if (src.mainCurrency !== undefined) {
+      if (!['ILS', 'USD', 'EUR'].includes(src.mainCurrency)) throw new Error('mainCurrency must be ILS, USD or EUR');
+      out.mainCurrency = src.mainCurrency;
+    }
+    if (src.defaultFeeIls !== undefined && src.defaultFeeIls !== null && src.defaultFeeIls !== '') {
+      out.defaultFeeIls = numberIn(src.defaultFeeIls, 0, 10000, 'defaultFeeIls');
+    }
+    if (src.defaultFeeUsd !== undefined && src.defaultFeeUsd !== null && src.defaultFeeUsd !== '') {
+      out.defaultFeeUsd = numberIn(src.defaultFeeUsd, 0, 10000, 'defaultFeeUsd');
+    }
+    return out;
+  },
+
+  // Which emails to receive (see emailPreferences.js).
+  notifications(input) {
+    const { normalizePreferences } = require('./emailPreferences');
+    return normalizePreferences(input);
   }
 };
 
