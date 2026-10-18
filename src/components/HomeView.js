@@ -33,6 +33,8 @@ function HomeView({
   onNavigate,
   onLoadSamplePortfolio,
   isSamplePortfolio = false,
+  mainCurrency = 'ILS',
+  fxRate = null,
   ...toolbarProps
 }) {
   const hasAnyData =
@@ -54,6 +56,15 @@ function HomeView({
     summary.totalPurchaseILS > 0 ? (summary.totalProfitILS / summary.totalPurchaseILS) * 100 : null;
 
   const cardProps = { summary, formatPriceWithSign };
+
+  // The headline total in the main currency (settings ← investments), when
+  // that is not the shekel and its rate is known; the shekel value under it.
+  const symbol = { USD: '$', EUR: '€' }[mainCurrency];
+  const converted = symbol && fxRate > 0;
+  const headlineValue = converted
+    ? `${formatPriceWithSign(summary.capitalTotalILS / fxRate)} ${symbol}`
+    : `${formatPriceWithSign(summary.capitalTotalILS)} ₪`;
+  const headlineSub = converted ? `סך כל הנכסים · ${formatPriceWithSign(summary.capitalTotalILS)} ₪` : 'סך כל הנכסים';
 
   // Which categories the user holds.
   const present = {
@@ -153,7 +164,7 @@ function HomeView({
                 featured
                 label="שווי תיק כולל"
                 icon="₪"
-                value={`${formatPriceWithSign(summary.capitalTotalILS)} ₪`}
+                value={headlineValue}
                 // The overall return, beside the figure it qualifies
                 // rather than under it.
                 badge={
@@ -162,7 +173,7 @@ function HomeView({
                     : null
                 }
                 badgeTone={totalProfitPercent != null ? toneOf(totalProfitPercent) : 'neutral'}
-                sub="סך כל הנכסים"
+                sub={headlineSub}
               />
               <KpiTile
                 label="רווח/הפסד כולל"

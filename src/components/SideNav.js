@@ -1,5 +1,6 @@
 import React from 'react';
 import ThemeToggleButton from './ThemeToggleButton';
+import Avatar from './ui/Avatar';
 import { NAV_GROUPS, ROUTES, routeByKey } from '../router/routes';
 
 // Inline SVG rather than an icon dependency or emoji: these inherit
@@ -116,7 +117,8 @@ export const NAV_ITEMS = ROUTES.filter((route) => !route.hidden);
 // On narrow screens it becomes a bottom bar - thumb-reachable, and it
 // doesn't steal horizontal space a table needs.
 // badges: { [routeKey]: count } - a count shown on that link (unread alerts).
-function SideNav({ activePage, onNavigate, user, onLogout, theme, onToggleTheme, badges = {} }) {
+// displayName / avatar: from the account (hooks/useAccount.js), optional.
+function SideNav({ activePage, onNavigate, user, onLogout, theme, onToggleTheme, badges = {}, displayName = '', avatar = null }) {
   return (
     <nav className="side-nav" aria-label="ניווט ראשי">
       <div className="side-nav-brand">
@@ -170,16 +172,24 @@ function SideNav({ activePage, onNavigate, user, onLogout, theme, onToggleTheme,
         <ThemeToggleButton theme={theme} onToggleTheme={onToggleTheme} />
         {user && (
           <div className="side-nav-user">
-            <span className="side-nav-user-email" title={user.email}>
-              {user.email}
-            </span>
+            {/* The name the user chose (or the start of the address), with
+                the address itself under it. */}
+            <div className="side-nav-identity">
+              <Avatar src={avatar} name={displayName || user.email} size={30} />
+              <span className="side-nav-identity-text">
+                {displayName ? <span className="side-nav-user-name">{displayName}</span> : null}
+                <span className="side-nav-user-email" title={user.email}>
+                  {user.email}
+                </span>
+              </span>
+            </div>
             <button
               type="button"
-              className={`side-nav-logout ${activePage === 'security' ? 'is-active' : ''}`}
-              onClick={() => onNavigate('security')}
-              aria-current={activePage === 'security' ? 'page' : undefined}
+              className={`side-nav-logout ${['settings', 'security'].includes(activePage) ? 'is-active' : ''}`}
+              onClick={() => onNavigate('settings')}
+              aria-current={['settings', 'security'].includes(activePage) ? 'page' : undefined}
             >
-              אבטחה
+              הגדרות
             </button>
             <button type="button" className="side-nav-logout" onClick={onLogout}>
               התנתקות

@@ -17,7 +17,21 @@ export const formatPrice = (price) => {
   });
 };
 
+// PRIVACY MODE ("הסתר סכומים"): while on, every money amount the UI formats
+// through formatPriceWithSign comes out as a mask instead - balances, values,
+// profit and loss, transaction sums. Percentages are formatted elsewhere and
+// stay visible, so the trend still shows without the money. App.js sets the
+// flag from the user's saved preference and re-renders; the Excel/PDF
+// export does not use this formatter, so a report always has the numbers.
+export const AMOUNT_MASK = '••••';
+let amountsHidden = false;
+export const setAmountsHidden = (hidden) => {
+  amountsHidden = Boolean(hidden);
+};
+export const areAmountsHidden = () => amountsHidden;
+
 export const formatPriceWithSign = (price) => {
+  if (amountsHidden) return AMOUNT_MASK;
   if (price === null || price === undefined || isNaN(price)) {
     return '0.00';
   }

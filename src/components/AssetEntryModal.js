@@ -43,12 +43,21 @@ function AssetEntryModal({
   onRecordTransaction,
   onUpdateTransaction,
   onPreviewTransaction,
-  onUpdateValue
+  onUpdateValue,
+  // The broker fee a new trade starts with, per currency (settings ←
+  // investments); { ILS, USD }, either may be missing.
+  defaultFees = {}
 }) {
   const today = useMemo(() => todayISO(), []);
-  const [state, setState] = useState(() =>
-    initial.transaction ? entryFromTransaction(initial.transaction) : emptyEntry(initial, today)
-  );
+  const defaultFeeFor = (assetClass) => {
+    const fee = assetClass === 'israeli' ? defaultFees.ILS : assetClass === 'american' ? defaultFees.USD : undefined;
+    return Number.isFinite(Number(fee)) && fee !== '' && fee !== null && fee !== undefined ? String(fee) : '';
+  };
+  const [state, setState] = useState(() => {
+    if (initial.transaction) return entryFromTransaction(initial.transaction);
+    const entry = emptyEntry(initial, today);
+    return entry.fees === '' ? { ...entry, fees: defaultFeeFor(entry.assetClass) } : entry;
+  });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [salePreview, setSalePreview] = useState(null);
@@ -113,6 +122,7 @@ function AssetEntryModal({
       assetId: '',
       action: next.kind === 'stock' ? 'BUY' : 'DEPOSIT',
       fxRate: '',
+      fees: defaultFeeFor(assetClass),
       lotDetails: null,
       newAccount: emptyNewAccount()
     });

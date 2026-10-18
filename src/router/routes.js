@@ -95,7 +95,9 @@ export const ROUTES = [
   // real route all the same so the form survives a refresh and the browser's
   // back button leaves it the way it leaves any other page.
   { key: 'add', path: '/add', label: 'הוספת מידע', hint: 'הוספה ועריכה', icon: 'home', hidden: true },
-  // Opened from the account area at the foot of the sidebar.
+  // Opened from the account area at the foot of the sidebar. /security is
+  // the settings page opened on its security section (older links).
+  { key: 'settings', path: '/settings', label: 'הגדרות', hint: 'פרופיל, אבטחה ופרטיות', icon: 'shield', hidden: true },
   { key: 'security', path: '/security', label: 'אבטחה', hint: 'אימות דו-שלבי', icon: 'shield', hidden: true }
 ];
 

@@ -1,4 +1,5 @@
 import React from 'react';
+import PrivacyToggle from './PrivacyToggle';
 
 // The contextual action bar for whatever page is open: one sticky strip
 // holding the page title, its actions, and its live status.
@@ -36,7 +37,11 @@ function PageToolbar({
     <div className={`page-toolbar ${sticky ? 'is-sticky' : 'is-static'}`}>
       <div className="page-toolbar-main">
         <div className="page-toolbar-heading">
-          <h1 className="page-toolbar-title">{title}</h1>
+          <div className="page-toolbar-title-row">
+            <h1 className="page-toolbar-title">{title}</h1>
+            {/* Privacy mode, reachable from the top of every page. */}
+            <PrivacyToggle />
+          </div>
           {subtitle && <p className="page-toolbar-subtitle">{subtitle}</p>}
         </div>
 

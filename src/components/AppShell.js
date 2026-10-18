@@ -10,7 +10,7 @@ import SideNav from './SideNav';
 // RTL is handled by the document's `direction: rtl` plus logical CSS
 // properties in the layout - the sidebar sits on the right without a
 // mirrored stylesheet.
-function AppShell({ activePage, onNavigate, user, onLogout, theme, onToggleTheme, badges, children }) {
+function AppShell({ activePage, onNavigate, user, onLogout, theme, onToggleTheme, badges, displayName, avatar, children }) {
   return (
     <div className="app-shell">
       <SideNav
@@ -21,6 +21,8 @@ function AppShell({ activePage, onNavigate, user, onLogout, theme, onToggleTheme
         theme={theme}
         onToggleTheme={onToggleTheme}
         badges={badges}
+        displayName={displayName}
+        avatar={avatar}
       />
       <main className="app-main">
         <div className="app-main-inner">{children}</div>

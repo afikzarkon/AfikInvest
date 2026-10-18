@@ -28,6 +28,15 @@ import ThemeToggleButton from './components/ThemeToggleButton';
 import BetaNoticeModal from './components/BetaNoticeModal';
 import AssetEntryModal from './components/AssetEntryModal';
 import { buildSamplePortfolio } from './utils/samplePortfolio';
+import { useAccount } from './hooks/useAccount';
+import { setAuthToken } from './authToken';
+import { putAccount } from './accountApi';
+import AccountLinkView, { accountLinkFromUrl } from './components/AccountLinkView';
+import LegalPage, { LEGAL_PATHS } from './components/LegalPage';
+import { OnboardingModal, TermsGate, ProfilePrompt } from './components/OnboardingFlow';
+import { PrivacyContext } from './components/PrivacyToggle';
+import { useToast } from './components/ui/Toast';
+import { profileCompletion } from './components/settings/ProfileSection';
 
 // ONE CHUNK PER PAGE, fetched when that page is first opened.
 //
@@ -53,7 +62,39 @@ const TransactionsView = lazy(() => import('./components/TransactionsView'));
 const AlertsView = lazy(() => import('./components/AlertsView'));
 const RecommendationsView = lazy(() => import('./components/RecommendationsView'));
 const ValuationView = lazy(() => import('./components/ValuationView'));
-const SecuritySettingsView = lazy(() => import('./components/SecuritySettingsView'));
+const SettingsView = lazy(() => import('./components/settings/SettingsView'));
+
+// /terms or /privacy when the page is one of them, else null.
+function legalPathFromUrl() {
+  if (typeof window === 'undefined') return null;
+  const path = window.location.pathname.replace(/\/+$/, '');
+  return LEGAL_PATHS.includes(path) ? path : null;
+}
+
+const ONBOARDING_KEY = 'afikinvest_onboarding';
+
+// The headline total in the user's main currency (the investments setting):
+// the ILS rate of USD or EUR, null for ILS or while unknown.
+function useFxRate(currency) {
+  const [rate, setRate] = useState(null);
+  useEffect(() => {
+    if (!currency || currency === 'ILS') {
+      setRate(null);
+      return undefined;
+    }
+    let cancelled = false;
+    fetch(apiUrl(`/api/exchange-rate?currency=${currency}`))
+      .then((r) => r.json())
+      .then((d) => {
+        if (!cancelled) setRate(Number(d.rate) > 0 ? Number(d.rate) : null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [currency]);
+  return rate;
+}
 
 const RESET_PASSWORD_PATH = '/reset-password';
 
@@ -120,6 +161,25 @@ function clearLegacyPortfolioKeys() {
 function App() {
   const { user, authLoading, authHeader, login, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const toast = useToast();
+  // A page opened from an email link or the return from Google/Facebook
+  // (AccountLinkView.js), and the public terms/privacy pages.
+  const [accountLink, setAccountLink] = useState(accountLinkFromUrl);
+  const [legalPath, setLegalPath] = useState(legalPathFromUrl);
+  // The profile, picture and preferences the whole site reads (and the
+  // privacy-mode flag behind every money amount).
+  const accountState = useAccount(user);
+  const { account, investments } = accountState;
+  const fxRate = useFxRate(investments.mainCurrency);
+  // The first-run steps, after a new account's first sign-in - kept for the
+  // tab's lifetime, so a refresh does not lose them.
+  const [onboardingPending, setOnboardingPending] = useState(() => {
+    try {
+      return sessionStorage.getItem(ONBOARDING_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
   // null unless the page was opened from a reset email.
   const [resetToken, setResetToken] = useState(resetTokenFromUrl);
   const [authNotice, setAuthNotice] = useState('');
@@ -364,6 +424,57 @@ function App() {
     setLegacyImportBanner('');
     // Signing back in is a new arrival, so the disclaimer is due again.
     setBetaNoticeAcknowledged(false);
+    setOnboardingPending(false);
+    try {
+      sessionStorage.removeItem(ONBOARDING_KEY);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  // Every way of signing in ends here. meta.newUser: show the first-run
+  // steps; meta.passwordWithheld: the address was verified, but competing
+  // sign-ups left the account without a password to sign in with.
+  const handleAuthenticated = (authenticatedUser, token, meta = {}) => {
+    login(authenticatedUser, token);
+    if (meta.newUser) {
+      setOnboardingPending(true);
+      try {
+        sessionStorage.setItem(ONBOARDING_KEY, '1');
+      } catch {
+        /* ignore */
+      }
+    }
+    if (meta.passwordWithheld) {
+      toast.info('הכתובת אומתה. כדי להיכנס גם עם סיסמה, הגדירו אחת בהגדרות ← חשבון ואבטחה.');
+    }
+    try {
+      const left = sessionStorage.getItem('afikinvest_backup_codes_left');
+      if (left !== null) {
+        sessionStorage.removeItem('afikinvest_backup_codes_left');
+        toast.info(`נכנסתם עם קוד גיבוי. נותרו ${left} קודים - אפשר ליצור חדשים בהגדרות.`);
+      }
+    } catch {
+      /* ignore */
+    }
+  };
+
+  // A settings change that replaced the session (new password, 2FA on,
+  // other devices signed out) or the user's flags (2FA off).
+  const handleSessionChange = (changedUser, token) => {
+    if (token) setAuthToken(token);
+    if (changedUser) login(changedUser, token || undefined);
+    accountState.refresh();
+  };
+
+  const closeOnboarding = () => {
+    setOnboardingPending(false);
+    try {
+      sessionStorage.removeItem(ONBOARDING_KEY);
+    } catch {
+      /* ignore */
+    }
+    accountState.refresh();
   };
 
   const handleLoadSamplePortfolio = () => {
@@ -630,6 +741,21 @@ function App() {
   };
 
 
+  // The terms and privacy pages read the same signed in or out.
+  if (legalPath) {
+    return (
+      <div className="App">
+        <LegalPage
+          path={legalPath}
+          onBack={() => {
+            window.history.replaceState({}, '', '/');
+            setLegalPath(null);
+          }}
+        />
+      </div>
+    );
+  }
+
   if (authLoading) {
     return (
       <div className="App">
@@ -659,18 +785,40 @@ function App() {
     );
   }
 
-  if (!user) {
+  // A link from an email, or the return from Google/Facebook: one call,
+  // then the app (signed in, or at the step still missing).
+  if (accountLink) {
     return (
       <div className="App">
         <div className="auth-theme-toggle-wrap">
           <ThemeToggleButton theme={theme} onToggleTheme={toggleTheme} />
         </div>
-        <AuthView
-          key={authNotice}
-          onAuthenticated={login}
-          initialMode={authNotice ? 'login' : 'register'}
-          initialNotice={authNotice}
+        <AccountLinkView
+          link={accountLink}
+          onAuthenticated={(u, token, meta) => {
+            handleAuthenticated(u, token, meta);
+            window.history.replaceState({}, '', '/');
+            setAccountLink(null);
+          }}
+          onDone={() => {
+            window.history.replaceState({}, '', '/');
+            setAccountLink(null);
+          }}
         />
+      </div>
+    );
+  }
+
+  if (!user) {
+    // Links in emails open the right tab: ?mode=forgot, ?mode=register.
+    const modeParam = new URLSearchParams(window.location.search).get('mode');
+    const initialMode = ['forgot', 'register', 'login', 'magic'].includes(modeParam) ? modeParam : authNotice ? 'login' : 'register';
+    return (
+      <div className="App">
+        <div className="auth-theme-toggle-wrap">
+          <ThemeToggleButton theme={theme} onToggleTheme={toggleTheme} />
+        </div>
+        <AuthView key={authNotice} onAuthenticated={handleAuthenticated} initialMode={initialMode} initialNotice={authNotice} />
       </div>
     );
   }
@@ -852,8 +1000,19 @@ function App() {
           />
         );
 
+      case 'settings':
       case 'security':
-        return <SecuritySettingsView user={user} authHeader={authHeader} onSessionChange={login} />;
+        return (
+          <SettingsView
+            user={user}
+            initialSection={activePage === 'security' ? 'security' : null}
+            accountState={accountState}
+            theme={theme}
+            onToggleTheme={toggleTheme}
+            onSessionChange={handleSessionChange}
+            onLogout={handleLogout}
+          />
+        );
 
       case 'transactions':
         return (
@@ -895,19 +1054,42 @@ function App() {
             onNavigate={navigate}
             onLoadSamplePortfolio={handleLoadSamplePortfolio}
             isSamplePortfolio={isSamplePortfolio}
+            mainCurrency={investments.mainCurrency || 'ILS'}
+            fxRate={fxRate}
           />
         );
     }
   };
 
+  const extra = (account && account.profile && account.profile.extra) || {};
+  const needsTerms = Boolean(account && account.needsTerms);
+  const showOnboarding = Boolean(account && onboardingPending && !needsTerms && !extra.onboardingDone && betaNoticeAcknowledged);
+  const completion = account ? profileCompletion(account.profile, Boolean(accountState.avatar)) : 100;
+  const showProfilePrompt = Boolean(account && activePage === 'home' && extra.onboardingDone && !extra.profilePromptDismissed && completion < 50);
+  const dismissProfilePrompt = async () => {
+    await putAccount('/api/account/profile/extra', { profilePromptDismissed: true });
+    accountState.refresh();
+  };
+
   return (
-    <>
+    <PrivacyContext.Provider value={{ hideAmounts: accountState.hideAmounts, toggle: () => accountState.setHideAmounts(!accountState.hideAmounts) }}>
       {/* Rendered outside the shell, over everything, and before the page
           is usable - it states what must not be typed into the system, so
           it has to arrive ahead of the screens that invite typing. */}
       {!betaNoticeAcknowledged && (
         <BetaNoticeModal onAcknowledge={() => setBetaNoticeAcknowledged(true)} />
       )}
+      {/* A new Google/Facebook account accepts the terms before anything else. */}
+      {needsTerms && betaNoticeAcknowledged ? <TermsGate onAccepted={() => accountState.refresh()} onLogout={handleLogout} /> : null}
+      {showOnboarding ? (
+        <OnboardingModal
+          displayName={accountState.displayName}
+          onClose={closeOnboarding}
+          onAddInvestment={handleAddInfo}
+          onLoadDemo={handleLoadSamplePortfolio}
+          onCurrency={(mainCurrency) => accountState.saveInvestments({ ...investments, mainCurrency })}
+        />
+      ) : null}
       <AppShell
         activePage={activePage}
         onNavigate={handleNavigate}
@@ -916,7 +1098,10 @@ function App() {
         theme={theme}
         onToggleTheme={toggleTheme}
         badges={{ alerts: unreadAlertCount }}
+        displayName={accountState.displayName}
+        avatar={accountState.avatar}
       >
+        {showProfilePrompt ? <ProfilePrompt completion={completion} onComplete={() => navigate('settings')} onDismiss={dismissProfilePrompt} /> : null}
         {/* Only the lazily-loaded pages ever suspend; the dashboard is in the
             initial bundle and renders straight through this. */}
         <Suspense
@@ -939,9 +1124,10 @@ function App() {
           onUpdateTransaction={handleUpdateTransaction}
           onPreviewTransaction={handlePreviewTransaction}
           onUpdateValue={handleUpdateValueFromEntry}
+          defaultFees={{ ILS: investments.defaultFeeIls, USD: investments.defaultFeeUsd }}
         />
       )}
-    </>
+    </PrivacyContext.Provider>
   );
 }
 
