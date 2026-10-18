@@ -2,6 +2,26 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-0YNEP69E77"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      // Page views are sent by src/hooks/usePageViews.js, once per screen,
+      // with the route's path only. The automatic one is off because it
+      // would carry the full address - and links from emails carry their
+      // token in it (?token=...) until the app clears it. For the same
+      // reason the address is given here without its query string and hash.
+      // Nothing personal is ever sent: no user id, no amounts, no holdings.
+      gtag('config', 'G-0YNEP69E77', {
+        send_page_view: false,
+        page_location: location.origin + location.pathname,
+        allow_google_signals: false,
+        allow_ad_personalization_signals: false
+      });
+    </script>
     <link rel="icon" href="%PUBLIC_URL%/favicon.png" />
     <!-- viewport-fit=cover lets the layout reach under a notch/rounded
          corner; the safe-area insets in App.css keep content clear of it.
