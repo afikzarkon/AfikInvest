@@ -3,7 +3,10 @@ require('dotenv').config();
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const { bootstrapServices } = require('./server/bootstrap');
-const { mountAuthRoutes } = require('./server/authRoutes');
+const { mountAuthRoutes, getJwtSecret } = require('./server/authRoutes');
+const { mountAccountRoutes } = require('./server/accountRoutes');
+const { mountOAuthRoutes } = require('./server/oauthRoutes');
+const { createEmailService } = require('./server/emailService');
 const {
   corsMiddleware,
   helmetMiddleware,
@@ -58,9 +61,12 @@ mountValuationRoutes(app, { valuation: createValuationService({ sources: createD
 const PORT = Number(process.env.PORT) || 5000;
 
 bootstrapServices()
-  .then(({ store, features, marketData, runner }) => {
-    sessionGuard.setStore(store);
-    mountAuthRoutes(app, store, { sessionGuard });
+  .then(({ store, features, accounts, marketData, runner }) => {
+    sessionGuard.setStore(store, accounts);
+    const mailer = createEmailService();
+    const auth = mountAuthRoutes(app, store, { sessionGuard, accounts, mailer });
+    mountAccountRoutes(app, { store, accounts, features, mailer, auth });
+    mountOAuthRoutes(app, { store, accounts, mailer, auth, jwtSecret: getJwtSecret() });
     mountPortfolioRoutes(app, store);
     mountSnapshotRoutes(app, store);
     mountMonthlySnapshotRoutes(app, store);
