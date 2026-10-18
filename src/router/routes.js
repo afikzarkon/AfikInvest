@@ -98,7 +98,10 @@ export const ROUTES = [
   // Opened from the account area at the foot of the sidebar. /security is
   // the settings page opened on its security section (older links).
   { key: 'settings', path: '/settings', label: 'הגדרות', hint: 'פרופיל, אבטחה ופרטיות', icon: 'shield', hidden: true },
-  { key: 'security', path: '/security', label: 'אבטחה', hint: 'אימות דו-שלבי', icon: 'shield', hidden: true }
+  { key: 'security', path: '/security', label: 'אבטחה', hint: 'אימות דו-שלבי', icon: 'shield', hidden: true },
+  // The admin panel - opened from the account area, shown to admins only
+  // (App.js). The server checks the role on every admin call.
+  { key: 'admin', path: '/admin', label: 'ניהול', hint: 'פיצ׳רים ויומן פעולות', icon: 'shield', hidden: true }
 ];
 
 // The sidebar's visible structure. Grouped rather than one flat list of

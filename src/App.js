@@ -20,6 +20,10 @@ import { usePreferences } from './hooks/usePreferences';
 import { useTheme } from './hooks/useTheme';
 import { monthKeyFromDate } from './utils/cpiTax';
 import { useRoute } from './hooks/useRoute';
+import { usePageViews } from './hooks/usePageViews';
+import { useFeatureFlags } from './hooks/useFeatureFlags';
+import { trackEvent } from './utils/analytics';
+import { routeByKey } from './router/routes';
 import HomeView from './components/HomeView';
 import AuthView from './components/AuthView';
 import ResetPasswordView from './components/ResetPasswordView';
@@ -63,6 +67,7 @@ const AlertsView = lazy(() => import('./components/AlertsView'));
 const RecommendationsView = lazy(() => import('./components/RecommendationsView'));
 const ValuationView = lazy(() => import('./components/ValuationView'));
 const SettingsView = lazy(() => import('./components/settings/SettingsView'));
+const AdminView = lazy(() => import('./components/admin/AdminView'));
 
 // /terms or /privacy when the page is one of them, else null.
 function legalPathFromUrl() {
@@ -217,7 +222,31 @@ function App() {
   // Which page is open is now the URL's business, not three booleans that
   // could each be true at once and had no answer for a refresh or the back
   // button. See hooks/useRoute.js.
-  const { page: activePage, navigate } = useRoute();
+  const { page: routePage, navigate } = useRoute();
+  // Feature flags, read from the server at run time (hooks/useFeatureFlags.js).
+  // A page whose flag is off - and the admin panel, for anyone but an
+  // admin - is not offered and not rendered: the URL falls back to home.
+  // Until the flags have loaded, those pages wait rather than appear and
+  // vanish. The server enforces the same on its APIs.
+  const featureFlags = useFeatureFlags(user, authHeader);
+  const hiddenRoutes = featureFlags.isAdmin ? featureFlags.hiddenRoutes : [...featureFlags.hiddenRoutes, 'admin'];
+  const routeHidden = featureFlags.loaded && hiddenRoutes.includes(routePage);
+  const activePage = routeHidden ? 'home' : routePage;
+  const awaitingFlags = Boolean(user) && !featureFlags.loaded && (routePage === 'admin' || featureFlags.gatedRoutes.includes(routePage));
+  useEffect(() => {
+    if (routeHidden) navigate('home', { replace: true });
+  }, [routeHidden, navigate]);
+  // The screen as Google Analytics sees it: a fixed path per screen, never
+  // the address itself (see hooks/usePageViews.js).
+  const screenRoute = routeByKey(activePage);
+  let screenPath = screenRoute.path;
+  if (legalPath) screenPath = legalPath;
+  else if (authLoading) screenPath = null;
+  else if (resetToken !== null) screenPath = RESET_PASSWORD_PATH;
+  else if (accountLink) screenPath = accountLink.path;
+  else if (!user) screenPath = '/login';
+  else if (awaitingFlags) screenPath = null;
+  usePageViews(screenPath, screenPath === screenRoute.path ? screenRoute.label : undefined);
   // The one entry form (AssetEntryModal.js): null while closed, otherwise
   // what it was opened with - {} from the "+" button, { assetClass, assetId,
   // action } from an account's ledger, { transaction } to edit a recorded
@@ -437,6 +466,10 @@ function App() {
   // sign-ups left the account without a password to sign in with.
   const handleAuthenticated = (authenticatedUser, token, meta = {}) => {
     login(authenticatedUser, token);
+    // General usage only: that someone signed in or up, and which way.
+    const linkPath = accountLink ? accountLink.path : '';
+    const method = linkPath === '/auth/callback' ? 'oauth' : linkPath === '/magic-link' ? 'magic_link' : linkPath ? 'email_link' : 'password';
+    trackEvent(meta.newUser ? 'sign_up' : 'login', { method });
     if (meta.newUser) {
       setOnboardingPending(true);
       try {
@@ -518,7 +551,7 @@ function App() {
     loadSettings: loadAlertSettings,
     saveSettings: saveAlertSettings,
     refreshNow: refreshAlertsNow
-  } = useAlerts(user, authHeader);
+  } = useAlerts(featureFlags.isEnabled('alerts') ? user : null, authHeader);
 
   const { value: recommendationPrefs, save: saveRecommendationPrefs } = usePreferences(user, authHeader, 'recommendations');
 
@@ -920,7 +953,17 @@ function App() {
   // One page per route. The shell is rendered once, around whichever page
   // the URL names, rather than repeated inside every branch.
   const renderPage = () => {
+    if (awaitingFlags) {
+      return (
+        <div className="page-loading-wrap">
+          <p className="auth-loading-text">טוען…</p>
+        </div>
+      );
+    }
     switch (activePage) {
+      case 'admin':
+        return <AdminView onFlagsChanged={featureFlags.refresh} />;
+
       case 'israeli-stocks':
         return <IsraeliStocksPage {...tableProps} {...toolbarProps} />;
 
@@ -1107,6 +1150,8 @@ function App() {
         badges={{ alerts: unreadAlertCount }}
         displayName={accountState.displayName}
         avatar={accountState.avatar}
+        isAdmin={featureFlags.isAdmin}
+        hiddenRoutes={hiddenRoutes}
       >
         {showProfilePrompt ? <ProfilePrompt completion={completion} onComplete={() => navigate('settings')} onDismiss={dismissProfilePrompt} /> : null}
         {/* Only the lazily-loaded pages ever suspend; the dashboard is in the

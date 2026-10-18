@@ -22,13 +22,18 @@ export function useRoute() {
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
-  const navigate = useCallback((key) => {
+  // { replace: true } swaps the current history entry instead of adding one
+  // - for a redirect (a page that is not available), so back does not land
+  // on it again and bounce.
+  const navigate = useCallback((key, { replace = false } = {}) => {
     // A form with unsaved changes (the settings page) asks first.
-    if (!confirmLeave()) return;
+    if (!replace && !confirmLeave()) return;
     const path = pathForKey(key);
     // Re-navigating to the page already open would otherwise stack identical
     // history entries, so back would appear to do nothing.
-    if (window.location.pathname !== path) {
+    if (replace) {
+      window.history.replaceState({}, '', path);
+    } else if (window.location.pathname !== path) {
       window.history.pushState({}, '', path);
     }
     setPage(keyForPath(path));
