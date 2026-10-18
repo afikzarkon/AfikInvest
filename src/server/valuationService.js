@@ -53,6 +53,9 @@ function createValuationService({ sources, now = () => new Date(), logger = cons
     const shares = summary.sharesOutstanding ?? latest(quarterly, 'sharesOutstanding') ?? latest(quarterly, 'dilutedShares') ?? latest(annual, 'dilutedShares');
     const marketCap = Number.isFinite(summary.marketCap) ? summary.marketCap : Number.isFinite(shares) ? price * shares : null;
 
+    // Reported with the other sources: a failed peer list empties the whole
+    // sector column, and used to say nothing about why.
+    diagnostics.peers = 'ok';
     const [riskFreeRate, peers] = await Promise.all([
       sources.riskFreeRate().catch(() => null),
       (async () => {
@@ -71,7 +74,9 @@ function createValuationService({ sources, now = () => new Date(), logger = cons
             }
           }
           return out;
-        } catch {
+        } catch (err) {
+          diagnostics.peers = `error: ${(err && err.message) || err}`;
+          logger.warn && logger.warn(`[valuation] ${symbol} peers ${diagnostics.peers}`);
           return [];
         }
       })()
@@ -106,6 +111,7 @@ function createValuationService({ sources, now = () => new Date(), logger = cons
     }
     if (diagnostics.prices !== 'ok') warnings.push('לא ניתן היה לטעון מחירים חודשיים - אין השוואה היסטורית של מכפילים.');
     if (diagnostics.summary !== 'ok') warnings.push('לא ניתן היה לטעון את נתוני הציטוט (בטא, צמיחה צפויה, סקטור) - הוצגו ערכי ברירת מחדל.');
+    if (diagnostics.peers !== 'ok') warnings.push('לא ניתן היה לטעון חברות להשוואה - אין חציון ענפי.');
 
     let fcfHistory = annual
       .slice(-5)
@@ -178,7 +184,7 @@ function createDefaultSources(env = process.env) {
   const f = require('./fundamentals');
   return {
     summary: f.fetchValuationSummary,
-    statements: env.FMP_API_KEY ? (symbol) => f.fetchFmpStatements(symbol, env.FMP_API_KEY) : (symbol) => f.fetchYahooStatements(symbol),
+    statements: (symbol) => f.fetchStatements(symbol, { fmpApiKey: env.FMP_API_KEY || '' }),
     monthlyPrices: (symbol) => f.fetchMonthlyPrices(symbol),
     peerSymbols: (symbol) => f.fetchPeerSymbols(symbol),
     peerMultiples: f.peerMultiples,

@@ -9,7 +9,21 @@ import { computeDcf, dcfSensitivity, suggestDcfInputs, DCF_DEFAULTS } from '../u
 // the server (server/valuationService.js); the DCF itself runs here, so the
 // sliders recompute instantly.
 
-const SOURCE_LABELS = { summary: 'נתוני ציטוט', statements: 'דוחות כספיים', prices: 'מחירים חודשיים' };
+const SOURCE_LABELS = { summary: 'נתוני ציטוט', statements: 'דוחות כספיים', prices: 'מחירים חודשיים', peers: 'חברות להשוואה' };
+
+// Each source's status, with the error a failed one came back with.
+function SourceDiagnostics({ diagnostics }) {
+  return (
+    <ul className="muted-note" aria-label="פירוט מקורות">
+      {Object.entries(diagnostics).map(([source, status]) => (
+        <li key={source}>
+          {SOURCE_LABELS[source] || source}: {status === 'ok' ? 'נטען' : 'נכשל'}
+          {status === 'ok' ? '' : <bdi dir="ltr"> ({status.replace(/^error: /, '')})</bdi>}
+        </li>
+      ))}
+    </ul>
+  );
+}
 const METRIC_LABELS = { PE: 'מכפיל רווח (P/E)', PS: 'מכפיל מכירות (P/S)', PFCF: 'מכפיל תזרים חופשי (P/FCF)' };
 export const VERDICT_LABELS = { UNDERVALUED: 'מתומחרת בחסר', FAIRLY_VALUED: 'מתומחרת בהוגן', OVERVALUED: 'מתומחרת ביתר', 'N/A': 'לא ניתן לקבוע' };
 const VERDICT_TONE = { UNDERVALUED: 'profit-positive', OVERVALUED: 'profit-negative', FAIRLY_VALUED: '', 'N/A': '' };
@@ -314,16 +328,7 @@ function ValuationView({ americanStocks = [] }) {
 
           {loading && <p className="history-empty-note">טוען נתונים פיננסיים…</p>}
           {error && <p className="profit-negative">{error}</p>}
-          {error && diagnostics && (
-            <ul className="muted-note" aria-label="פירוט מקורות">
-              {Object.entries(diagnostics).map(([source, status]) => (
-                <li key={source}>
-                  {SOURCE_LABELS[source] || source}: {status === 'ok' ? 'נטען' : 'נכשל'}
-                  {status === 'ok' ? '' : <bdi dir="ltr"> ({status.replace(/^error: /, '')})</bdi>}
-                </li>
-              ))}
-            </ul>
-          )}
+          {error && diagnostics && <SourceDiagnostics diagnostics={diagnostics} />}
           {!symbol && !loading && <p className="history-empty-note">בחרו מניה אמריקאית מהתיק או הקלידו סימול.</p>}
 
           {data && (
@@ -340,6 +345,9 @@ function ValuationView({ americanStocks = [] }) {
                     {w}
                   </p>
                 ))}
+                {/* Why a source is missing, so a partial page can be traced
+                    to its cause without the server's logs. */}
+                {data.partial && data.diagnostics && <SourceDiagnostics diagnostics={data.diagnostics} />}
                 <MultiplesTable rows={data.multiples} />
               </div>
 

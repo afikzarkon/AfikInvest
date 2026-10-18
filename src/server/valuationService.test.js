@@ -103,7 +103,7 @@ describe('partial failures', () => {
     );
     const v = await createValuationService({ sources: src, now, logger: { warn() {} } }).getValuation('X');
     expect(v.partial).toBe(true);
-    expect(v.diagnostics).toEqual({ summary: 'ok', statements: 'error: Unauthorized', prices: 'ok' });
+    expect(v.diagnostics).toEqual({ summary: 'ok', statements: 'error: Unauthorized', prices: 'ok', peers: 'ok' });
     expect(v.multiples.map((m) => [m.metric, m.current, m.samples])).toEqual([
       ['PE', 25, 0],
       ['PS', 4, 0],
@@ -123,6 +123,14 @@ describe('partial failures', () => {
     expect(v).toMatchObject({ name: 'X from chart', price: 50, marketCap: 500, currency: 'USD' });
     expect(v.diagnostics.summary).toBe('error: crumb refused');
     expect(v.multiples.find((m) => m.metric === 'PE').current).toBeCloseTo(500 / 12, 10);
+  });
+
+  test('the peer list failing is reported, not silently an empty sector column', async () => {
+    const src = sources({ peerSymbols: jest.fn(async () => { throw new Error('429'); }) });
+    const v = await createValuationService({ sources: src, now, logger: { warn() {} } }).getValuation('X');
+    expect(v.diagnostics.peers).toBe('error: 429');
+    expect(v.partial).toBe(true);
+    expect(v.warnings.join(' ')).toMatch(/חברות להשוואה/);
   });
 
   test('no price anywhere: fails with per-source diagnostics, and the route passes them on', async () => {

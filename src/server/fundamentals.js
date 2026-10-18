@@ -78,25 +78,33 @@ function parseYahooTimeseries(data, prefix) {
     .sort((a, b) => (a.periodEnd < b.periodEnd ? -1 : 1));
 }
 
-// Yahoo refuses the timeseries endpoint without the same crumb + cookie
+// Yahoo has refused the timeseries endpoint without the same crumb + cookie
 // session quoteSummary needs, so by default the request goes through that
 // authenticated path (with its retry on a stale crumb). query2 first, then
 // query1, which Yahoo sometimes serves when the other is refusing.
+//
+// The endpoint has since been answering plain requests too, and the crumb
+// is the part a hosted server loses first (Yahoo refuses the session from
+// some data-centre addresses), so the same two hosts are then tried
+// without it before the statements are given up on.
 const crumbGet = (url, config) => fetchYahooWithCrumbRetry(url, config.params);
+const YAHOO_HOSTS = ['https://query2.finance.yahoo.com', 'https://query1.finance.yahoo.com'];
 
-async function fetchYahooStatements(symbol, { get = crumbGet } = {}) {
+async function fetchYahooStatements(symbol, { get = crumbGet, plainGet = axios.get } = {}) {
   const period2 = Math.floor(Date.now() / 1000);
   const period1 = period2 - 8 * 365 * 86400;
   const path = `/ws/fundamentals-timeseries/v1/finance/timeseries/${encodeURIComponent(symbol)}`;
   const fetchPrefix = async (prefix) => {
     const params = { type: timeseriesTypes(prefix).join(','), period1, period2, merge: false, padTimeSeries: true, lang: 'en-US' };
     let lastError;
-    for (const host of ['https://query2.finance.yahoo.com', 'https://query1.finance.yahoo.com']) {
-      try {
-        const res = await get(`${host}${path}`, { params, timeout: 15000, headers: YAHOO_HEADERS });
-        return parseYahooTimeseries(res.data, prefix);
-      } catch (err) {
-        lastError = err;
+    for (const fetcher of [get, plainGet]) {
+      for (const host of YAHOO_HOSTS) {
+        try {
+          const res = await fetcher(`${host}${path}`, { params, timeout: 15000, headers: YAHOO_HEADERS });
+          return parseYahooTimeseries(res.data, prefix);
+        } catch (err) {
+          lastError = err;
+        }
       }
     }
     throw lastError;
@@ -137,19 +145,61 @@ function parseFmpStatements(income, cashflow, balance) {
   return [...byDate.values()].sort((a, b) => (a.periodEnd < b.periodEnd ? -1 : 1));
 }
 
+// FMP answers a refused request (bad key, a plan that does not include the
+// endpoint, a retired endpoint) with HTTP 200 and an object instead of the
+// array of statements - which the parser used to crash on with a TypeError
+// that said nothing about why.
+function fmpRows(data, path) {
+  if (Array.isArray(data)) return data;
+  const message = data && (data['Error Message'] || data.error || data.message);
+  throw new Error(`fmp ${path}: ${message || 'unexpected response'}`);
+}
+
+// The /stable endpoints: FMP retired the /api/v3 ones for keys issued after
+// August 2025. Quarterly statements are a paid feature on its free plan, so
+// they are optional here - without them the result has no quarterly rows,
+// and fetchStatements fills them from Yahoo.
 async function fetchFmpStatements(symbol, apiKey, { get = axios.get } = {}) {
-  const base = 'https://financialmodelingprep.com/api/v3';
+  const base = 'https://financialmodelingprep.com/stable';
   const call = (path, period) =>
-    get(`${base}/${path}/${encodeURIComponent(symbol)}`, { params: { period, limit: period === 'quarter' ? 8 : 10, apikey: apiKey }, timeout: 15000 }).then((r) => r.data);
-  const [ia, ca, ba, iq, cq, bq] = await Promise.all([
+    get(`${base}/${path}`, { params: { symbol, period, limit: period === 'quarter' ? 8 : 10, apikey: apiKey }, timeout: 15000 }).then((r) =>
+      fmpRows(r.data, path)
+    );
+  const [ia, ca, ba] = await Promise.all([
     call('income-statement', 'annual'),
     call('cash-flow-statement', 'annual'),
-    call('balance-sheet-statement', 'annual'),
+    call('balance-sheet-statement', 'annual')
+  ]);
+  const quarters = await Promise.allSettled([
     call('income-statement', 'quarter'),
     call('cash-flow-statement', 'quarter'),
     call('balance-sheet-statement', 'quarter')
   ]);
-  return { annual: parseFmpStatements(ia, ca, ba), quarterly: parseFmpStatements(iq, cq, bq), source: 'fmp' };
+  const quarterly = quarters.every((q) => q.status === 'fulfilled') ? parseFmpStatements(...quarters.map((q) => q.value)) : [];
+  return { annual: parseFmpStatements(ia, ca, ba), quarterly, source: 'fmp' };
+}
+
+// The statements the valuation uses: FMP's when a key is configured, and
+// Yahoo's otherwise - or whenever FMP fails or has nothing for the symbol,
+// so a refused key costs the longer history, not the statements. FMP
+// without quarterly rows borrows Yahoo's, which the trailing twelve months
+// are computed from.
+async function fetchStatements(symbol, { fmpApiKey = '', fmp = fetchFmpStatements, yahoo = fetchYahooStatements, logger = console } = {}) {
+  if (!fmpApiKey) return yahoo(symbol);
+  let fromFmp = null;
+  try {
+    fromFmp = await fmp(symbol, fmpApiKey);
+  } catch (err) {
+    logger.warn && logger.warn(`[valuation] ${symbol} fmp statements failed, using yahoo: ${err && err.message}`);
+  }
+  if (!fromFmp || !fromFmp.annual.length) return yahoo(symbol);
+  if (fromFmp.quarterly.length) return fromFmp;
+  try {
+    const fromYahoo = await yahoo(symbol);
+    return { ...fromFmp, quarterly: fromYahoo.quarterly };
+  } catch {
+    return fromFmp;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -241,23 +291,31 @@ function parsePeers(data) {
   return ((result && result.recommendedSymbols) || []).map((s) => s.symbol).filter(Boolean);
 }
 
-async function fetchPeerSymbols(symbol, { get = axios.get } = {}) {
-  const res = await get(`https://query2.finance.yahoo.com/v6/finance/recommendationsbysymbol/${encodeURIComponent(symbol)}`, {
-    timeout: 15000,
-    headers: YAHOO_HEADERS
-  });
+// A plain request first; then through the crumb session, for a server
+// whose plain requests Yahoo is refusing - without peers the whole sector
+// column of the multiples table is empty.
+async function fetchPeerSymbols(symbol, { get = axios.get, sessionGet = crumbGet } = {}) {
+  const url = `https://query2.finance.yahoo.com/v6/finance/recommendationsbysymbol/${encodeURIComponent(symbol)}`;
+  let res;
+  try {
+    res = await get(url, { timeout: 15000, headers: YAHOO_HEADERS });
+  } catch {
+    res = await sessionGet(url, { params: {}, timeout: 15000, headers: YAHOO_HEADERS });
+  }
   return parsePeers(res.data);
 }
 
 // A peer's trailing-twelve-month free cash flow from its STATEMENTS
 // (operating cash flow + capex), the same basis the subject company's own
 // P/FCF is computed on. One timeseries request; null when Yahoo has none.
-async function fetchTrailingFreeCashFlow(symbol, { get = crumbGet } = {}) {
+async function fetchTrailingFreeCashFlow(symbol, { get = crumbGet, plainGet = axios.get } = {}) {
   const period2 = Math.floor(Date.now() / 1000);
   const period1 = period2 - 2 * 365 * 86400;
   const path = `/ws/fundamentals-timeseries/v1/finance/timeseries/${encodeURIComponent(symbol)}`;
   const params = { type: 'trailingFreeCashFlow', period1, period2, merge: false, padTimeSeries: true, lang: 'en-US' };
-  const res = await get(`https://query2.finance.yahoo.com${path}`, { params, timeout: 15000, headers: YAHOO_HEADERS });
+  const config = { params, timeout: 15000, headers: YAHOO_HEADERS };
+  // Without the crumb as a second try - see fetchYahooStatements.
+  const res = await get(`https://query2.finance.yahoo.com${path}`, config).catch(() => plainGet(`https://query2.finance.yahoo.com${path}`, config));
   const rows = parseYahooTimeseries(res.data, 'trailing').filter((r) => Number.isFinite(r.freeCashFlow));
   return rows.length ? rows[rows.length - 1].freeCashFlow : null;
 }
@@ -272,12 +330,19 @@ async function fetchTrailingFreeCashFlow(symbol, { get = crumbGet } = {}) {
 // as 85% cheaper than its peers. Without a statement figure the peer is
 // left out of the P/FCF median rather than measured on the wrong basis; a
 // negative FCF leaves the multiple undefined, as everywhere else.
+//
+// A peer that reports in one currency and trades in another (an ADR such
+// as TSM: statements in TWD, price in USD) has its P/S and P/FCF dividing
+// a USD market cap by TWD figures - TSM read 0.43x sales and 1.9x free cash
+// flow, dragging the sector median down. Those two are left out for such a
+// peer; P/E is Yahoo's own and already on one currency.
 function peerMultiples(summary, trailingFreeCashFlow = null) {
   const cap = summary.marketCap;
+  const mixedCurrency = !!(summary.financialCurrency && summary.currency && summary.financialCurrency !== summary.currency);
   return {
     PE: summary.trailingPE,
-    PS: summary.priceToSales,
-    PFCF: Number.isFinite(cap) && trailingFreeCashFlow > 0 ? cap / trailingFreeCashFlow : null
+    PS: mixedCurrency ? null : summary.priceToSales,
+    PFCF: !mixedCurrency && Number.isFinite(cap) && trailingFreeCashFlow > 0 ? cap / trailingFreeCashFlow : null
   };
 }
 
@@ -299,6 +364,7 @@ module.exports = {
   fetchYahooStatements,
   parseFmpStatements,
   fetchFmpStatements,
+  fetchStatements,
   parseValuationSummary,
   fetchValuationSummary,
   parseMonthlyChart,

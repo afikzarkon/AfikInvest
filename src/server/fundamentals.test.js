@@ -9,6 +9,9 @@ const {
   parsePeers,
   peerMultiples,
   fetchYahooStatements,
+  fetchFmpStatements,
+  fetchStatements,
+  fetchPeerSymbols,
   fetchRiskFreeRate
 } = require('./fundamentals');
 
@@ -56,7 +59,7 @@ test('an empty statements response is an error, not an empty company', async () 
 
 test('by default the statements go through the crumb-authenticated request', () => {
   const src = require('fs').readFileSync(require.resolve('./fundamentals'), 'utf8');
-  expect(src).toMatch(/async function fetchYahooStatements\(symbol, \{ get = crumbGet \}/);
+  expect(src).toMatch(/async function fetchYahooStatements\(symbol, \{ get = crumbGet, plainGet = axios\.get \}/);
 });
 
 test('parses FMP statements into the same shape', () => {
@@ -111,6 +114,69 @@ test('monthly chart: month-end dates, split events, duplicate month deduped', ()
   data.chart.result[0].meta = { regularMarketPrice: 123.4, currency: 'USD', longName: 'Netflix, Inc.' };
   expect(parseMonthlyChart(data).meta).toEqual({ price: 123.4, currency: 'USD', name: 'Netflix, Inc.' });
   expect(() => parseMonthlyChart({})).toThrow();
+});
+
+test("a peer reporting in another currency than it trades in keeps only its P/E", () => {
+  const tsm = { currency: 'USD', financialCurrency: 'TWD', marketCap: 1.5e12, trailingPE: 26.7, priceToSales: 0.43 };
+  expect(peerMultiples(tsm, 8e11)).toEqual({ PE: 26.7, PS: null, PFCF: null });
+});
+
+test('statements fall back to plain requests when the crumb session is refused', async () => {
+  const data = { timeseries: { result: [{ meta: { type: ['annualTotalRevenue'] }, annualTotalRevenue: [entry('2024-12-31', 7)] }] } };
+  const get = jest.fn(async () => { throw new Error('crumb refused'); });
+  const plainGet = jest.fn(async () => ({ data }));
+  const out = await fetchYahooStatements('AVGO', { get, plainGet });
+  expect(out.annual).toEqual([{ periodEnd: '2024-12-31', currency: 'USD', revenue: 7 }]);
+  expect(get).toHaveBeenCalledTimes(4); // both hosts, annual and quarterly
+  expect(plainGet.mock.calls[0][0]).toMatch(/^https:\/\/query2/);
+});
+
+test("FMP's refusal (HTTP 200 with an error object) is an error that says why", async () => {
+  const get = jest.fn(async () => ({ data: { 'Error Message': 'Legacy Endpoint' } }));
+  await expect(fetchFmpStatements('AAPL', 'k', { get })).rejects.toThrow(/Legacy Endpoint/);
+  expect(get.mock.calls[0][0]).toBe('https://financialmodelingprep.com/stable/income-statement');
+  expect(get.mock.calls[0][1].params).toMatchObject({ symbol: 'AAPL', period: 'annual', apikey: 'k' });
+});
+
+test('FMP without its quarterly statements still returns the annual ones', async () => {
+  const get = jest.fn(async (url, { params }) => {
+    if (params.period === 'quarter') return { data: { 'Error Message': 'Premium' } };
+    return { data: [{ date: '2024-12-31', reportedCurrency: 'USD', revenue: 5 }] };
+  });
+  const out = await fetchFmpStatements('AAPL', 'k', { get });
+  expect(out.annual).toHaveLength(1);
+  expect(out.quarterly).toEqual([]);
+});
+
+describe('fetchStatements', () => {
+  const yahooRows = { annual: [{ periodEnd: '2024-12-31' }], quarterly: [{ periodEnd: '2025-03-31' }], source: 'yahoo' };
+  const quiet = { warn() {} };
+
+  test('without an FMP key it is Yahoo', async () => {
+    const fmp = jest.fn();
+    expect(await fetchStatements('X', { fmp, yahoo: async () => yahooRows })).toBe(yahooRows);
+    expect(fmp).not.toHaveBeenCalled();
+  });
+
+  test('a failing or empty FMP falls back to Yahoo', async () => {
+    const yahoo = jest.fn(async () => yahooRows);
+    const failing = jest.fn(async () => { throw new Error('Invalid API KEY'); });
+    expect(await fetchStatements('X', { fmpApiKey: 'k', fmp: failing, yahoo, logger: quiet })).toBe(yahooRows);
+    const empty = jest.fn(async () => ({ annual: [], quarterly: [], source: 'fmp' }));
+    expect(await fetchStatements('X', { fmpApiKey: 'k', fmp: empty, yahoo, logger: quiet })).toBe(yahooRows);
+  });
+
+  test("FMP's annual rows with Yahoo's quarters when FMP has none", async () => {
+    const fmp = async () => ({ annual: [{ periodEnd: '2015-12-31' }, { periodEnd: '2024-12-31' }], quarterly: [], source: 'fmp' });
+    const out = await fetchStatements('X', { fmpApiKey: 'k', fmp, yahoo: async () => yahooRows, logger: quiet });
+    expect(out).toEqual({ annual: [{ periodEnd: '2015-12-31' }, { periodEnd: '2024-12-31' }], quarterly: yahooRows.quarterly, source: 'fmp' });
+  });
+});
+
+test('the peer list is retried through the crumb session when a plain request is refused', async () => {
+  const get = jest.fn(async () => { throw new Error('429'); });
+  const sessionGet = jest.fn(async () => ({ data: { finance: { result: [{ recommendedSymbols: [{ symbol: 'MU' }] }] } } }));
+  expect(await fetchPeerSymbols('AVGO', { get, sessionGet })).toEqual(['MU']);
 });
 
 test('peers and risk-free rate', async () => {
