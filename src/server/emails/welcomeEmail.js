@@ -156,7 +156,8 @@ function buttonHtml(href, label) {
 // trailing slash), '' when unknown - then the email goes without images or
 // the button rather than with links to nowhere; contactEmail: where to write
 // for help.
-function buildWelcomeEmail({ name = '', email = '', appUrl = '', contactEmail = '' } = {}) {
+// unsubscribeUrl: the opt-out link for the footer, when there is one.
+function buildWelcomeEmail({ name = '', email = '', appUrl = '', contactEmail = '', unsubscribeUrl = '' } = {}) {
   const cleanName = String(name || '').trim();
   const greeting = cleanName ? `שלום ${cleanName},` : 'שלום,';
   const subject = cleanName ? `${cleanName}, ברוכים הבאים ל-${APP_NAME}!` : `ברוכים הבאים ל-${APP_NAME}!`;
@@ -197,7 +198,7 @@ function buildWelcomeEmail({ name = '', email = '', appUrl = '', contactEmail = 
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
               <tr><td style="border-top:1px solid ${COLORS.rule};padding-top:20px;">
                 ${p(contactLine, `font-size:14px;color:${COLORS.muted};`)}
-                ${p(`ההודעה נשלחה אוטומטית מ-${APP_NAME} כי נפתח חשבון בכתובת זו. אם לא אתם נרשמתם, אפשר להתעלם ממנה.`, `margin:0;font-size:12px;color:${COLORS.faint};`)}
+                ${p(`ההודעה נשלחה אוטומטית מ-${APP_NAME} כי נפתח חשבון בכתובת זו. אם לא אתם נרשמתם, אפשר להתעלם ממנה.${unsubscribeUrl ? ` <a href="${escapeHtml(unsubscribeUrl)}" style="color:${COLORS.faint};">הסרה מרשימת התפוצה</a>` : ''}`, `margin:0;font-size:12px;color:${COLORS.faint};`)}
               </td></tr>
             </table>
         </td></tr>
@@ -223,7 +224,8 @@ function buildWelcomeEmail({ name = '', email = '', appUrl = '', contactEmail = 
     ...(appUrl ? [`מעבר לאתר: ${appUrl}`, ''] : []),
     contactEmail ? `נתקלתם בבעיה או שיש לכם שאלה? כתבו לנו ל-${contactEmail}.` : 'נתקלתם בבעיה או שיש לכם שאלה? השיבו להודעה זו ונחזור אליכם.',
     '',
-    `ההודעה נשלחה אוטומטית מ-${APP_NAME} כי נפתח חשבון בכתובת זו. אם לא אתם נרשמתם, אפשר להתעלם ממנה.`
+    `ההודעה נשלחה אוטומטית מ-${APP_NAME} כי נפתח חשבון בכתובת זו. אם לא אתם נרשמתם, אפשר להתעלם ממנה.`,
+    ...(unsubscribeUrl ? [`הסרה מרשימת התפוצה: ${unsubscribeUrl}`] : [])
   ].join('\n');
 
   return { subject, html, text };

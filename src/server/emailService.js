@@ -13,6 +13,7 @@
 const nodemailer = require('nodemailer');
 const { escapeHtml } = require('./emails/html');
 const { buildWelcomeEmail } = require('./emails/welcomeEmail');
+const accountEmails = require('./emails/accountEmails');
 
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GMAIL_SEND_URL = 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send';
@@ -94,59 +95,18 @@ function getAppUrl() {
   return 'http://localhost:3000';
 }
 
-function layout(title, bodyHtml) {
-  return `<!doctype html>
-<html lang="he" dir="rtl">
-  <head><meta charset="utf-8"><title>${escapeHtml(title)}</title></head>
-  <body style="margin:0;padding:24px;background:#f4f6fb;font-family:Arial,Helvetica,sans-serif;color:#1f2937;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-      <tr><td align="center">
-        <table role="presentation" width="560" cellpadding="0" cellspacing="0"
-               style="max-width:560px;background:#ffffff;border-radius:12px;padding:32px;text-align:right;">
-          <tr><td>
-            <h1 style="margin:0 0 16px;font-size:22px;color:#1d4ed8;">${APP_NAME}</h1>
-            ${bodyHtml}
-            <p style="margin:32px 0 0;font-size:12px;color:#6b7280;">
-              הודעה זו נשלחה אוטומטית מ-${APP_NAME}. אין להשיב לה.
-            </p>
-          </td></tr>
-        </table>
-      </td></tr>
-    </table>
-  </body>
-</html>`;
-}
-
-function button(href, label) {
-  return `<p style="margin:24px 0;">
-    <a href="${escapeHtml(href)}"
-       style="display:inline-block;background:#1d4ed8;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:bold;">
-      ${escapeHtml(label)}
-    </a>
-  </p>`;
-}
-
 // The welcome email's words and markup live in emails/welcomeEmail.js. Its
 // contact address is the account the mail is sent from - the one address
 // the system is configured with.
-function welcomeMessage(email, { name = '' } = {}) {
-  return buildWelcomeEmail({ name, email, appUrl: getAppUrl(), contactEmail: String(process.env.EMAIL_USER || '').trim() });
+function welcomeMessage(email, { name = '', unsubscribeUrl = '' } = {}) {
+  return buildWelcomeEmail({ name, email, appUrl: getAppUrl(), contactEmail: String(process.env.EMAIL_USER || '').trim(), unsubscribeUrl });
 }
 
-function passwordResetMessage(resetUrl, minutes) {
-  const html = layout(
-    'איפוס סיסמה',
-    `<p style="font-size:16px;">התקבלה בקשה לאיפוס הסיסמה לחשבון שלכם.</p>
-     ${button(resetUrl, 'בחירת סיסמה חדשה')}
-     <p style="font-size:14px;color:#4b5563;">הקישור תקף ל-${minutes} דקות ולשימוש אחד בלבד.</p>
-     <p style="font-size:14px;color:#4b5563;">אם לא ביקשתם לאפס סיסמה, התעלמו מהודעה זו - הסיסמה לא תשתנה.</p>
-     <p style="font-size:12px;color:#6b7280;direction:ltr;text-align:left;word-break:break-all;">${escapeHtml(resetUrl)}</p>`
-  );
-  const text =
-    `התקבלה בקשה לאיפוס הסיסמה לחשבון ${APP_NAME}.\n\n` +
-    `לבחירת סיסמה חדשה: ${resetUrl}\n\n` +
-    `הקישור תקף ל-${minutes} דקות ולשימוש אחד בלבד. אם לא ביקשתם איפוס, התעלמו מהודעה זו.`;
-  return { subject: `איפוס סיסמה - ${APP_NAME}`, html, text };
+// One-click unsubscribe (RFC 8058): mail clients show an "unsubscribe"
+// button that POSTs to the link. Only for mail people can opt out of.
+function unsubscribeHeaders(url) {
+  if (!url) return undefined;
+  return { 'List-Unsubscribe': `<${url}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' };
 }
 
 // transport: a nodemailer transport (or anything with sendMail) - tests pass
@@ -158,7 +118,9 @@ function createEmailService({ transport } = {}) {
   const transporter = transport || buildTransport(user, pass);
   const configured = Boolean(transporter);
 
-  async function send(to, { subject, html, text }) {
+  // options.headers: extra message headers (List-Unsubscribe);
+  // options.replyTo: where a reply goes (the support form).
+  async function send(to, { subject, html, text }, { headers, replyTo } = {}) {
     if (!transporter) {
       if (process.env.NODE_ENV === 'production') {
         console.warn(`email: no mail credentials (GMAIL_* or EMAIL_PASS) - skipped "${subject}"`);
@@ -167,14 +129,30 @@ function createEmailService({ transport } = {}) {
       }
       return { skipped: true };
     }
-    return transporter.sendMail({ from: `"${APP_NAME}" <${user || 'no-reply@afikinvest.local'}>`, to, subject, html, text });
+    return transporter.sendMail({
+      from: `"${APP_NAME}" <${user || 'no-reply@afikinvest.local'}>`,
+      to,
+      subject,
+      html,
+      text,
+      ...(headers ? { headers } : {}),
+      ...(replyTo ? { replyTo } : {})
+    });
   }
 
   return {
     configured,
-    // options.name: the user's name, when the signup collects one.
-    sendWelcomeEmail: (to, options) => send(to, welcomeMessage(to, options)),
-    sendPasswordResetEmail: (to, resetUrl, minutes) => send(to, passwordResetMessage(resetUrl, minutes))
+    send,
+    // options.name: the user's name, when the signup collects one;
+    // options.unsubscribeUrl: the opt-out page, for the footer;
+    // options.oneClickUrl: the API address for one-click unsubscribe.
+    sendWelcomeEmail: (to, options = {}) => send(to, welcomeMessage(to, options), { headers: unsubscribeHeaders(options.oneClickUrl) }),
+    sendPasswordResetEmail: (to, resetUrl, minutes) => send(to, accountEmails.passwordReset({ link: resetUrl, minutes })),
+    // template: a builder in emails/accountEmails.js, by name.
+    sendAccountEmail: (to, template, params = {}) => {
+      if (typeof accountEmails[template] !== 'function') return Promise.reject(new Error(`unknown email template ${template}`));
+      return send(to, accountEmails[template](params));
+    }
   };
 }
 

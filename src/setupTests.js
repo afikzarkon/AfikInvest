@@ -24,3 +24,8 @@ global.ResizeObserver = class ResizeObserver {
   unobserve() {}
   disconnect() {}
 };
+
+// The leaked-password check (server/authHelpers.js pwnedCount) calls
+// HaveIBeenPwned over the network; tests must neither depend on it nor
+// send it anything. Tests of the check itself pass their own fetch.
+process.env.HIBP_DISABLED = '1';

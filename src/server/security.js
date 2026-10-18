@@ -80,17 +80,46 @@ function crossSiteRequestGuard() {
 // Runs before every route and only marks the request - the routes' own auth
 // checks (readAuthUserFromRequest) do the refusing, so public routes still
 // work for a client holding a stale token.
-function createSessionGuard({ ttlMs = 30 * 1000 } = {}) {
+//
+// A token that names a device session (`sid`, see authSession.js) is also
+// checked against that session: signing out one device, or every other
+// one, revokes its row, and the token stops working there and then. Tokens
+// from before device sessions carry no sid and rely on the version alone.
+// An account waiting out its deletion grace period has no live session.
+function createSessionGuard({ ttlMs = 30 * 1000, touchEveryMs = 5 * 60 * 1000 } = {}) {
   let store = null;
-  const cache = new Map(); // userId -> { version, at }
+  let accounts = null;
+  const cache = new Map(); // userId -> { version, deleted, at }
+  const sessions = new Map(); // sid -> { live, userId, lastSeenAt, at }
 
-  async function currentVersion(userId) {
+  async function currentState(userId) {
     const hit = cache.get(userId);
-    if (hit && Date.now() - hit.at < ttlMs) return hit.version;
+    if (hit && Date.now() - hit.at < ttlMs) return hit;
     const user = await store.getAuthUser(userId);
-    const version = user ? user.token_version : null;
-    cache.set(userId, { version, at: Date.now() });
-    return version;
+    const state = { version: user ? user.token_version : null, deleted: Boolean(user && user.deleted_at), at: Date.now() };
+    cache.set(userId, state);
+    return state;
+  }
+
+  async function sessionLive(sid, userId) {
+    let hit = sessions.get(sid);
+    if (!hit || Date.now() - hit.at >= ttlMs) {
+      const s = await accounts.getSession(sid);
+      hit = {
+        live: Boolean(s && !s.revokedAt && s.expiresAt > new Date().toISOString()),
+        userId: s ? s.userId : null,
+        lastSeenAt: s ? Date.parse(s.lastSeenAt) : 0,
+        at: Date.now()
+      };
+      sessions.set(sid, hit);
+    }
+    if (!hit.live || hit.userId !== userId) return false;
+    // "Last active" for the device list, written at most every few minutes.
+    if (Date.now() - hit.lastSeenAt > touchEveryMs) {
+      hit.lastSeenAt = Date.now();
+      accounts.touchSession(sid).catch(() => {});
+    }
+    return true;
   }
 
   async function middleware(req, res, next) {
@@ -104,8 +133,11 @@ function createSessionGuard({ ttlMs = 30 * 1000 } = {}) {
     }
     if (!payload) return next();
     try {
-      const version = await currentVersion(Number(payload.sub));
-      if (version === null || (Number(payload.tv) || 0) !== version) req.sessionRevoked = true;
+      const userId = Number(payload.sub);
+      const state = await currentState(userId);
+      if (state.version === null || state.deleted || (Number(payload.tv) || 0) !== state.version) req.sessionRevoked = true;
+      else if (payload.sid && accounts && !(await sessionLive(String(payload.sid), userId))) req.sessionRevoked = true;
+      if (payload.sid) req.sessionId = String(payload.sid);
     } catch (err) {
       // Fail closed: without the lookup, a revoked token would pass.
       console.error('session guard', err && err.message ? err.message : err);
@@ -116,11 +148,15 @@ function createSessionGuard({ ttlMs = 30 * 1000 } = {}) {
 
   return {
     middleware,
-    setStore(s) {
+    setStore(s, accountStore = null) {
       store = s;
+      accounts = accountStore;
     },
     invalidate(userId) {
       cache.delete(Number(userId));
+    },
+    invalidateSessions(ids) {
+      (ids || []).forEach((id) => sessions.delete(String(id)));
     }
   };
 }

@@ -46,6 +46,21 @@ function makeStore() {
   };
 }
 
+// Only what sign-up touches; nothing is stored.
+function makeAccounts() {
+  return {
+    setConsent: jest.fn().mockResolvedValue(),
+    updateProfile: jest.fn().mockResolvedValue(),
+    updateProfileExtra: jest.fn().mockResolvedValue({}),
+    logEvent: jest.fn().mockResolvedValue(),
+    createToken: jest.fn().mockResolvedValue(),
+    latestToken: jest.fn().mockResolvedValue(null)
+  };
+}
+
+const mailer = { sendAccountEmail: jest.fn().mockResolvedValue({}), sendWelcomeEmail: jest.fn(), sendPasswordResetEmail: jest.fn() };
+const signupBody = (email) => ({ email, password: 'password123', acceptTerms: true });
+
 describe('authRoutes rate limiting', () => {
   let app;
   let server;
@@ -57,7 +72,7 @@ describe('authRoutes rate limiting', () => {
     app.use(express.json());
     app.use(cookieParser());
     store = makeStore();
-    mountAuthRoutes(app, store);
+    mountAuthRoutes(app, store, { accounts: makeAccounts(), mailer });
     server = app.listen(0, () => {
       baseUrl = `http://localhost:${server.address().port}`;
       done();
@@ -84,15 +99,16 @@ describe('authRoutes rate limiting', () => {
   });
 
   test('POST /api/auth/register returns 429 after exceeding the attempt limit', async () => {
-    store.findUserIdByEmail.mockResolvedValue(1); // every attempt is rejected as a duplicate
+    // Every address already has an account - answered like a new one.
+    store.findUserForLogin.mockResolvedValue({ id: 1, email: 'x@b.com', email_verified_at: '2026-01-01' });
 
     let lastRes;
     for (let i = 0; i < 10; i += 1) {
-      lastRes = await post(`${baseUrl}/api/auth/register`, { email: `user${i}@b.com`, password: 'password123' });
-      expect(lastRes.status).toBe(409);
+      lastRes = await post(`${baseUrl}/api/auth/register`, signupBody(`user${i}@b.com`));
+      expect(lastRes.status).toBe(202);
     }
 
-    const blocked = await post(`${baseUrl}/api/auth/register`, { email: 'new@b.com', password: 'password123' });
+    const blocked = await post(`${baseUrl}/api/auth/register`, signupBody('new@b.com'));
     expect(blocked.status).toBe(429);
   });
 
@@ -103,7 +119,7 @@ describe('authRoutes rate limiting', () => {
     }
 
     store.findUserIdByEmail.mockResolvedValue(null);
-    const res = await post(`${baseUrl}/api/auth/register`, { email: 'fresh@b.com', password: 'password123' });
-    expect(res.status).toBe(201);
+    const res = await post(`${baseUrl}/api/auth/register`, signupBody('fresh@b.com'));
+    expect(res.status).toBe(202);
   });
 });

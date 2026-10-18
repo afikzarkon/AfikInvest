@@ -369,6 +369,13 @@ async function initAccountStore(store) {
       );
       return rowToToken(row);
     },
+    async listTokens(userId, purpose, now = nowIso()) {
+      const rows = await sql.all(
+        'SELECT * FROM one_time_tokens WHERE user_id = ? AND purpose = ? AND used_at IS NULL AND expires_at > ? ORDER BY created_at DESC',
+        [userId, purpose, now]
+      );
+      return rows.map(rowToToken);
+    },
     async addTokenAttempt(tokenHash) {
       await sql.run('UPDATE one_time_tokens SET attempts = attempts + 1 WHERE token_hash = ?', [tokenHash]);
     },
@@ -519,6 +526,11 @@ async function initAccountStore(store) {
         `UPDATE users SET password_hash = ?, password_set = 1${bump ? ', token_version = token_version + 1' : ''} WHERE id = ?`,
         [passwordHash, userId]
       );
+    },
+    // A password nobody knows (an account opened through a provider, or one
+    // whose competing sign-ups left no trustworthy choice).
+    async setUnusablePassword(userId, randomHash) {
+      await sql.run('UPDATE users SET password_hash = ?, password_set = 0, token_version = token_version + 1 WHERE id = ?', [randomHash, userId]);
     },
     async bumpTokenVersion(userId) {
       await sql.run('UPDATE users SET token_version = token_version + 1 WHERE id = ?', [userId]);
