@@ -8595,7 +8595,7 @@ select.auth-input[dir='ltr'] {
   cursor: pointer;
 }
 .settings-nav-item:hover {
-  background: var(--sw-surface-hover);
+  background: var(--sw-surface-hover-solid);
 }
 .settings-nav-item.is-active {
   background: var(--sw-accent-soft);
@@ -8703,7 +8703,7 @@ select.auth-input[dir='ltr'] {
   cursor: pointer;
 }
 .settings-button:hover {
-  background: var(--sw-surface-hover);
+  background: var(--sw-surface-hover-solid);
 }
 .settings-button:disabled {
   opacity: 0.55;
@@ -9014,4 +9014,10 @@ select.auth-input[dir='ltr'] {
   .social-button {
     transition: none;
   }
+}
+
+/* A label above its own input (the settings fields, the sign-up name):
+   the "(לא חובה)" hint sits on the label's line. */
+.auth-field > .auth-label {
+  display: block;
 }

@@ -159,7 +159,7 @@ function clearLegacyPortfolioKeys() {
 }
 
 function App() {
-  const { user, authLoading, authHeader, login, logout } = useAuth();
+  const { user, authLoading, authHeader, login, logout, updateUser } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const toast = useToast();
   // A page opened from an email link or the return from Google/Facebook
@@ -463,11 +463,16 @@ function App() {
   // other devices signed out) or the user's flags (2FA off).
   const handleSessionChange = (changedUser, token) => {
     if (token) setAuthToken(token);
-    if (changedUser) login(changedUser, token || undefined);
+    if (changedUser) updateUser(changedUser);
     accountState.refresh();
   };
 
+  // The profile reminder waits for a later visit, not the moment after the
+  // first-run steps.
+  const [profilePromptSnoozed, setProfilePromptSnoozed] = useState(false);
+
   const closeOnboarding = () => {
+    setProfilePromptSnoozed(true);
     setOnboardingPending(false);
     try {
       sessionStorage.removeItem(ONBOARDING_KEY);
@@ -1065,7 +1070,9 @@ function App() {
   const needsTerms = Boolean(account && account.needsTerms);
   const showOnboarding = Boolean(account && onboardingPending && !needsTerms && !extra.onboardingDone && betaNoticeAcknowledged);
   const completion = account ? profileCompletion(account.profile, Boolean(accountState.avatar)) : 100;
-  const showProfilePrompt = Boolean(account && activePage === 'home' && extra.onboardingDone && !extra.profilePromptDismissed && completion < 50);
+  const showProfilePrompt = Boolean(
+    account && activePage === 'home' && extra.onboardingDone && !extra.profilePromptDismissed && !profilePromptSnoozed && !onboardingPending && completion < 50
+  );
   const dismissProfilePrompt = async () => {
     await putAccount('/api/account/profile/extra', { profilePromptDismissed: true });
     accountState.refresh();

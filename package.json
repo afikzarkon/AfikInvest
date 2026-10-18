@@ -46,6 +46,7 @@
     "render:build": "npm ci && npx puppeteer browsers install chrome",
     "build": "react-scripts build",
     "email:preview": "node scripts/render-welcome-email.js",
+    "e2e": "node scripts/e2e-account-flows.js",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
     "db:users": "node scripts/list-users.js",
