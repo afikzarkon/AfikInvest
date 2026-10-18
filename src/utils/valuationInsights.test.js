@@ -1,4 +1,4 @@
-import { toneOfPct, readMultiple, combineTones, multiplesSummary, describeGap, impliedGrowthReading } from './valuationInsights';
+import { toneOfPct, readMultiple, combineTones, multiplesSummary, describeGap } from './valuationInsights';
 
 test('within 15% of the reference is "as usual"', () => {
   expect(toneOfPct(-57)).toBe('cheap');
@@ -37,11 +37,4 @@ test('gaps read as percentages, and as "times" past doubling', () => {
   expect(describeGap(-57)).toBe('זול ב-57%');
   expect(describeGap(45)).toBe('יקר ב-45%');
   expect(describeGap(394)).toBe('יקר פי 4.9');
-});
-
-test('the growth the price assumes, against what the company did', () => {
-  expect(impliedGrowthReading(0.45, 0.16)).toBe('higher');
-  expect(impliedGrowthReading(0.05, 0.16)).toBe('lower');
-  expect(impliedGrowthReading(0.17, 0.16)).toBe('similar');
-  expect(impliedGrowthReading(null, 0.16)).toBeNull();
 });

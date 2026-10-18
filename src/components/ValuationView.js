@@ -2,7 +2,8 @@ import React, { useMemo, useState } from 'react';
 import PageToolbar from './PageToolbar';
 import BetaBanner from './BetaBanner';
 import { useValuation } from '../hooks/useValuation';
-import { suggestDcfInputs } from '../utils/dcfValuation';
+import { useDcfSnapshot } from '../hooks/useDcfSnapshot';
+import { evaluateDcf } from '../shared/dcfRules';
 import ValuationSummary from './valuation/ValuationSummary';
 import MultiplesSection from './valuation/MultiplesSection';
 import DcfCalculator from './valuation/DcfCalculator';
@@ -11,10 +12,11 @@ import { fmtMoney } from './valuation/shared';
 // /valuation - is this stock cheap or expensive? Written for someone who has
 // never heard of a multiple: the answer first in plain words, then price
 // multiples against the company's own 5-year history and its peers, then a
-// DCF calculator framed as "what do you have to believe". Market data comes
-// from the server (server/valuationService.js); the DCF runs here, so the
-// sliders recompute instantly. Every technical number is still there,
-// folded away under "details".
+// DCF on the one engine (shared/dcfEngine.js) - automatic by visible rules,
+// or manual. Market data comes from the server (server/valuationService.js
+// for the multiples, server/dcfSnapshot.js for the DCF's raw data); the DCF
+// runs here, so every edit recomputes instantly. Every technical number is
+// still there, folded away under "details".
 
 const SOURCE_LABELS = { summary: 'נתוני ציטוט', statements: 'דוחות כספיים', prices: 'מחירים חודשיים', peers: 'חברות להשוואה' };
 
@@ -33,17 +35,10 @@ function SourceDiagnostics({ diagnostics }) {
 }
 
 function ValuationResult({ data }) {
-  const inputs = data.dcfInputs;
-  const suggested = useMemo(
-    () =>
-      suggestDcfInputs({
-        analystGrowth5y: inputs.analystGrowth5y,
-        fcfHistory: inputs.fcfHistory.map((x) => x.fcf),
-        beta: inputs.beta,
-        riskFreeRate: inputs.riskFreeRate
-      }),
-    [inputs]
-  );
+  const { snapshot, loading: dcfLoading, error: dcfError } = useDcfSnapshot(data.symbol);
+  // The automatic model, on the day it is viewed. Pure: the same snapshot
+  // and date always give the same numbers.
+  const autoEvaluation = useMemo(() => (snapshot ? evaluateDcf({ mode: 'auto', snapshot, valuationDate: new Date().toISOString().slice(0, 10) }) : null), [snapshot]);
   return (
     <>
       <div className="analysis-section">
@@ -63,17 +58,19 @@ function ValuationResult({ data }) {
         {data.partial && data.diagnostics && <SourceDiagnostics diagnostics={data.diagnostics} />}
       </div>
 
-      <ValuationSummary data={data} suggested={suggested} />
+      <ValuationSummary data={data} autoEvaluation={autoEvaluation} dcfLoading={dcfLoading} snapshot={snapshot} />
       <MultiplesSection rows={data.multiples} />
 
       <div className="analysis-section">
         <h2 className="section-title">2. כמה החברה שווה לפי הכסף שהיא תייצר?</h2>
         <p className="val-intro">
-          המחשבון (שיטת <strong>DCF</strong>) מעריך את החברה כמו שמעריכים עסק קטן: מנחשים כמה כסף פנוי הוא ייצר בשנים הבאות, מתרגמים את הכסף העתידי לערך של היום, ומחלקים במספר המניות. התוצאה תלויה לגמרי בניחושים - לכן אפשר להזיז אותם ולראות מה קורה. השאלה הכי שימושית היא לא "כמה זה שווה?" אלא "<strong>מה צריך להאמין כדי שהמחיר יהיה הגיוני?</strong>"
+          המחשבון (שיטת <strong>DCF</strong>) מעריך את החברה כמו שמעריכים עסק קטן: כמה כסף פנוי היא תייצר בכל אחת מ-5 השנים הבאות, כמה הוא שווה היום, ומה נשאר לכל מניה. במצב <strong>אוטומטי</strong> כל הנחה נגזרת מכללים גלויים (קונצנזוס אנליסטים, הדוחות האחרונים, ריבית האג"ח) - בלי תקרות או התאמות נסתרות. במצב <strong>ידני</strong> אפשר לשנות כל מספר. התוצאה תלויה בהנחות, ולכן מוצגים שלושה תרחישים ולא מספר אחד.
         </p>
-        <DcfCalculator data={data} suggested={suggested} />
+        {dcfLoading && <p className="history-empty-note">טוען נתוני DCF…</p>}
+        {dcfError && <p className="profit-negative">{dcfError}</p>}
+        {(snapshot || !dcfLoading) && <DcfCalculator key={data.symbol} ticker={data.symbol} snapshot={snapshot} autoEvaluation={autoEvaluation} />}
         <p className="section-subtitle">
-          מודל מפושט: כסף פנוי (FCF) = תזרים מפעילות שוטפת פחות השקעות הוניות, מהוון ובניכוי חוב נטו. לא מודל של בנק השקעות ואינו ייעוץ השקעות.
+          FCF = תזרים מפעילות שוטפת פחות השקעות הוניות, ובניכוי תגמול מבוסס מניות (SBC). ערך סופי בשיטת Gordon. אינו ייעוץ השקעות. אפשר לייצא את כל הקלטים לכרטיס JSON ולשחזר את החישוב מחוץ לאתר.
         </p>
       </div>
     </>

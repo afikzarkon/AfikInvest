@@ -1,14 +1,13 @@
-// Assembles everything the valuation page needs for one symbol: current and
-// historical multiples against peers, and the inputs for the (client-side)
-// DCF calculator. Cached per symbol; the sources are injected so tests run
-// on fixtures.
-const { historicalMultiples, buildMultiplesTable, trailingTwelveMonths, fcfOf } = require('../shared/valuationMultiples');
+// Assembles the multiples part of the valuation page for one symbol:
+// current and historical multiples against peers. (The DCF's raw data has
+// its own snapshot - server/dcfSnapshot.js.) Cached per symbol; the sources
+// are injected so tests run on fixtures.
+const { historicalMultiples, buildMultiplesTable, trailingTwelveMonths } = require('../shared/valuationMultiples');
 
 const CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 const FAILURE_TTL_MS = 2 * 60 * 1000;
 const PARTIAL_TTL_MS = 15 * 60 * 1000;
 const MAX_PEERS = 5;
-const DEFAULT_RISK_FREE = 0.043;
 
 const latest = (rows, key) => {
   for (let i = rows.length - 1; i >= 0; i -= 1) {
@@ -56,8 +55,7 @@ function createValuationService({ sources, now = () => new Date(), logger = cons
     // Reported with the other sources: a failed peer list empties the whole
     // sector column, and used to say nothing about why.
     diagnostics.peers = 'ok';
-    const [riskFreeRate, peers] = await Promise.all([
-      sources.riskFreeRate().catch(() => null),
+    const [peers] = await Promise.all([
       (async () => {
         try {
           const symbols = (await sources.peerSymbols(symbol)).filter((s) => s.toUpperCase() !== symbol).slice(0, MAX_PEERS);
@@ -102,25 +100,16 @@ function createValuationService({ sources, now = () => new Date(), logger = cons
 
     const warnings = [];
     if (summary.financialCurrency && summary.currency && summary.financialCurrency !== summary.currency) {
-      warnings.push(`הדוחות הכספיים מדווחים ב-${summary.financialCurrency} והמניה נסחרת ב-${summary.currency} - שווי ה-DCF למניה יוצא ב-${summary.financialCurrency}.`);
+      warnings.push(`הדוחות הכספיים מדווחים ב-${summary.financialCurrency} והמניה נסחרת ב-${summary.currency} - מכפילי המכירות והתזרים מערבבים שני מטבעות.`);
     }
     if (diagnostics.statements !== 'ok') {
-      warnings.push('לא ניתן היה לטעון את הדוחות הכספיים ההיסטוריים - אין השוואה ל-5 שנים, והמכפילים הנוכחיים וה-DCF מבוססים על נתוני הציטוט בלבד.');
+      warnings.push('לא ניתן היה לטעון את הדוחות הכספיים ההיסטוריים - אין השוואה ל-5 שנים, והמכפילים הנוכחיים מבוססים על נתוני הציטוט בלבד.');
     } else if (annual.length < 3) {
       warnings.push(`נמצאו רק ${annual.length} שנות דוחות.`);
     }
     if (diagnostics.prices !== 'ok') warnings.push('לא ניתן היה לטעון מחירים חודשיים - אין השוואה היסטורית של מכפילים.');
     if (diagnostics.summary !== 'ok') warnings.push('לא ניתן היה לטעון את נתוני הציטוט (בטא, צמיחה צפויה, סקטור) - הוצגו ערכי ברירת מחדל.');
     if (diagnostics.peers !== 'ok') warnings.push('לא ניתן היה לטעון חברות להשוואה - אין חציון ענפי.');
-
-    let fcfHistory = annual
-      .slice(-5)
-      .map((y) => ({ periodEnd: y.periodEnd, fcf: fcfOf(y) }))
-      .filter((x) => Number.isFinite(x.fcf));
-    if (!fcfHistory.length && summary.freeCashflow > 0) {
-      fcfHistory = [{ periodEnd: 'TTM', fcf: summary.freeCashflow }];
-      warnings.push('ה-DCF מבוסס על נתון FCF אחד (12 החודשים האחרונים, לפי הגדרת Yahoo) - רמת ביטחון נמוכה.');
-    }
 
     return {
       symbol,
@@ -135,17 +124,6 @@ function createValuationService({ sources, now = () => new Date(), logger = cons
       historySamples: history.samples,
       fiscalYears: annual.slice(-6),
       peers,
-      dcfInputs: {
-        fcfHistory,
-        cash: latest(quarterly, 'cashAndShortTerm') ?? latest(annual, 'cashAndShortTerm') ?? summary.totalCash ?? 0,
-        debt: latest(quarterly, 'totalDebt') ?? latest(annual, 'totalDebt') ?? summary.totalDebt ?? 0,
-        sharesDiluted: latest(quarterly, 'dilutedShares') ?? shares ?? null,
-        marketPrice: price,
-        beta: summary.beta ?? null,
-        analystGrowth5y: summary.analystGrowth5y ?? null,
-        riskFreeRate: riskFreeRate ?? DEFAULT_RISK_FREE,
-        riskFreeRateIsDefault: riskFreeRate === null
-      },
       warnings,
       diagnostics,
       partial: Object.values(diagnostics).some((v) => v !== 'ok'),
@@ -188,8 +166,7 @@ function createDefaultSources(env = process.env) {
     monthlyPrices: (symbol) => f.fetchMonthlyPrices(symbol),
     peerSymbols: (symbol) => f.fetchPeerSymbols(symbol),
     peerMultiples: f.peerMultiples,
-    peerFreeCashFlow: (symbol) => f.fetchTrailingFreeCashFlow(symbol),
-    riskFreeRate: () => f.fetchRiskFreeRate()
+    peerFreeCashFlow: (symbol) => f.fetchTrailingFreeCashFlow(symbol)
   };
 }
 

@@ -1,36 +1,57 @@
 import React from 'react';
-import { computeDcf, impliedGrowthRate, historicalFcfGrowth, DCF_DEFAULTS } from '../../utils/dcfValuation';
-import { multiplesSummary, impliedGrowthReading, DCF_VERDICT_TONE } from '../../utils/valuationInsights';
-import { VERDICT_WORDS, impliedSentence } from './DcfCalculator';
-import { Num, ToneBadge, fmtMoney, dcfInputFrom } from './shared';
+import { multiplesSummary, DCF_VERDICT_TONE } from '../../utils/valuationInsights';
+import { VALUE_WORDS, irrSentence } from './DcfCalculator';
+import { Num, ToneBadge, fmtMoney } from './shared';
 
-// The page's answer up front: three one-word readings and what the price
-// assumes, all on the suggested inputs. The sections below show the why.
+// The page's answer up front: three one-word readings and the return the
+// price implies, the DCF on its automatic base case. The sections below
+// show the why.
 
 const HISTORY_WORDS = { cheap: 'זולה מהרגיל', expensive: 'יקרה מהרגיל', normal: 'כרגיל', mixed: 'תמונה מעורבת', na: 'אין מספיק נתונים' };
 const PEER_WORDS = { cheap: 'זולה מהן', expensive: 'יקרה מהן', normal: 'דומה להן', mixed: 'תמונה מעורבת', na: 'אין נתונים' };
-const IMPLIED_WORDS = {
-  higher: 'זה הרבה יותר ממה שהחברה עשתה עד היום - המחיר מגלם ציפיות גבוהות.',
-  lower: 'זה פחות ממה שהחברה עשתה עד היום - הציפיות שבמחיר צנועות.',
-  similar: 'זה דומה לקצב של החברה עד היום.'
-};
 
-export default function ValuationSummary({ data, suggested }) {
+function DcfReading({ evaluation, loading, snapshot }) {
+  if (loading) return <span className="val-summary-why">טוען נתונים…</span>;
+  if (!evaluation) {
+    return (
+      <>
+        <ToneBadge tone="na">לא זמין</ToneBadge>
+        <span className="val-summary-why">לא ניתן היה לטעון את נתוני ה-DCF</span>
+      </>
+    );
+  }
+  if (evaluation.unsuitable) {
+    return (
+      <>
+        <ToneBadge tone="na">לא מתאים ל-DCF</ToneBadge>
+        <span className="val-summary-why">{evaluation.unsuitable}</span>
+      </>
+    );
+  }
+  const main = evaluation.main;
+  if (!main || !main.ok) {
+    return (
+      <>
+        <ToneBadge tone="na">לא ניתן לחשב</ToneBadge>
+        <span className="val-summary-why">{main ? main.errors[0] : `חסר: ${evaluation.missing.join(', ')}`}</span>
+      </>
+    );
+  }
+  const label = evaluation.labels[evaluation.baseKey];
+  const currency = (snapshot && (snapshot.financialCurrency || snapshot.currency)) || '';
+  return (
+    <>
+      <ToneBadge tone={DCF_VERDICT_TONE[label]}>{VALUE_WORDS[label]}</ToneBadge>
+      <span className="val-summary-why">
+        שווי <Num>{fmtMoney(main.perShare, currency)}</Num> מול מחיר <Num>{fmtMoney(main.price, snapshot && snapshot.currency)}</Num>, תרחיש הבסיס האוטומטי
+      </span>
+    </>
+  );
+}
+
+export default function ValuationSummary({ data, autoEvaluation, dcfLoading, snapshot }) {
   const multiples = multiplesSummary(data.multiples);
-  const input = dcfInputFrom(data.dcfInputs, {
-    growthRate: suggested.growthRate,
-    discountRate: suggested.discountRate,
-    terminalGrowth: DCF_DEFAULTS.terminalGrowth,
-    baseMethod: DCF_DEFAULTS.baseMethod,
-    fairBand: DCF_DEFAULTS.fairBand
-  });
-  const dcf = computeDcf(input);
-  const dcfOk = dcf.errors.length === 0;
-  const historical = historicalFcfGrowth(input.fcfHistory);
-  const implied = dcfOk ? impliedGrowthRate(input) : { rate: null, beyond: null };
-  const impliedText = dcfOk ? impliedSentence(implied, historical) : null;
-  const reading = impliedGrowthReading(implied.rate, historical);
-  const currency = data.financialCurrency || data.currency || '';
+  const irrText = autoEvaluation && autoEvaluation.main && autoEvaluation.main.ok ? irrSentence(autoEvaluation) : '';
 
   return (
     <section className="analysis-section val-summary" aria-labelledby="val-summary-title">
@@ -50,28 +71,14 @@ export default function ValuationSummary({ data, suggested }) {
         </li>
         <li>
           <span className="val-summary-q">לפי הכסף שהיא צפויה לייצר</span>
-          {dcfOk ? (
-            <>
-              <ToneBadge tone={DCF_VERDICT_TONE[dcf.verdict]}>{VERDICT_WORDS[dcf.verdict]}</ToneBadge>
-              <span className="val-summary-why">
-                שווי <Num>{fmtMoney(dcf.intrinsicPerShare, currency)}</Num> מול מחיר <Num>{fmtMoney(dcf.marketPrice, data.currency)}</Num>, בהנחות המוצעות
-              </span>
-            </>
-          ) : (
-            <>
-              <ToneBadge tone="na">לא ניתן לחשב</ToneBadge>
-              <span className="val-summary-why">לחברה אין כרגע תזרים מזומנים חיובי לבנות עליו תחזית</span>
-            </>
-          )}
+          <DcfReading evaluation={autoEvaluation} loading={dcfLoading} snapshot={snapshot} />
         </li>
       </ul>
 
-      {impliedText && (
+      {irrText && (
         <div className="val-implied">
           <h3>מה המחיר מניח?</h3>
-          <p>
-            {impliedText} {reading && IMPLIED_WORDS[reading]}
-          </p>
+          <p>{irrText}</p>
         </div>
       )}
 

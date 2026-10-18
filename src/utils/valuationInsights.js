@@ -75,11 +75,3 @@ export function describeGap(pct) {
 }
 
 export const DCF_VERDICT_TONE = { UNDERVALUED: 'cheap', OVERVALUED: 'expensive', FAIRLY_VALUED: 'normal', 'N/A': 'na' };
-
-// How the growth the price assumes compares with what the company did.
-export function impliedGrowthReading(implied, historical) {
-  if (!Number.isFinite(implied) || !Number.isFinite(historical)) return null;
-  if (implied > historical + 0.1 || (historical > 0 && implied > historical * 1.5 && implied - historical > 0.03)) return 'higher';
-  if (implied < historical - 0.05) return 'lower';
-  return 'similar';
-}

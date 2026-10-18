@@ -1,0 +1,163 @@
+{
+  "ticker": "AVGO",
+  "retrievedAt": "2026-10-18T18:25:29.233Z",
+  "name": "Broadcom Inc.",
+  "currency": "USD",
+  "financialCurrency": "USD",
+  "price": {
+    "value": 328.75,
+    "asOf": "2026-10-16",
+    "source": "Yahoo Finance - מחיר אחרון (quoteSummary.price)"
+  },
+  "sharesOutstanding": 4773629865,
+  "betaRaw": {
+    "value": 1.476,
+    "asOf": "2026-10-18",
+    "source": "Yahoo Finance - בטא 5 שנים, חודשית (defaultKeyStatistics.beta)"
+  },
+  "consensus": {
+    "rev0y": {
+      "value": 105978068240,
+      "periodEnd": "2026-10-31",
+      "analysts": 40
+    },
+    "rev1y": {
+      "value": 173968305340,
+      "periodEnd": "2027-10-31",
+      "analysts": 49
+    },
+    "asOf": "2026-10-18",
+    "source": "Yahoo Finance - קונצנזוס אנליסטים (earningsTrend.revenueEstimate)"
+  },
+  "rf": {
+    "value": 0.05098,
+    "asOf": "2026-10-16",
+    "source": "אג\"ח ממשלת ארה\"ב ל-10 שנים (^TNX), Yahoo Finance"
+  },
+  "profile": {
+    "sector": "Technology",
+    "industry": "Semiconductors",
+    "quoteType": "EQUITY",
+    "source": "Yahoo Finance - פרופיל החברה (assetProfile)"
+  },
+  "quarters": [
+    {
+      "periodEnd": "2025-07-31",
+      "currency": "USD",
+      "basicShares": 4722000000,
+      "revenue": 15952000000,
+      "capex": -142000000,
+      "dilutedShares": 4860000000,
+      "cash": 10718000000,
+      "currentDebt": 1396000000,
+      "sbc": 2322000000,
+      "longTermDebt": 62823000000,
+      "operatingCashFlow": 7166000000,
+      "netIncome": 4140000000
+    },
+    {
+      "periodEnd": "2025-10-31",
+      "currency": "USD",
+      "basicShares": 4741000000,
+      "revenue": 18015000000,
+      "capex": -237000000,
+      "dilutedShares": 4889000000,
+      "cash": 16178000000,
+      "currentDebt": 3152000000,
+      "sbc": 2195000000,
+      "longTermDebt": 61984000000,
+      "operatingCashFlow": 7703000000,
+      "netIncome": 8518000000
+    },
+    {
+      "periodEnd": "2026-01-31",
+      "currency": "USD",
+      "basicShares": 4736000000,
+      "revenue": 19311000000,
+      "capex": -250000000,
+      "dilutedShares": 4888000000,
+      "cash": 14174000000,
+      "currentDebt": 2252000000,
+      "sbc": 2176000000,
+      "longTermDebt": 63805000000,
+      "operatingCashFlow": 8260000000,
+      "netIncome": 7349000000
+    },
+    {
+      "periodEnd": "2026-04-30",
+      "currency": "USD",
+      "basicShares": 4758000000,
+      "revenue": 22187000000,
+      "capex": -231000000,
+      "dilutedShares": 4876000000,
+      "cash": 19628000000,
+      "currentDebt": 2252000000,
+      "sbc": 2092000000,
+      "longTermDebt": 62655000000,
+      "operatingCashFlow": 10493000000,
+      "netIncome": 9310000000
+    },
+    {
+      "periodEnd": "2026-07-31",
+      "currency": "USD",
+      "basicShares": 4774000000,
+      "revenue": 29591000000,
+      "capex": -532000000,
+      "dilutedShares": 4887000000,
+      "cash": 23975000000,
+      "currentDebt": 2252000000,
+      "sbc": 2019000000,
+      "longTermDebt": 57167000000,
+      "operatingCashFlow": 14197000000,
+      "netIncome": 13088000000
+    }
+  ],
+  "annual": [
+    {
+      "periodEnd": "2022-10-31",
+      "currency": "USD",
+      "sbc": 1533000000,
+      "capex": -424000000,
+      "revenue": 33203000000,
+      "operatingCashFlow": 16736000000,
+      "netIncome": 11495000000
+    },
+    {
+      "periodEnd": "2023-10-31",
+      "currency": "USD",
+      "sbc": 2171000000,
+      "capex": -452000000,
+      "revenue": 35819000000,
+      "operatingCashFlow": 18085000000,
+      "netIncome": 14082000000
+    },
+    {
+      "periodEnd": "2024-10-31",
+      "currency": "USD",
+      "sbc": 5741000000,
+      "capex": -548000000,
+      "revenue": 51574000000,
+      "operatingCashFlow": 19962000000,
+      "netIncome": 5895000000
+    },
+    {
+      "periodEnd": "2025-10-31",
+      "currency": "USD",
+      "sbc": 7568000000,
+      "capex": -623000000,
+      "revenue": 63887000000,
+      "operatingCashFlow": 27537000000,
+      "netIncome": 23126000000
+    }
+  ],
+  "sources": {
+    "quarters": "Yahoo Finance - דוחות רבעוניים (fundamentals-timeseries)",
+    "annual": "Yahoo Finance - דוחות שנתיים (fundamentals-timeseries)"
+  },
+  "diagnostics": {
+    "quarters": "ok",
+    "annual": "ok",
+    "quote": "ok",
+    "riskFree": "ok"
+  }
+}

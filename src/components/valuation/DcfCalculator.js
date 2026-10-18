@@ -1,287 +1,690 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { computeDcf, dcfSensitivity, impliedGrowthRate, historicalFcfGrowth, DCF_DEFAULTS, DCF_LIMITS } from '../../utils/dcfValuation';
+import React, { useMemo, useState } from 'react';
+import { evaluateDcf, buildInputCard, AVGO_PRESET, DEFAULT_RULES } from '../../shared/dcfRules';
+import { runDcf } from '../../shared/dcfEngine';
 import { DCF_VERDICT_TONE } from '../../utils/valuationInsights';
-import { Num, ToneBadge, fmtMoney, fmtPct, fmtRate, dcfInputFrom } from './shared';
+import { Num, ToneBadge, fmtMoney, fmtRate } from './shared';
 
-// The DCF as a "what do you have to believe" calculator: two plain sliders,
-// ready-made scenarios, the value against the price, and the arithmetic
-// behind it folded away for whoever wants it.
+// The DCF calculator on the one engine (shared/dcfEngine.runDcf), in two
+// modes:
+//   auto   - every input derived by the visible rules (shared/dcfRules.js)
+//            from the dated data snapshot; shown, not editable.
+//   manual - the same model, every number editable (or DCF_METHOD.md's AVGO
+//            preset). Editing the auto model turns it into a manual,
+//            "custom" one.
+// Three scenarios side by side, a weighted row, the per-year assumptions,
+// the discount rate built up from its parts, sensitivity, the sources, and
+// an export of the input card that reproduces it all offline.
 
-export const VERDICT_WORDS = { UNDERVALUED: 'נראית זולה', FAIRLY_VALUED: 'קרוב למחיר הוגן', OVERVALUED: 'נראית יקרה', 'N/A': 'לא ניתן לקבוע' };
+export const VALUE_WORDS = { UNDERVALUED: 'מתומחרת בחסר', FAIRLY_VALUED: 'מחיר הוגן', OVERVALUED: 'מתומחרת ביתר', 'N/A': 'לא ניתן לקבוע' };
 
-const clamp = (v, [lo, hi]) => Math.min(hi, Math.max(lo, v));
-const near = (a, b) => Math.abs(a - b) < 1e-4;
+const clone = (x) => JSON.parse(JSON.stringify(x));
+const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+const today = () => new Date().toISOString().slice(0, 10);
 
-// "3.2 times" past doubling, else a percentage.
 function howMuch(bigger, smaller) {
   const ratio = bigger / smaller;
   return ratio >= 2 ? `פי ${ratio.toFixed(1)}` : `ב-${Math.round((ratio - 1) * 100)}%`;
 }
 
-function Slider({ id, label, hint, value, min, max, step, onChange }) {
+export function verdictSentence(result, label, band) {
+  if (!result || !result.ok) return '';
+  const { perShare: value, price } = result;
+  if (!(value > 0)) return 'לפי ההנחות האלה אין למניה שווי חיובי - החוב גדול מהשווי של הפעילות.';
+  if (label === 'OVERVALUED') return `לפי תרחיש הבסיס המניה נראית יקרה: המחיר היום גבוה ${howMuch(price, value)} מהשווי שחושב.`;
+  if (label === 'UNDERVALUED') return `לפי תרחיש הבסיס המניה נראית זולה: השווי שחושב גבוה ${howMuch(value, price)} מהמחיר היום.`;
+  return `לפי תרחיש הבסיס המחיר היום קרוב לשווי (הפרש של פחות מ-${Math.round(band * 100)}%).`;
+}
+
+// "If you buy at today's price and the base case comes true, you earn about
+// X% a year" - against the return the model requires (WACC).
+export function irrSentence(evaluation) {
+  const main = evaluation && evaluation.main;
+  if (!main || !main.ok) return '';
+  if (!isNum(evaluation.irr)) {
+    return main.perShare < main.price
+      ? 'גם בשיעור היוון נמוך מאוד השווי לפי תרחיש הבסיס נמוך מהמחיר - אין תשואה שנתית משתמעת.'
+      : 'השווי לפי תרחיש הבסיס גבוה מהמחיר גם בשיעור היוון גבוה מאוד.';
+  }
+  const diff = evaluation.irr - main.wacc;
+  const reading = diff > 0.01 ? 'יותר מהתשואה שהמודל דורש - לפי ההנחות המחיר אטרקטיבי.' : diff < -0.01 ? 'פחות מהתשואה שהמודל דורש - לפי ההנחות המחיר גבוה.' : 'בערך התשואה שהמודל דורש.';
+  return `בקנייה במחיר של היום, אם תרחיש הבסיס יתממש, התשואה השנתית הצפויה היא כ-${(evaluation.irr * 100).toFixed(1)}%, מול תשואה נדרשת (WACC) של ${(main.wacc * 100).toFixed(2)}%. זה ${reading}`;
+}
+
+// A number field that shows percent / billions / millions and keeps what
+// the user is typing until it parses.
+const UNITS = {
+  pct: { toText: (v) => (v * 100).toFixed(2), fromText: (t) => Number(t) / 100, suffix: '%' },
+  money: { toText: (v) => (v / 1e9).toFixed(3), fromText: (t) => Number(t) * 1e9, suffix: 'B' },
+  shares: { toText: (v) => (v / 1e6).toFixed(1), fromText: (t) => Number(t) * 1e6, suffix: 'M' },
+  plain: { toText: (v) => String(Math.round(v * 10000) / 10000), fromText: (t) => Number(t), suffix: '' }
+};
+
+function NumberField({ id, label, value, unit = 'plain', onChange, readOnly, note }) {
+  const u = UNITS[unit];
+  const [text, setText] = useState(null);
+  const shown = text !== null ? text : isNum(value) ? u.toText(value) : '';
   return (
-    <div className="form-group dcf-slider">
-      <label htmlFor={id}>
-        {label}: <strong><Num>{fmtRate(value)}</Num></strong>
-      </label>
-      <input id={id} type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} aria-describedby={hint ? `${id}-hint` : undefined} />
-      {hint && (
-        <p id={`${id}-hint`} className="dcf-hint">
-          {hint}
+    <div className="dcf-field">
+      <label htmlFor={id}>{label}</label>
+      <span className="dcf-field-input">
+        <input
+          id={id}
+          type="text"
+          inputMode="decimal"
+          dir="ltr"
+          value={shown}
+          readOnly={readOnly}
+          onChange={(e) => {
+            setText(e.target.value);
+            const v = u.fromText(e.target.value);
+            if (e.target.value.trim() !== '' && Number.isFinite(v)) onChange(v);
+          }}
+          onBlur={() => setText(null)}
+        />
+        {u.suffix && <span className="dcf-field-suffix">{u.suffix}</span>}
+      </span>
+      {note && <span className="dcf-field-note">{note}</span>}
+    </div>
+  );
+}
+
+function downloadJson(obj, filename) {
+  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function ScenarioCards({ evaluation, currency, priceCurrency, active, onSelect }) {
+  const { model, results, labels, weighted } = evaluation;
+  return (
+    <div className="dcf-scenario-cards" role="group" aria-label="תרחישים">
+      {model.scenarios.map((s) => {
+        const r = results[s.key];
+        const label = labels ? labels[s.key] : 'N/A';
+        return (
+          <button key={s.key} type="button" className={`dcf-scenario-card ${active === s.key ? 'is-active' : ''}`} aria-pressed={active === s.key} onClick={() => onSelect(s.key)}>
+            <span className="dcf-scenario-name">{s.label}</span>
+            {r.ok ? (
+              <>
+                <strong className="dcf-scenario-value" data-testid={`dcf-value-${s.key}`}>
+                  <Num>{fmtMoney(r.perShare, currency)}</Num>
+                </strong>
+                <span className="dcf-scenario-upside">
+                  <Num>{`${r.upside >= 0 ? '+' : ''}${(r.upside * 100).toFixed(1)}%`}</Num> מול המחיר
+                </span>
+                <ToneBadge tone={DCF_VERDICT_TONE[label]}>{VALUE_WORDS[label]}</ToneBadge>
+              </>
+            ) : (
+              <span className="dcf-scenario-error">{r.errors[0]}</span>
+            )}
+          </button>
+        );
+      })}
+      <div className="dcf-scenario-card dcf-scenario-weighted">
+        <span className="dcf-scenario-name">ממוצע משוקלל</span>
+        <strong className="dcf-scenario-value" data-testid="dcf-value-weighted">
+          <Num>{isNum(weighted) ? fmtMoney(weighted, currency) : '—'}</Num>
+        </strong>
+        <span className="dcf-scenario-upside">
+          {Object.entries(model.weights || {})
+            .map(([k, w]) => `${Math.round(w * 100)}% ${(model.scenarios.find((s) => s.key === k) || {}).label || k}`)
+            .join(' · ')}
+        </span>
+        <span className="dcf-scenario-upside">
+          מחיר: <Num>{fmtMoney(model.base.price, priceCurrency)}</Num>
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function YearTable({ scenario, result, editable, onEdit, fyLabels, currency }) {
+  const rows = [
+    { key: 'growth', label: 'צמיחת הכנסות' },
+    { key: 'fcfMargin', label: 'שולי FCF (לפני SBC)' },
+    { key: 'sbcPct', label: 'SBC מההכנסות' }
+  ];
+  const yearName = (i) => (fyLabels ? fyLabels[i] : `שנה ${i + 1}`);
+  return (
+    <div className="stocks-table-container">
+      <table className="analysis-table dcf-years" aria-label="הנחות לכל שנה">
+        <thead>
+          <tr>
+            <th scope="col">שנה</th>
+            {scenario.growth.map((_, i) => (
+              <th key={i} scope="col">
+                {yearName(i)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.key}>
+              <th scope="row">{row.label}</th>
+              {scenario[row.key].map((v, i) => (
+                <td key={`${scenario.key}-${i}`}>
+                  {editable ? (
+                    <NumberField
+                      id={`dcf-${scenario.key}-${row.key}-${i}`}
+                      label={<span className="visually-hidden">{`${row.label}, ${yearName(i)}`}</span>}
+                      value={v}
+                      unit="pct"
+                      onChange={(nv) => onEdit(row.key, i, nv)}
+                    />
+                  ) : (
+                    <Num>{fmtRate(v)}</Num>
+                  )}
+                </td>
+              ))}
+            </tr>
+          ))}
+          {result && result.ok && (
+            <>
+              <tr>
+                <th scope="row">הכנסות</th>
+                {result.years.map((y) => (
+                  <td key={y.t}><Num>{fmtMoney(y.rev)}</Num></td>
+                ))}
+              </tr>
+              <tr>
+                <th scope="row">FCF אחרי SBC</th>
+                {result.years.map((y) => (
+                  <td key={y.t}><Num>{fmtMoney(y.adj)}</Num></td>
+                ))}
+              </tr>
+              <tr>
+                <th scope="row">ערך נוכחי</th>
+                {result.years.map((y) => (
+                  <td key={y.t}><Num>{fmtMoney(y.pv)}</Num></td>
+                ))}
+              </tr>
+            </>
+          )}
+        </tbody>
+      </table>
+      {result && result.ok && (
+        <p className="muted-note">
+          סכום הערכים הנוכחיים <Num>{fmtMoney(result.sumPv, currency)}</Num> · ערך סופי <Num>{fmtMoney(result.tv, currency)}</Num> (ערכו היום <Num>{fmtMoney(result.pvTv, currency)}</Num>,{' '}
+          <Num>{fmtRate(result.tvShare)}</Num> מהשווי) · שווי פעילות <Num>{fmtMoney(result.ev, currency)}</Num> · שווי הון <Num>{fmtMoney(result.equity, currency)}</Num>
         </p>
       )}
     </div>
   );
 }
 
-// Value next to price as two bars, so "how far apart" is seen, not read.
-function ValueVsPrice({ value, price, currency, priceCurrency }) {
-  const top = Math.max(value, price, 0) || 1;
-  const width = (v) => `${Math.max(2, (Math.max(v, 0) / top) * 100)}%`;
+function WaccPanel({ evaluation, editable, onBase, sourcesByField }) {
+  const b = evaluation.model.base;
+  const main = evaluation.main;
+  const f = (key, label, unit, note, alwaysReadOnly) => (
+    <NumberField
+      key={`${key}-${editable}`}
+      id={`dcf-base-${key}`}
+      label={label}
+      value={b[key]}
+      unit={unit}
+      readOnly={!editable || alwaysReadOnly}
+      onChange={(v) => onBase(key, v)}
+      note={note || (sourcesByField && sourcesByField[key])}
+    />
+  );
   return (
-    <div className="val-bars">
-      <div className="val-bar-row">
-        <span className="val-bar-label">השווי לפי ההנחות</span>
-        <span className="val-bar-track">
-          <span className="val-bar val-bar-value" style={{ width: width(value) }} />
-        </span>
-        <strong className="val-bar-num"><Num>{fmtMoney(value, currency)}</Num></strong>
+    <div className="dcf-wacc">
+      <div className="dcf-fields">
+        {f('rf', 'ריבית חסרת סיכון (rf)', 'pct')}
+        {isNum(b.betaRaw) && f('betaRaw', 'בטא גולמית (מידע)', 'plain', 'Yahoo, 5 שנים חודשית; המודל משתמש בבטא המתואמת', true)}
+        {f('beta', 'בטא מתואמת', 'plain', isNum(b.betaRaw) ? `${DEFAULT_RULES.betaWeight} × ${b.betaRaw.toFixed(3)} + ${DEFAULT_RULES.betaConst}` : null)}
+        {f('erp', 'פרמיית סיכון שוק', 'pct')}
+        {f('kd', 'עלות חוב לפני מס', 'pct')}
+        {f('tax', 'שיעור מס', 'pct')}
+        {f('gT', 'צמיחה סופית (gT)', 'pct')}
+        {editable && <NumberField id="dcf-base-waccOverride" label="WACC ידני (ריק = מחושב)" value={isNum(b.waccOverride) ? b.waccOverride : null} unit="pct" onChange={(v) => onBase('waccOverride', v)} />}
       </div>
-      <div className="val-bar-row">
-        <span className="val-bar-label">המחיר היום</span>
-        <span className="val-bar-track">
-          <span className="val-bar val-bar-price" style={{ width: width(price) }} />
-        </span>
-        <strong className="val-bar-num"><Num>{fmtMoney(price, priceCurrency)}</Num></strong>
-      </div>
+      {main && main.ok && (
+        <p className="muted-note">
+          {main.waccOverridden ? (
+            <>
+              WACC הוזן ידנית: <Num>{fmtRate(main.wacc, 2)}</Num>
+            </>
+          ) : (
+            <>
+              עלות הון עצמי <Num>{fmtRate(main.ke, 2)}</Num> (rf + בטא × פרמיה) · משקל הון <Num>{fmtRate(main.wE, 2)}</Num> (שווי שוק <Num>{fmtMoney(main.marketCap)}</Num> מול חוב{' '}
+              <Num>{fmtMoney(b.debt)}</Num>) · עלות חוב אחרי מס <Num>{fmtRate(main.kdAfterTax, 2)}</Num> → <strong>WACC <Num>{fmtRate(main.wacc, 2)}</Num></strong>
+            </>
+          )}
+        </p>
+      )}
+      {editable && isNum(b.waccOverride) && (
+        <button type="button" className="auth-link" onClick={() => onBase('waccOverride', null)}>
+          חזרה ל-WACC מחושב
+        </button>
+      )}
     </div>
   );
 }
 
-function verdictSentence(result, band) {
-  const { intrinsicPerShare: value, marketPrice: price, verdict } = result;
-  if (verdict === 'N/A' || !(value > 0)) return 'לפי ההנחות האלה אין למניה שווי חיובי - החוב של החברה גדול מהשווי של הפעילות שלה.';
-  if (verdict === 'OVERVALUED') return `לפי ההנחות האלה המניה נראית יקרה: המחיר היום גבוה ${howMuch(price, value)} מהשווי שחישבנו.`;
-  if (verdict === 'UNDERVALUED') return `לפי ההנחות האלה המניה נראית זולה: השווי שחישבנו גבוה ${howMuch(value, price)} מהמחיר היום.`;
-  return `לפי ההנחות האלה המחיר היום קרוב לשווי (הפרש של פחות מ-${Math.round(band * 100)}%).`;
+function CompanyFields({ evaluation, editable, onBase, sourcesByField }) {
+  const b = evaluation.model.base;
+  const f = (key, label, unit) => (
+    <NumberField key={`${key}-${editable}`} id={`dcf-base-${key}`} label={label} value={b[key]} unit={unit} readOnly={!editable} onChange={(v) => onBase(key, v)} note={sourcesByField && sourcesByField[key]} />
+  );
+  return (
+    <div className="dcf-fields">
+      {f('price', 'מחיר', 'plain')}
+      {f('rev0', 'הכנסות בסיס (שנה נוכחית)', 'money')}
+      {f('cash', 'מזומן', 'money')}
+      {f('debt', 'חוב (קצר + ארוך, ללא חכירות)', 'money')}
+      {f('basicShares', 'מניות בסיסי (לשווי שוק)', 'shares')}
+      {f('dilutedShares', 'מניות מדולל (לשווי למניה)', 'shares')}
+    </div>
+  );
 }
 
-export function impliedSentence(implied, historical) {
-  if (implied.beyond === 'above') return 'גם צמיחה של יותר מ-150% בשנה לא מגיעה למחיר הנוכחי בהנחות האלה - השוק מצפה להרבה יותר ממה שהמודל יכול להסביר.';
-  if (implied.beyond === 'below') return 'גם אם התזרים יתכווץ בחצי כל שנה, השווי עדיין מעל המחיר - המחיר מניח ירידה חדה.';
-  if (implied.rate === null) return null;
-  const hist = Number.isFinite(historical) ? ` בשנים האחרונות הוא גדל בכ-${Math.round(historical * 100)}% בשנה.` : '';
-  return `כדי שהמחיר של היום יהיה הוגן, הכסף הפנוי של החברה צריך לגדול בכ-${Math.round(implied.rate * 100)}% בכל שנה, 5 שנים ברציפות.${hist}`;
+function Sensitivity({ grid, currency, main }) {
+  if (!grid) return null;
+  return (
+    <div className="stocks-table-container">
+      <table className="analysis-table dcf-grid" aria-label="רגישות">
+        <thead>
+          <tr>
+            <th>gT \ WACC</th>
+            {grid.waccs.map((w) => (
+              <th key={w}>
+                <Num>{fmtRate(w, 2)}</Num>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {grid.values.map((row, i) => (
+            <tr key={grid.rows[i]}>
+              <th>
+                <Num>{fmtRate(grid.rows[i], 1)}</Num>
+              </th>
+              {row.map((v, j) => {
+                const tone = v === null ? '' : v >= main.price ? 'cell-under' : 'cell-over';
+                return (
+                  <td key={j} className={`${tone} ${i === 2 && j === 2 ? 'cell-current' : ''}`}>
+                    {v === null ? '—' : v.toFixed(2)}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="muted-note">
+        שווי למניה ({currency}) לפי WACC (עמודות) וצמיחה סופית (שורות). ירוק = מעל המחיר, אדום = מתחתיו. המסגרת = התוצאה הראשית.
+      </p>
+    </div>
+  );
 }
 
-export default function DcfCalculator({ data, suggested }) {
-  const inputs = data.dcfInputs;
-  const currency = data.financialCurrency || data.currency || '';
-  const [g, setG] = useState(suggested.growthRate);
-  const [r, setR] = useState(suggested.discountRate);
-  const [gT, setGT] = useState(DCF_DEFAULTS.terminalGrowth);
-  const [baseMethod, setBaseMethod] = useState(DCF_DEFAULTS.baseMethod);
-  const [band, setBand] = useState(DCF_DEFAULTS.fairBand);
+function ExitMethod({ inputs, currency }) {
+  const values = [15, 20, 25].map((m) => ({ m, out: runDcf(Object.assign({}, inputs, { terminalMethod: 'exit', exitMultiple: m })) }));
+  return (
+    <p className="muted-note">
+      שיטה חלופית - ערך סופי לפי מכפיל יציאה על ה-FCF של השנה החמישית:{' '}
+      {values.map(({ m, out }, i) => (
+        <span key={m}>
+          {i ? ' · ' : ''}
+          <Num>{`${m}x: ${out.ok ? fmtMoney(out.perShare, currency) : '—'}`}</Num>
+        </span>
+      ))}
+    </p>
+  );
+}
 
-  useEffect(() => {
-    setG(suggested.growthRate);
-    setR(suggested.discountRate);
-  }, [suggested]);
+const DERIVED_LABELS = {
+  revenueTtm: 'הכנסות 12 חודשים',
+  fcfTtm: 'תזרים חופשי 12 חודשים',
+  sbcTtm: 'SBC 12 חודשים',
+  netIncomeTtm: 'רווח נקי 12 חודשים',
+  fcfMarginTtm: 'שולי FCF 12 חודשים',
+  sbcPctTtm: 'SBC מההכנסות, 12 חודשים',
+  rev0: 'הכנסות בסיס',
+  growth1: 'צמיחת השנה הראשונה',
+  betaRaw: 'בטא גולמית',
+  beta: 'בטא מתואמת',
+  rf: 'ריבית חסרת סיכון',
+  basicShares: 'מניות בסיסי',
+  dilutedShares: 'מניות מדולל',
+  debt: 'חוב',
+  cash: 'מזומן'
+};
+const PCT_FIELDS = new Set(['fcfMarginTtm', 'sbcPctTtm', 'growth1', 'rf']);
+const PLAIN_FIELDS = new Set(['betaRaw', 'beta']);
+const SHARE_FIELDS = new Set(['basicShares', 'dilutedShares']);
 
-  const dcfInput = dcfInputFrom(inputs, { growthRate: g, discountRate: r, terminalGrowth: gT, baseMethod, fairBand: band });
-  const result = computeDcf(dcfInput);
-  const grid = result.errors.length ? null : dcfSensitivity(dcfInput);
-  const historical = useMemo(() => historicalFcfGrowth(inputs.fcfHistory.map((x) => x.fcf)), [inputs]);
-  const implied = result.errors.length ? { rate: null, beyond: null } : impliedGrowthRate(dcfInput);
+function fmtDerived(key, v, currency) {
+  if (!isNum(v)) return 'חסר';
+  if (PCT_FIELDS.has(key)) return fmtRate(v, 2);
+  if (PLAIN_FIELDS.has(key)) return v.toFixed(3);
+  if (SHARE_FIELDS.has(key)) return `${(v / 1e6).toFixed(1)}M`;
+  return fmtMoney(v, currency);
+}
 
-  const scenarios = [
-    { key: 'careful', label: 'זהיר', g: clamp(suggested.growthRate - 0.05, DCF_LIMITS.growth), r: clamp(suggested.discountRate + 0.015, DCF_LIMITS.discount) },
-    { key: 'suggested', label: 'מוצע', g: suggested.growthRate, r: suggested.discountRate },
-    { key: 'optimistic', label: 'אופטימי', g: clamp(suggested.growthRate + 0.05, DCF_LIMITS.growth), r: clamp(suggested.discountRate - 0.01, DCF_LIMITS.discount) }
-  ];
-  const impliedOnSlider = implied.rate === null ? null : clamp(implied.rate, DCF_LIMITS.growth);
+function SourcesPanel({ evaluation, snapshot, currency }) {
+  const d = evaluation.derived;
+  return (
+    <div>
+      {d && (
+        <div className="stocks-table-container">
+          <table className="analysis-table dcf-sources" aria-label="נתוני מקור">
+            <thead>
+              <tr>
+                <th>נתון</th>
+                <th>ערך</th>
+                <th>מקור ובסיס</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.keys(DERIVED_LABELS)
+                .filter((k) => d[k])
+                .map((k) => (
+                  <tr key={k}>
+                    <td>{DERIVED_LABELS[k]}</td>
+                    <td>
+                      <Num>{fmtDerived(k, d[k].value, currency)}</Num>
+                    </td>
+                    <td>
+                      {d[k].basis} {d[k].fallback && <ToneBadge tone="mixed">חלופה</ToneBadge>}
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {snapshot && (
+        <ul className="muted-note dcf-source-list">
+          {snapshot.price && (
+            <li>
+              מחיר: {snapshot.price.source}, <Num>{snapshot.price.asOf}</Num>
+            </li>
+          )}
+          {snapshot.rf && (
+            <li>
+              ריבית: {snapshot.rf.source}, <Num>{snapshot.rf.asOf}</Num>
+            </li>
+          )}
+          {snapshot.betaRaw && (
+            <li>
+              בטא: {snapshot.betaRaw.source}, נשלף <Num>{snapshot.betaRaw.asOf}</Num>
+            </li>
+          )}
+          {snapshot.consensus && (
+            <li>
+              קונצנזוס: {snapshot.consensus.source}, נשלף <Num>{snapshot.consensus.asOf}</Num>
+            </li>
+          )}
+          {snapshot.sources && (
+            <li>
+              דוחות: {snapshot.sources.quarters}; {snapshot.sources.annual}
+            </li>
+          )}
+          <li>
+            נשלף: <Num>{String(snapshot.retrievedAt || '').slice(0, 16).replace('T', ' ')}</Num> UTC
+          </li>
+        </ul>
+      )}
+    </div>
+  );
+}
 
-  const growthSource =
-    suggested.growthSource === 'analysts' ? 'הערכת אנליסטים' : suggested.growthSource === 'history' ? 'הקצב שבו הכסף הפנוי של החברה גדל בשנים האחרונות, עד 20% לכל היותר' : 'ברירת מחדל';
+function RulesPanel({ rules: R }) {
+  return (
+    <ul className="val-steps">
+      <li>הכנסות בסיס: קונצנזוס אנליסטים לשנה הנוכחית (חסר: הכנסות 12 החודשים האחרונים).</li>
+      <li>צמיחת שנה 1: קונצנזוס שנה הבאה מול הבסיס (חסר: 12 חודשים מול 12 חודשים קודמים, ואז שנת כספים מול קודמתה).</li>
+      <li>
+        צמיחה בשנים 2-5 דועכת לצמיחה הסופית: <Num>{`g[t] = ${fmtRate(R.gT)} + (g[t-1] - ${fmtRate(R.gT)}) × ${R.fadeK}`}</Num>.
+      </li>
+      <li>
+        שולי FCF: שולי 12 החודשים × (1 - <Num>{R.marginStep}</Num> × שנה). SBC: אחוז 12 החודשים × (1 - <Num>{R.sbcStep}</Num> × שנה), ותמיד מופחת.
+      </li>
+      <li>
+        בטא: <Num>{`${R.betaWeight} × raw + ${R.betaConst}`}</Num>. פרמיית סיכון <Num>{fmtRate(R.erp)}</Num>, עלות חוב <Num>{fmtRate(R.kd)}</Num>, מס <Num>{fmtRate(R.tax)}</Num>.
+      </li>
+      <li>
+        תרחישים: שמרני - צמיחה × <Num>{R.scenarios.bear.growthMult}</Num> ושוליים <Num>{fmtRate(R.scenarios.bear.marginShift)}</Num>; אופטימי - צמיחה ×{' '}
+        <Num>{R.scenarios.bull.growthMult}</Num> ושוליים <Num>{`+${fmtRate(R.scenarios.bull.marginShift)}`}</Num>. משקלות{' '}
+        <Num>{`${R.weights.bear * 100}/${R.weights.base * 100}/${R.weights.bull * 100}`}</Num>.
+      </li>
+      <li>ערך סופי: Gordon עם הצמיחה הסופית. אין תקרות, רצפות או התאמות נוספות.</li>
+    </ul>
+  );
+}
+
+// "FY27".."FY31" from the consensus year, when known.
+function fiscalLabels(snapshot, preset) {
+  if (preset) return ['FY27', 'FY28', 'FY29', 'FY30', 'FY31'];
+  const end = snapshot && snapshot.consensus && snapshot.consensus.rev0y && snapshot.consensus.rev0y.periodEnd;
+  const year = end ? Number(String(end).slice(0, 4)) : NaN;
+  return Number.isFinite(year) ? [1, 2, 3, 4, 5].map((i) => `FY${String(year + i).slice(2)}`) : null;
+}
+
+export default function DcfCalculator({ ticker, snapshot, autoEvaluation }) {
+  const [mode, setMode] = useState('auto');
+  const [manual, setManual] = useState(null);
+  const [presetLoaded, setPresetLoaded] = useState(false);
+  const [active, setActive] = useState('base');
+
+  const manualEvaluation = useMemo(() => (manual ? evaluateDcf({ mode: 'manual', manual, valuationDate: today() }) : null), [manual]);
+  const evaluation = mode === 'manual' && manualEvaluation ? manualEvaluation : autoEvaluation;
+  const currency = presetLoaded && mode === 'manual' ? 'USD' : (snapshot && (snapshot.financialCurrency || snapshot.currency)) || '';
+  const priceCurrency = presetLoaded && mode === 'manual' ? 'USD' : (snapshot && snapshot.currency) || currency;
+
+  const scenarioKeys = evaluation && evaluation.model ? evaluation.model.scenarios.map((s) => s.key) : [];
+  const activeKey = scenarioKeys.includes(active) ? active : evaluation && evaluation.baseKey;
+
+  const editFromAuto = () => {
+    if (autoEvaluation && autoEvaluation.model) {
+      setManual(clone(autoEvaluation.model));
+      setPresetLoaded(false);
+      setMode('manual');
+    }
+  };
+  const loadPreset = () => {
+    setManual(clone({ base: AVGO_PRESET.base, scenarios: AVGO_PRESET.scenarios, weights: AVGO_PRESET.weights }));
+    setPresetLoaded(true);
+    setActive('base');
+    setMode('manual');
+  };
+  const onBase = (key, value) =>
+    setManual((m) => {
+      const next = clone(m);
+      if (value === null) delete next.base[key];
+      else next.base[key] = value;
+      return next;
+    });
+  const onEdit = (field, i, value) =>
+    setManual((m) => {
+      const next = clone(m);
+      const s = next.scenarios.find((x) => x.key === activeKey);
+      s[field][i] = value;
+      return next;
+    });
+
+  const editable = mode === 'manual';
+  const d = evaluation && evaluation.derived;
+  const sourcesByField =
+    d && mode === 'auto'
+      ? { rf: d.rf.basis, cash: d.cash.basis, debt: d.debt.basis, basicShares: d.basicShares.basis, dilutedShares: d.dilutedShares.basis, rev0: d.rev0.basis }
+      : null;
+
+  const exportCard = () => {
+    const card = buildInputCard(evaluation, presetLoaded && mode === 'manual' ? null : snapshot, presetLoaded && mode === 'manual' ? AVGO_PRESET.ticker : ticker);
+    downloadJson(card, `dcf-card-${card.ticker || 'stock'}-${card.valuationDate}.json`);
+  };
+
+  const header = (
+    <div className="dcf-toolbar">
+      <div className="dcf-mode" role="group" aria-label="מצב">
+        <button type="button" className={`dcf-scenario ${mode === 'auto' ? 'is-active' : ''}`} aria-pressed={mode === 'auto'} onClick={() => setMode('auto')}>
+          אוטומטי (לפי כללים)
+        </button>
+        <button
+          type="button"
+          className={`dcf-scenario ${mode === 'manual' ? 'is-active' : ''}`}
+          aria-pressed={mode === 'manual'}
+          onClick={() => (manual ? setMode('manual') : editFromAuto())}
+          disabled={!manual && !(autoEvaluation && autoEvaluation.model)}
+        >
+          ידני{manual ? (presetLoaded ? ' - פריסט AVGO' : ' - מותאם אישית') : ''}
+        </button>
+      </div>
+      {ticker === 'AVGO' && (
+        <button type="button" className="benchmark-toggle-button" onClick={loadPreset}>
+          פריסט AVGO (DCF_METHOD.md)
+        </button>
+      )}
+      {mode === 'manual' && autoEvaluation && autoEvaluation.model && (
+        <button type="button" className="auth-link" onClick={editFromAuto}>
+          התחלה מחדש מהערכים האוטומטיים
+        </button>
+      )}
+      {evaluation && evaluation.model && (
+        <button type="button" className="benchmark-toggle-button" onClick={exportCard}>
+          ייצוא כרטיס קלטים
+        </button>
+      )}
+    </div>
+  );
+
+  if (!evaluation) return header;
+  if (evaluation.unsuitable) {
+    return (
+      <>
+        {header}
+        <div className="dcf-unsuitable" role="status">
+          <strong>לא מתאים ל-DCF.</strong> {evaluation.unsuitable}
+        </div>
+      </>
+    );
+  }
+  if (!evaluation.model) {
+    return (
+      <>
+        {header}
+        <div className="dcf-unsuitable" role="status">
+          <strong>אין מספיק נתונים לחישוב.</strong> חסר: {evaluation.missing.join(', ')}.
+        </div>
+      </>
+    );
+  }
+
+  const main = evaluation.main;
+  const scenario = evaluation.model.scenarios.find((s) => s.key === activeKey);
+  const result = evaluation.results[activeKey];
+  const scenarioInputs = Object.assign({}, evaluation.model.base, { growth: scenario.growth, fcfMargin: scenario.fcfMargin, sbcPct: scenario.sbcPct });
+  const notes = evaluation.warnings.concat(evaluation.flags);
 
   return (
-    <div className="dcf-layout">
-      <div className="dcf-controls">
-        <div className="dcf-scenarios" role="group" aria-label="תרחישים">
-          {scenarios.map((s) => (
-            <button
-              key={s.key}
-              type="button"
-              className={`dcf-scenario ${near(g, s.g) && near(r, s.r) ? 'is-active' : ''}`}
-              aria-pressed={near(g, s.g) && near(r, s.r)}
-              onClick={() => {
-                setG(s.g);
-                setR(s.r);
-              }}
-            >
-              {s.label}
-            </button>
-          ))}
-          {impliedOnSlider !== null && (
-            <button
-              type="button"
-              className={`dcf-scenario ${near(g, impliedOnSlider) ? 'is-active' : ''}`}
-              aria-pressed={near(g, impliedOnSlider)}
-              onClick={() => setG(impliedOnSlider)}
-            >
-              מה המחיר מניח?
-            </button>
-          )}
-        </div>
+    <div className="dcf-calc">
+      {header}
+      {mode === 'manual' && (
+        <p className="muted-note">
+          {presetLoaded ? 'פריסט AVGO מ-DCF_METHOD.md (18.10.2026). ' : 'מצב ידני (מותאם אישית): הערכים האוטומטיים הועתקו, וכל מספר ניתן לעריכה. '}
+          התוצאה מתעדכנת מיד.
+        </p>
+      )}
 
-        <Slider
-          id="dcf-g"
-          label="בכמה החברה תגדל בכל שנה (5 השנים הקרובות)"
-          hint={
-            <>
-              הצעת המערכת: <Num>{fmtRate(suggested.growthRate)}</Num> ({growthSource}).
-              {Number.isFinite(historical) && !near(historical, suggested.growthRate) && (
-                <>
-                  {' '}
-                  בפועל בשנים האחרונות: <Num>{fmtRate(historical)}</Num> בשנה.
-                </>
-              )}
-            </>
-          }
-          value={g}
-          min={DCF_LIMITS.growth[0]}
-          max={DCF_LIMITS.growth[1]}
-          step={0.005}
-          onChange={setG}
-        />
-        <Slider
-          id="dcf-r"
-          label="התשואה שאתה דורש (שיעור היוון)"
-          hint={
-            <>
-              גבוה יותר = זהיר יותר, והשווי יוצא נמוך יותר. מקובל: 8%-10% לחברה יציבה, 10%-12% לחברה מסוכנת. הצעת המערכת (<Num>{fmtRate(suggested.discountRate)}</Num>) מבוססת על תשואת אג"ח ארה"ב (<Num>{fmtRate(suggested.riskFreeRate)}</Num>
-              {inputs.riskFreeRateIsDefault ? ', ברירת מחדל' : ''}) ועל התנודתיות של המניה (בטא <Num>{suggested.beta.toFixed(2)}</Num>).
-            </>
-          }
-          value={r}
-          min={DCF_LIMITS.discount[0]}
-          max={DCF_LIMITS.discount[1]}
-          step={0.0025}
-          onChange={setR}
-        />
+      <ScenarioCards evaluation={evaluation} currency={currency} priceCurrency={priceCurrency} active={activeKey} onSelect={setActive} />
 
-        <details className="dcf-advanced val-details">
-          <summary>הגדרות מתקדמות</summary>
-          <Slider id="dcf-gt" label="צמיחה לטווח ארוך, אחרי 5 השנים" value={gT} min={DCF_LIMITS.terminalGrowth[0]} max={DCF_LIMITS.terminalGrowth[1]} step={0.0025} onChange={setGT} />
-          <div className="form-group dcf-slider">
-            <label htmlFor="dcf-band">
-              מתי לקרוא למחיר "הוגן": <strong>הפרש של עד <Num>±{Math.round(band * 100)}%</Num></strong>
-            </label>
-            <input id="dcf-band" type="range" min={0.05} max={0.3} step={0.05} value={band} onChange={(e) => setBand(Number(e.target.value))} />
-          </div>
-          <div className="form-group">
-            <label htmlFor="dcf-base">נקודת המוצא של הכסף הפנוי</label>
-            <select id="dcf-base" value={baseMethod} onChange={(e) => setBaseMethod(e.target.value)}>
-              <option value="avg3">ממוצע 3 השנים האחרונות (יציב יותר)</option>
-              <option value="latest">השנה האחרונה (מתאים לחברה שצומחת מהר)</option>
-            </select>
-          </div>
-        </details>
-      </div>
-
-      <div className="dcf-results" aria-live="polite">
-        {result.errors.length ? (
-          <ul className="dcf-errors" role="alert">
-            {result.errors.map((e) => (
-              <li key={e}>{e}</li>
-            ))}
-          </ul>
-        ) : (
-          <>
-            <div className="val-result">
-              <div className="val-result-head">
-                <span>התוצאה:</span>
-                <ToneBadge tone={DCF_VERDICT_TONE[result.verdict]}>
-                  <span data-testid="dcf-verdict">
-                    {VERDICT_WORDS[result.verdict]}
-                  </span>
-                </ToneBadge>
-              </div>
-              <ValueVsPrice value={result.intrinsicPerShare} price={result.marketPrice} currency={currency} priceCurrency={data.currency} />
-              <p className="val-result-sentence">{verdictSentence(result, band)}</p>
-              {impliedSentence(implied, historical) && <p className="val-result-implied">{impliedSentence(implied, historical)}</p>}
+      {main && main.ok ? (
+        <div className="val-result" aria-live="polite">
+          <dl className="dcf-kpis">
+            <div>
+              <dt>WACC</dt>
+              <dd>
+                <Num>{fmtRate(main.wacc, 2)}</Num>
+              </dd>
             </div>
+            <div>
+              <dt>תשואה משתמעת (IRR)</dt>
+              <dd>
+                <Num>{isNum(evaluation.irr) ? fmtRate(evaluation.irr, 1) : 'אין'}</Num>
+              </dd>
+            </div>
+            <div>
+              <dt>חלק הערך הסופי</dt>
+              <dd>
+                <Num>{fmtRate(main.tvShare, 0)}</Num>
+              </dd>
+            </div>
+            <div>
+              <dt>מכפיל יציאה משתמע</dt>
+              <dd>
+                <Num>{isNum(main.impliedExit) ? `${main.impliedExit.toFixed(1)}x` : '—'}</Num>
+              </dd>
+            </div>
+            <div>
+              <dt>מרווח ביטחון</dt>
+              <dd>
+                <Num>{isNum(main.marginOfSafety) ? fmtRate(main.marginOfSafety, 1) : '—'}</Num>
+              </dd>
+            </div>
+          </dl>
+          <p className="val-result-sentence" data-testid="dcf-verdict">
+            {verdictSentence(main, evaluation.labels[evaluation.baseKey], evaluation.rules.labelBand)}
+          </p>
+          <p className="val-result-implied">{irrSentence(evaluation)}</p>
+        </div>
+      ) : (
+        <ul className="dcf-errors" role="alert">
+          {(main ? main.errors : []).map((e) => (
+            <li key={e}>{e}</li>
+          ))}
+        </ul>
+      )}
 
-            {result.warnings.length > 0 && (
-              <ul className="dcf-warnings">
-                {result.warnings.map((w) => (
-                  <li key={w}>{w}</li>
-                ))}
-              </ul>
-            )}
+      {notes.length > 0 && (
+        <ul className="dcf-warnings">
+          {notes.map((w) => (
+            <li key={w}>{w}</li>
+          ))}
+        </ul>
+      )}
 
-            <details className="val-details">
-              <summary>איך הגענו למספר?</summary>
-              <ol className="val-steps">
-                <li>
-                  נקודת המוצא: החברה מייצרת היום כ-<Num>{fmtMoney(result.baseFcf, currency)}</Num> בשנה של <strong>כסף פנוי</strong> - מה שנשאר אחרי כל ההוצאות וההשקעות.
-                </li>
-                <li>
-                  מגדילים אותו ב-<Num>{fmtRate(g)}</Num> בכל שנה, 5 שנים, ואחר כך ב-<Num>{fmtRate(gT)}</Num> בשנה לתמיד.
-                </li>
-                <li>
-                  כסף עתידי שווה היום פחות, אז כל שנה "מוזלת" ב-<Num>{fmtRate(r)}</Num>. ההכנסות של 5 השנים הראשונות שוות היום <Num>{fmtMoney(result.pvStage1, currency)}</Num>, וכל מה שאחריהן <Num>{fmtMoney(result.pvTerminal, currency)}</Num> ({Math.round(result.terminalShareOfEv * 100)}% מהשווי).
-                </li>
-                <li>
-                  מוסיפים את המזומן שבקופה (<Num>{fmtMoney(inputs.cash, currency)}</Num>) ומורידים את החוב (<Num>{fmtMoney(inputs.debt, currency)}</Num>): שווי החברה כולה <Num>{fmtMoney(result.equityValue, currency)}</Num>.
-                </li>
-                <li>
-                  מחלקים במספר המניות (<Num>{fmtMoney(inputs.sharesDiluted)}</Num>): <strong><Num>{fmtMoney(result.intrinsicPerShare, currency)}</Num></strong> למניה.
-                </li>
-              </ol>
-              <p className="muted-note">
-                מרווח ביטחון: <Num>{fmtPct(result.marginOfSafety * 100)}</Num> (ההפרש מחולק בשווי) · פוטנציאל: <Num>{fmtPct(result.upside * 100)}</Num> (ההפרש מחולק במחיר)
-              </p>
-            </details>
+      <details className="val-details" open>
+        <summary>ההנחות לכל שנה - תרחיש {scenario.label}</summary>
+        <YearTable scenario={scenario} result={result} editable={editable} onEdit={onEdit} fyLabels={fiscalLabels(snapshot, presetLoaded && mode === 'manual')} currency={currency} />
+        {!editable && <p className="muted-note">כדי לשנות הנחה עברו ל"ידני": הערכים האוטומטיים יועתקו ויסומנו כמותאמים אישית.</p>}
+      </details>
 
-            {grid && (
-              <details className="val-details">
-                <summary>מה יוצא בהנחות אחרות?</summary>
-                <p className="muted-note">
-                  כל משבצת היא השווי למניה בצירוף אחר: עמודות = צמיחה, שורות = התשואה שאתה דורש. ירוק = מעל המחיר היום, אדום = מתחתיו. המסגרת היא ההנחות הנוכחיות. אם כמעט כל הטבלה באותו צבע, המסקנה לא תלויה הרבה בהנחות המדויקות.
-                </p>
-                <div className="stocks-table-container">
-                  <table className="analysis-table dcf-grid" aria-label="רגישות">
-                    <thead>
-                      <tr>
-                        <th>תשואה \ צמיחה</th>
-                        {grid.growthRates.map((gr) => (
-                          <th key={gr}><Num>{fmtRate(gr)}</Num></th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {grid.values.map((row, i) => (
-                        <tr key={grid.discountRates[i]}>
-                          <th><Num>{fmtRate(grid.discountRates[i])}</Num></th>
-                          {row.map((v, j) => {
-                            const tone = v === null ? '' : v >= result.marketPrice * (1 + band) ? 'cell-under' : v <= result.marketPrice * (1 - band) ? 'cell-over' : '';
-                            return (
-                              <td key={grid.growthRates[j]} className={`${tone} ${i === 2 && j === 2 ? 'cell-current' : ''}`}>
-                                {v === null ? '—' : v.toFixed(2)}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </details>
-            )}
-          </>
-        )}
-      </div>
+      <details className="val-details">
+        <summary>שיעור ההיוון (WACC) ונתוני החברה</summary>
+        <WaccPanel evaluation={evaluation} editable={editable} onBase={onBase} sourcesByField={sourcesByField} />
+        <CompanyFields evaluation={evaluation} editable={editable} onBase={onBase} sourcesByField={sourcesByField} />
+      </details>
+
+      {main && main.ok && (
+        <details className="val-details">
+          <summary>מה יוצא בהנחות אחרות?</summary>
+          <Sensitivity grid={evaluation.sensitivity} currency={currency} main={main} />
+          <ExitMethod inputs={scenarioInputs} currency={currency} />
+        </details>
+      )}
+
+      {mode === 'auto' && (
+        <>
+          <details className="val-details">
+            <summary>נתוני המקור</summary>
+            <SourcesPanel evaluation={evaluation} snapshot={snapshot} currency={currency} />
+          </details>
+          <details className="val-details">
+            <summary>הכללים</summary>
+            <RulesPanel rules={evaluation.rules} />
+          </details>
+        </>
+      )}
     </div>
   );
 }

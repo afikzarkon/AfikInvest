@@ -57,8 +57,8 @@ test('assembles multiples, peers and DCF inputs', async () => {
   expect(pe.peerCount).toBe(2);
   expect(pe.samples).toBeGreaterThan(50);
   expect(v.peers.map((p) => p.symbol)).toEqual(['P1', 'P2']);
-  expect(v.dcfInputs).toMatchObject({ cash: 60, debt: 70, sharesDiluted: 10, marketPrice: 100, beta: 1.1, analystGrowth5y: 0.09, riskFreeRate: 0.042, riskFreeRateIsDefault: false });
-  expect(v.dcfInputs.fcfHistory.map((x) => x.fcf)).toEqual([10, 10, 10, 10, 10]);
+  // The DCF's data is its own snapshot now (dcfSnapshot.js).
+  expect(v.dcfInputs).toBeUndefined();
   expect(v.warnings).toEqual([]);
 });
 
@@ -70,12 +70,11 @@ test('caches per symbol and dedupes concurrent requests', async () => {
   expect(src.statements).toHaveBeenCalledTimes(1);
 });
 
-test('currency mismatch and missing risk-free rate are reported', async () => {
-  const src = sources({ riskFreeRate: jest.fn(async () => { throw new Error('down'); }) });
+test('currency mismatch is reported', async () => {
+  const src = sources();
   src.summary.mockImplementation(async () => ({ currency: 'USD', financialCurrency: 'TWD', price: 100, marketCap: 1000 }));
   const v = await createValuationService({ sources: src, now, logger: { warn() {} } }).getValuation('X');
   expect(v.warnings.join()).toMatch(/TWD/);
-  expect(v.dcfInputs).toMatchObject({ riskFreeRate: 0.043, riskFreeRateIsDefault: true });
 });
 
 test('route validates the symbol; a statements failure is a partial result, not an error', async () => {
@@ -94,7 +93,7 @@ test('route validates the symbol; a statements failure is a partial result, not 
 });
 
 describe('partial failures', () => {
-  test('statements failing: current multiples and a one-year DCF from the quote, with warnings', async () => {
+  test('statements failing: current multiples from the quote, with warnings', async () => {
     const src = sources({ statements: jest.fn(async () => { throw new Error('Unauthorized'); }) });
     src.summary.mockImplementation(async (symbol) =>
       symbol === 'X'
@@ -109,7 +108,6 @@ describe('partial failures', () => {
       ['PS', 4, 0],
       ['PFCF', 25, 0]
     ]);
-    expect(v.dcfInputs).toMatchObject({ fcfHistory: [{ periodEnd: 'TTM', fcf: 40 }], cash: 5, debt: 7, sharesDiluted: 10, marketPrice: 100 });
     expect(v.warnings.join(' ')).toMatch(/הדוחות הכספיים ההיסטוריים/);
   });
 

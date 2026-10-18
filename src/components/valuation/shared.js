@@ -21,19 +21,3 @@ export const fmtMoney = (v, currency = '') => {
 export function ToneBadge({ tone, children }) {
   return <span className={`val-badge val-badge-${tone}`}>{children}</span>;
 }
-
-// The DCF engine's input from the server's inputs and the user's choices.
-export function dcfInputFrom(inputs, { growthRate, discountRate, terminalGrowth, baseMethod, fairBand }) {
-  return {
-    fcfHistory: inputs.fcfHistory.map((x) => x.fcf),
-    growthRate,
-    discountRate,
-    terminalGrowth,
-    cash: inputs.cash || 0,
-    debt: inputs.debt || 0,
-    sharesDiluted: inputs.sharesDiluted,
-    marketPrice: inputs.marketPrice,
-    baseMethod,
-    fairBand
-  };
-}
