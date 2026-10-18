@@ -66,7 +66,7 @@ describe('deriving AVGO from its snapshot', () => {
   });
 
   test('scenarios: bear growth x0.6 and margins -4 points, bull x1.15 and +2 points, SBC unchanged', () => {
-    const [bear, base, bull] = rules.autoScenarios(d, DEFAULT_RULES);
+    const [bear, base, bull] = rules.autoScenarios(rules.baseSchedules(d, DEFAULT_RULES, rules.EMPTY_OVERRIDES), DEFAULT_RULES);
     closeAll(base.growth, fadeGrowth(d.growth1.value, 0.035, 0.5, 5));
     closeAll(bear.growth, base.growth.map((g) => g * 0.6));
     closeAll(bull.growth, base.growth.map((g) => g * 1.15));
@@ -112,16 +112,37 @@ describe('missing data: the defined fallback, and a flag', () => {
     expect(e.derived.growth1.basis).toMatch(/TTM קודם/);
   });
 
-  test('beta and the risk-free rate fall back to the configured values, flagged', () => {
+  test('beta falls back to the market beta, flagged', () => {
     const snap = clone(avgo);
     snap.betaRaw = null;
-    snap.rf = null;
     const e = evaluateDcf({ mode: 'auto', snapshot: snap, valuationDate: DATE });
     expect(e.derived.betaRaw).toMatchObject({ value: 1, fallback: true });
     expect(e.derived.beta.value).toBeCloseTo(1, 12);
-    expect(e.derived.rf).toMatchObject({ value: 0.045, fallback: true });
     expect(e.flags.join(' ')).toMatch(/בטא חסרה/);
-    expect(e.flags.join(' ')).toMatch(/10 שנים חסרה/);
+  });
+
+  test('no yield today: the last one saved, clearly flagged - never a constant', () => {
+    const snap = clone(avgo);
+    snap.rf = null;
+    snap.rfLastSaved = { value: 0.0507, asOf: '2026-10-14', source: 'x' };
+    const e = evaluateDcf({ mode: 'auto', snapshot: snap, valuationDate: DATE });
+    expect(e.derived.rf).toMatchObject({ value: 0.0507, fallback: true });
+    expect(e.flags.join(' ')).toMatch(/בערך האחרון שנשמר \(2026-10-14\)/);
+    expect(e.main.ok).toBe(true);
+  });
+
+  test('no yield and none saved: no value, and a request to enter it', () => {
+    const snap = clone(avgo);
+    snap.rf = null;
+    snap.rfLastSaved = null;
+    const e = evaluateDcf({ mode: 'auto', snapshot: snap, valuationDate: DATE });
+    expect(e.main).toBeUndefined();
+    expect(e.missing.join(' ')).toMatch(/ריבית חסרת סיכון.*הזינו/);
+    // Entered by hand, it is used - and said to be.
+    const entered = evaluateDcf({ mode: 'auto', snapshot: snap, overrides: { rf: { value: 0.051, source: 'הוזן ידנית', asOf: DATE } }, valuationDate: DATE });
+    expect(entered.derived.rf).toMatchObject({ value: 0.051, fallback: true });
+    expect(entered.flags.join(' ')).toMatch(/הוזן ידנית/);
+    expect(entered.main.ok).toBe(true);
   });
 
   test('no quarters and no fiscal years: no value, and what is missing is named', () => {
@@ -164,7 +185,7 @@ describe('warnings: the number stands, with a caveat', () => {
   test('data more than 7 days older than the valuation date', () => {
     const e = evaluateDcf({ mode: 'auto', snapshot: avgo, valuationDate: '2026-10-30' });
     expect(e.warnings.join(' ')).toMatch(/מחיר: הנתון מ-2026-10-16/);
-    expect(evaluateDcf({ mode: 'auto', snapshot: avgo, valuationDate: DATE }).warnings).toEqual([]);
+    expect(evaluateDcf({ mode: 'auto', snapshot: avgo, valuationDate: DATE }).warnings.join(' ')).not.toMatch(/ימים לפני תאריך ההערכה/);
   });
 });
 
@@ -202,5 +223,179 @@ describe('the input card', () => {
     const e = evaluateDcf({ mode: 'manual', manual: AVGO_PRESET, valuationDate: DATE });
     const card = JSON.parse(JSON.stringify(buildInputCard(e, null, 'AVGO')));
     expect(reproduceFromCard(card).fromInputs.results.base.perShare).toBe(card.results.scenarios.base.perShare);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Rules v2, on NOW (fixtures/dcf-snapshot-now.json, 18.10.2026).
+const nowSnap = require('./fixtures/dcf-snapshot-now.json');
+const { LEGACY_RULES, NOW_PRESET, impliedConstantGrowth } = rules;
+const { impliedReturn, sensitivity } = require('./dcfEngine');
+const within = (actual, expected, tolerance) => expect(Math.abs(actual - expected)).toBeLessThanOrEqual(tolerance);
+const perShare = (e) => ['bear', 'base', 'bull'].map((k) => e.results[k].perShare);
+
+describe('regression: the legacy rules reproduce the first version, the engine untouched', () => {
+  const legacy = evaluateDcf({ mode: 'auto', snapshot: nowSnap, rules: LEGACY_RULES, valuationDate: DATE });
+
+  test('NOW, cash 2.503: 44.65 / 67.85 / 79.95, IRR 6.43%, terminal value 78.5%', () => {
+    expect(legacy.model.base.cash / B).toBeCloseTo(2.503, 6);
+    [44.65, 67.85, 79.95].forEach((v, i) => within(perShare(legacy)[i], v, 0.05));
+    within(legacy.irr * 100, 6.43, 0.005);
+    within(legacy.main.tvShare * 100, 78.5, 0.05);
+  });
+
+  test('the same with cash 6.707 alone: 71.9', () => {
+    const base = legacy.model.scenarios.find((s) => s.key === 'base');
+    within(runDcf(Object.assign({}, legacy.model.base, base, { cash: 6.707 * B })).perShare, 71.9, 0.05);
+  });
+
+  test('the new rules without added figures differ from legacy only by the cash: 71.9 again', () => {
+    const v2 = evaluateDcf({ mode: 'auto', snapshot: nowSnap, valuationDate: DATE });
+    within(v2.main.perShare, 71.9, 0.05);
+    expect(v2.model.scenarios.map((s) => s.growth)).toEqual(legacy.model.scenarios.map((s) => s.growth));
+  });
+});
+
+describe('cash: cash + short-term investments + long-term marketable securities', () => {
+  test('NOW: 2.503 + 2.161 + 2.043 = 6.707, each part shown', () => {
+    const { derived: d, warnings } = deriveAuto(nowSnap, DEFAULT_RULES);
+    expect(d.cash.value / B).toBeCloseTo(6.707, 6);
+    [['cash', 2.503], ['shortTermInvestments', 2.161], ['longTermMarketable', 2.043]].forEach(([k, v]) => expect(d.cash.parts[k] / B).toBeCloseTo(v, 6));
+    expect(d.cash.basis).toMatch(/בלי השקעות אסטרטגיות/);
+    expect(warnings.join(' ')).not.toMatch(/מזומן ללא/);
+  });
+
+  test('strategic (equity-method) investments are not cash', () => {
+    const snap = clone(nowSnap);
+    snap.quarters[snap.quarters.length - 1].longTermEquityInvestment = 1.743 * B;
+    expect(deriveAuto(snap, DEFAULT_RULES).derived.cash.value / B).toBeCloseTo(6.707, 6);
+  });
+
+  test('a component not reported counts as 0, with the warning', () => {
+    const { derived: d, warnings } = deriveAuto(avgo, DEFAULT_RULES);
+    expect(d.cash.value / B).toBeCloseTo(23.975, 6);
+    expect(d.cash.parts.longTermMarketable).toBeNull();
+    expect(warnings.join(' ')).toMatch(/מזומן ללא ניירות ערך סחירים/);
+  });
+
+  test('available-for-sale + held-to-maturity when the combined line is missing', () => {
+    expect(rules.cashComponents({ cash: 1, shortTermInvestments: 2, availableForSale: 3, heldToMaturity: 4 }).longTerm.value).toBe(7);
+    expect(rules.cashComponents({ cash: 1, cashAndShortTerm: 5 }).shortTerm.value).toBe(4);
+  });
+});
+
+describe('FCF margins: guidance first, the generic fade only as the fallback', () => {
+  const guidance = (values) => ({ fcfMargin: values.map((v) => (v === null ? null : { value: v, source: 'הנחיית החברה', asOf: '2026-07-23' })) });
+
+  test('guided years use the guidance; later years hold the last one, without fading', () => {
+    const e = evaluateDcf({ mode: 'auto', snapshot: nowSnap, overrides: guidance([0.36, 0.37, null, null, null]), valuationDate: DATE });
+    const base = e.model.scenarios.find((s) => s.key === 'base');
+    closeAll(base.fcfMargin, [0.36, 0.37, 0.37, 0.37, 0.37]);
+    expect(e.schedules.marginSources.map((s) => s.kind)).toEqual(['guidance', 'guidance', 'held', 'held', 'held']);
+    expect(e.schedules.marginSources[0].text).toMatch(/הנחיית החברה, 2026-07-23/);
+    expect(e.warnings.join(' ')).not.toMatch(/אין הנחיית שוליים/);
+    // The scenario shifts still apply on top.
+    closeAll(e.model.scenarios.find((s) => s.key === 'bear').fcfMargin, [0.32, 0.33, 0.33, 0.33, 0.33]);
+  });
+
+  test('without any: the generic rule, and the warning', () => {
+    const e = evaluateDcf({ mode: 'auto', snapshot: nowSnap, valuationDate: DATE });
+    closeAll(e.model.scenarios.find((s) => s.key === 'base').fcfMargin, marginSchedule(e.derived.fcfMarginTtm.value, 0.02, 5));
+    expect(e.warnings).toContain('אין הנחיית שוליים, הדעיכה היא כלל גנרי');
+  });
+
+  test('two FCF bases: operating cash flow - capex (default), and the normalized one when entered', () => {
+    const normalizedFcfTtm = { value: 4.92 * B, source: 'FCF מנורמל, דוח רבעון 2', asOf: '2026-07-23' };
+    const plain = evaluateDcf({ mode: 'auto', snapshot: nowSnap, overrides: { normalizedFcfTtm }, valuationDate: DATE });
+    expect(plain.derived.fcfBasis).toBe('reported');
+    expect(plain.derived.fcfTtm.value / B).toBeCloseTo(4.571, 3);
+    within(plain.derived.fcfMarginTtm.value * 100, 31.0, 0.05);
+    const normal = evaluateDcf({ mode: 'auto', snapshot: nowSnap, overrides: { normalizedFcfTtm, fcfBasis: 'normalized' }, valuationDate: DATE });
+    expect(normal.derived.fcfBasis).toBe('normalized');
+    within(normal.derived.fcfMarginTtm.value * 100, 33.4, 0.05);
+    expect(normal.main.perShare).toBeGreaterThan(plain.main.perShare);
+  });
+});
+
+describe('growth: consensus years first, the fade after them', () => {
+  const consensus = (values) => ({ growth: values.map((v) => (v === null ? null : { value: v, source: 'קונצנזוס', asOf: '2026-10-17' })) });
+
+  test('FY+2 and FY+3 from the consensus; the fade starts after them', () => {
+    const e = evaluateDcf({ mode: 'auto', snapshot: nowSnap, overrides: consensus([null, 0.186, 0.165, null, null]), valuationDate: DATE });
+    const g = e.model.scenarios.find((s) => s.key === 'base').growth;
+    expect(g[0]).toBeCloseTo(e.derived.growth1.value, 12);
+    expect(g[1]).toBe(0.186);
+    expect(g[2]).toBe(0.165);
+    expect(g[3]).toBeCloseTo(0.035 + (0.165 - 0.035) * 0.5, 12);
+    expect(g[4]).toBeCloseTo(0.035 + (g[3] - 0.035) * 0.5, 12);
+    expect(e.schedules.growthSources.map((s) => s.kind)).toEqual(['consensus', 'consensus', 'consensus', 'rule', 'rule']);
+    expect(e.warnings.join(' ')).not.toMatch(/FY\+2 אינה מקונצנזוס/);
+  });
+
+  test('no FY+2 figure: the warning; k is a visible rule, 0.5 by default', () => {
+    const e = evaluateDcf({ mode: 'auto', snapshot: nowSnap, valuationDate: DATE });
+    expect(e.warnings).toContain('צמיחה ב-FY+2 אינה מקונצנזוס - היא נגזרת מכלל הדעיכה');
+    expect(DEFAULT_RULES.fadeK).toBe(0.5);
+    const slower = evaluateDcf({ mode: 'auto', snapshot: nowSnap, rules: Object.assign({}, DEFAULT_RULES, { fadeK: 0.8 }), valuationDate: DATE });
+    expect(slower.model.scenarios[1].growth[1]).toBeCloseTo(0.035 + (e.derived.growth1.value - 0.035) * 0.8, 12);
+  });
+});
+
+describe('the manual NOW preset', () => {
+  const e = evaluateDcf({ mode: 'manual', manual: NOW_PRESET, valuationDate: DATE });
+  const keys = ['bear', 'base', 'bull'];
+  const withInputs = (key, extra) => Object.assign({}, NOW_PRESET.base, NOW_PRESET.scenarios.find((s) => s.key === key), extra || {});
+
+  test('WACC 9.33%', () => within(e.main.wacc * 100, 9.33, 0.005));
+  test('per share 60.1 / 127.4 / 166.5, weighted 120.3', () => {
+    [60.1, 127.4, 166.5].forEach((v, i) => within(perShare(e)[i], v, 1));
+    within(e.weighted, 120.3, 1);
+  });
+  test('IRR 6.0% / 8.8% / 10.3%', () => [6.0, 8.8, 10.3].forEach((v, i) => within(impliedReturn(withInputs(keys[i])) * 100, v, 0.05)));
+  test('terminal value share 76% / 81% / 82%', () => [76, 81, 82].forEach((v, i) => within(e.results[keys[i]].tvShare * 100, v, 0.5)));
+  test('exit multiple 20x: 66 / 140 / 184; 25x: 79 / 170 / 223', () => {
+    [
+      [20, [66, 140, 184]],
+      [25, [79, 170, 223]]
+    ].forEach(([m, values]) => values.forEach((v, i) => within(runDcf(withInputs(keys[i], { terminalMethod: 'exit', exitMultiple: m })).perShare, v, 1)));
+  });
+  test('sensitivity, base, gT 3.5%, WACC -2..+2: 198 / 155 / 127 / 108 / 93', () => {
+    [198, 155, 127, 108, 93].forEach((v, i) => within(sensitivity(withInputs('base')).values[2][i], v, 1));
+  });
+});
+
+describe('implied growth (reverse DCF)', () => {
+  test('one constant growth rate for all five years that gives back the price', () => {
+    const e = evaluateDcf({ mode: 'auto', snapshot: nowSnap, valuationDate: DATE });
+    const inputs = Object.assign({}, e.model.base, e.model.scenarios.find((s) => s.key === 'base'));
+    const g = impliedConstantGrowth(inputs);
+    within(runDcf(Object.assign({}, inputs, { growth: [g, g, g, g, g] })).perShare, inputs.price, 1e-6);
+    expect(e.impliedGrowth).toBe(g);
+  });
+});
+
+describe('the input card, v2', () => {
+  test('cash parts, the FCF basis, per-year sources, the added figures and the warnings - and it still reproduces', () => {
+    const overrides = {
+      growth: [null, { value: 0.186, source: 'קונצנזוס', asOf: '2026-10-17' }, null, null, null],
+      fcfMargin: [{ value: 0.36, source: 'הנחיה', asOf: '2026-07-23' }, null, null, null, null],
+      normalizedFcfTtm: { value: 4.92 * B, source: 'דוח החברה', asOf: '2026-07-23' },
+      fcfBasis: 'reported'
+    };
+    const e = evaluateDcf({ mode: 'auto', snapshot: nowSnap, overrides, valuationDate: DATE });
+    const card = JSON.parse(JSON.stringify(buildInputCard(e, nowSnap, 'NOW')));
+    [['cash', 2.503], ['shortTermInvestments', 2.161], ['longTermMarketable', 2.043]].forEach(([k, v]) => expect(card.cash.parts[k] / B).toBeCloseTo(v, 6));
+    expect(card.fcfBasis.chosen).toBe('reported');
+    expect(card.fcfBasis.normalized.value).toBe(4.92 * B);
+    expect(card.sources.growth.map((s) => s.kind)).toEqual(['consensus', 'consensus', 'rule', 'rule', 'rule']);
+    expect(card.sources.fcfMargin.map((s) => s.kind)).toEqual(['guidance', 'held', 'held', 'held', 'held']);
+    expect(card.overrides.growth[1].value).toBe(0.186);
+    expect(card.warnings).toEqual(e.warnings);
+    expect(card.notes.join(' ')).toMatch(/החלק שנותר מהשנה הנוכחית/);
+    const { fromInputs, fromRaw } = reproduceFromCard(card);
+    ['bear', 'base', 'bull'].forEach((k) => {
+      expect(fromInputs.results[k].perShare).toBe(card.results.scenarios[k].perShare);
+      expect(fromRaw.results[k].perShare).toBe(card.results.scenarios[k].perShare);
+    });
   });
 });
