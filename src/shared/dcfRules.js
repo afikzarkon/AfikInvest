@@ -618,9 +618,11 @@ function buildInputCard(evaluation, snapshot, ticker) {
           basicShares: m.base.basicShares,
           dilutedShares: m.base.dilutedShares,
           debt: m.base.debt,
-          debtNote: 'חוב קצר + חוב ארוך, ללא התחייבויות חכירה',
+          debtNote: e.mode === 'manual' ? 'הוזן ידנית' : 'חוב קצר + חוב ארוך, ללא התחייבויות חכירה',
           cash: m.base.cash,
-          cashNote: 'מזומן + השקעות לטווח קצר + ניירות ערך סחירים לטווח ארוך, ללא השקעות אסטרטגיות',
+          // A manual figure is whatever was entered (the AVGO preset's 24.0B
+          // is cash only); the rule's composition is stated only for auto.
+          cashNote: e.mode === 'manual' ? 'הוזן ידנית' : 'מזומן + השקעות לטווח קצר + ניירות ערך סחירים לטווח ארוך, ללא השקעות אסטרטגיות',
           rev0: m.base.rev0,
           price: m.base.price,
           deductSbc: m.base.deductSbc !== false,
