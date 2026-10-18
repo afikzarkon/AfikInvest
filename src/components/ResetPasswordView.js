@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import BrandLogo from './ui/BrandLogo';
 import { postAuth } from '../authApi';
 
 // The page a reset email links to (/reset-password?token=...). App.js reads
@@ -115,8 +116,10 @@ function ResetPasswordView({ token, onDone }) {
   return (
     <div className="auth-screen">
       <div className="auth-card">
-        <h1 className="auth-title">AfikInvest</h1>
-        <p className="auth-subtitle">בחירת סיסמה חדשה</p>
+        <div className="auth-brand">
+          <BrandLogo variant="full" />
+        </div>
+        <h1 className="auth-title">בחירת סיסמה חדשה</h1>
         {body}
       </div>
     </div>

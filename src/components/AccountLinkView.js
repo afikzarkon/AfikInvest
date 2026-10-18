@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import BrandLogo from './ui/BrandLogo';
 import { apiUrl } from '../apiBase';
 import { postAuth } from '../authApi';
 import { setAuthToken } from '../authToken';
@@ -149,10 +150,7 @@ function AccountLinkView({ link, onAuthenticated, onDone }) {
     <div className="auth-screen">
       <div className="auth-card">
         <div className="auth-brand">
-          <span className="side-nav-mark" aria-hidden="true">
-            ₪
-          </span>
-          <span>AfikInvest</span>
+          <BrandLogo variant="full" />
         </div>
         {state.status === 'loading' ? (
           <p className="auth-step-text" role="status">

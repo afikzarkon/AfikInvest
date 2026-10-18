@@ -1,4 +1,5 @@
 import React from 'react';
+import BrandLogo from './ui/BrandLogo';
 import ThemeToggleButton from './ThemeToggleButton';
 import Avatar from './ui/Avatar';
 import { NAV_GROUPS, ROUTES, routeByKey } from '../router/routes';
@@ -122,9 +123,7 @@ function SideNav({ activePage, onNavigate, user, onLogout, theme, onToggleTheme,
   return (
     <nav className="side-nav" aria-label="ניווט ראשי">
       <div className="side-nav-brand">
-        <span className="side-nav-mark" aria-hidden="true">
-          ₪
-        </span>
+        <BrandLogo className="side-nav-logo" />
         <span className="side-nav-brand-text">AfikInvest</span>
       </div>
 

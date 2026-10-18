@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import BrandLogo from './ui/BrandLogo';
 import { getApiBase, apiUrl } from '../apiBase';
 import { postAuth } from '../authApi';
 import { setAuthToken } from '../authToken';
@@ -532,10 +533,7 @@ function AuthView({ onAuthenticated, initialMode = 'register', initialNotice = '
     <div className="auth-screen">
       <div className="auth-card">
         <div className="auth-brand">
-          <span className="side-nav-mark" aria-hidden="true">
-            ₪
-          </span>
-          <span>AfikInvest</span>
+          <BrandLogo variant="full" />
         </div>
         <h1 className="auth-title">אפיק ההשקעות שלך</h1>
         <p className="auth-subtitle">{subtitle}</p>

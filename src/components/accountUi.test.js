@@ -183,3 +183,23 @@ describe('legal pages', () => {
     expect(container.textContent).not.toMatch(/סייבר|אל תזינו|אין להזין/);
   });
 });
+
+describe('the logo', () => {
+  const BrandLogo = require('./ui/BrandLogo').default;
+
+  test('carries both theme versions; the full logo is named, the emblem is decorative', () => {
+    const { container, rerender } = render(<BrandLogo variant="full" />);
+    const imgs = container.querySelectorAll('img');
+    expect([...imgs].map((i) => i.getAttribute('src'))).toEqual(['/brand/logo.png', '/brand/logo-dark.png']);
+    expect(imgs[0]).toHaveAttribute('alt', 'AfikInvest');
+    rerender(<BrandLogo />);
+    expect(container.querySelector('img')).toHaveAttribute('src', '/brand/mark.png');
+    expect(container.querySelector('img')).toHaveAttribute('alt', '');
+  });
+
+  test('the sign-in screen shows it', () => {
+    mockFetch();
+    render(<AuthView onAuthenticated={jest.fn()} initialMode="login" />);
+    expect(screen.getAllByRole('img', { name: 'AfikInvest' }).length).toBeGreaterThan(0);
+  });
+});

@@ -5034,18 +5034,37 @@ select {
   padding: 6px 10px 18px;
 }
 
-.side-nav-mark {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: var(--sw-radius-sm);
-  background: linear-gradient(135deg, var(--sw-accent-strong), var(--sw-accent-2));
-  color: #ffffff;
-  font-weight: 700;
-  font-size: 1rem;
-  box-shadow: 0 4px 14px var(--sw-accent-glow);
+/* The logo (components/ui/BrandLogo.js): both theme versions are in the
+   page, and the theme decides which one shows. */
+.brand-logo {
+  display: inline-flex;
   flex-shrink: 0;
+}
+
+.brand-logo img {
+  display: block;
+  height: 100%;
+  width: auto;
+}
+
+.brand-logo .brand-logo-dark {
+  display: none;
+}
+
+[data-theme='dark'] .brand-logo .brand-logo-light {
+  display: none;
+}
+
+[data-theme='dark'] .brand-logo .brand-logo-dark {
+  display: block;
+}
+
+.side-nav-logo {
+  height: 34px;
+}
+
+.auth-brand .brand-logo-full {
+  height: 92px;
 }
 
 .side-nav-brand-text {

@@ -76,3 +76,11 @@ test('as sent: multipart/alternative, UTF-8 subject and body, no password', asyn
     process.env = env;
   }
 });
+
+test('the logo heads the email when the site has a public https address, the name otherwise', () => {
+  const { brandHeader } = require('./layout');
+  expect(brandHeader('https://www.afikinvest.com/')).toContain('src="https://www.afikinvest.com/brand/logo-email.png"');
+  expect(brandHeader('https://www.afikinvest.com')).toContain('alt="AfikInvest"');
+  expect(brandHeader('http://localhost:3000')).not.toContain('<img');
+  expect(brandHeader('')).toContain('AfikInvest');
+});

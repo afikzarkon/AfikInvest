@@ -11,6 +11,7 @@
 // buildWelcomeEmail returns { subject, html, text }; nodemailer sends the
 // html and text together as multipart/alternative.
 const { escapeHtml } = require('./html');
+const { brandHeader } = require('./layout');
 
 const APP_NAME = 'AfikInvest';
 
@@ -181,7 +182,7 @@ function buildWelcomeEmail({ name = '', email = '', appUrl = '', contactEmail = 
       <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" dir="rtl"
              style="width:100%;max-width:600px;background:${COLORS.card};border-radius:12px;">
         <tr><td dir="rtl" style="padding:32px 20px;text-align:right;">
-            <p style="margin:0 0 24px;font-family:${FONT};font-size:24px;font-weight:bold;color:${COLORS.brand};">${APP_NAME}</p>
+            ${brandHeader(appUrl, { margin: '0 0 24px' })}
             <h1 style="margin:0 0 16px;font-family:${FONT};font-size:24px;line-height:1.3;color:${COLORS.text};">${escapeHtml(greeting)}</h1>
             ${p(`ההרשמה ל-${APP_NAME} הושלמה בהצלחה${email ? ` - החשבון <strong dir="ltr">${escapeHtml(email)}</strong> מוכן לשימוש` : ''}.`)}
             ${p(escapeHtml(INTRO))}

@@ -69,11 +69,12 @@ function PortfolioActionsToolbar({
     try {
       // The report's sector donut needs each US ticker's sector, which only
       // the analysis page loads; and its cover says when prices were taken.
-      const [{ downloadPortfolioPdf }, sectorBySymbol] = await Promise.all([
-        import('../utils/exportReport'),
-        loadStockSectors((exportPortfolioData.americanStocks || []).map((s) => s.stockName))
+      const report = await import('../utils/exportReport');
+      const [sectorBySymbol, logo] = await Promise.all([
+        loadStockSectors((exportPortfolioData.americanStocks || []).map((s) => s.stockName)),
+        report.loadReportLogo ? report.loadReportLogo() : null
       ]);
-      downloadPortfolioPdf({ ...exportPortfolioData, sectorBySymbol, pricesAsOf: pricesLastRefreshAt });
+      report.downloadPortfolioPdf({ ...exportPortfolioData, sectorBySymbol, pricesAsOf: pricesLastRefreshAt, logo });
     } catch {
       setExportError('שגיאה בייצוא ל-PDF, נסה שוב');
     }

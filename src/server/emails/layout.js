@@ -28,6 +28,18 @@ function codeBlock(code) {
   return `<p dir="ltr" style="margin:8px 0 24px;font-family:${FONT};font-size:30px;font-weight:bold;letter-spacing:8px;color:#1f2937;text-align:center;">${escapeHtml(code)}</p>`;
 }
 
+// The logo at the top of every email. It is an image the site serves, so
+// only with a public https address (APP_URL); otherwise - in development,
+// or for a client that blocks images - the name stands in as text (alt).
+function brandHeader(appUrl = process.env.APP_URL, { margin = '0 0 20px' } = {}) {
+  const base = String(appUrl || '').trim().replace(/\/+$/, '');
+  if (!/^https:\/\//.test(base)) {
+    return para(APP_NAME, { size: 22, color: '#1d4ed8', margin }).replace('font-size:22px;', 'font-size:22px;font-weight:bold;');
+  }
+  return `<p dir="rtl" style="margin:${margin};text-align:right;"><img src="${escapeHtml(base)}/brand/logo-email.png" width="140" alt="${APP_NAME}"
+    style="display:inline-block;width:140px;max-width:140px;height:auto;border:0;outline:none;text-decoration:none;font-family:${FONT};font-size:22px;font-weight:bold;color:#1d4ed8;"></p>`;
+}
+
 // A link shown as text, for clients that hide the button.
 const rawLink = (href) =>
   `<p dir="ltr" style="margin:0 0 16px;font-family:${FONT};font-size:12px;color:#6b7280;text-align:left;word-break:break-all;">${escapeHtml(href)}</p>`;
@@ -51,7 +63,7 @@ function layout({ title, bodyHtml, kind = 'security', unsubscribeUrl = '' }) {
       <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" dir="rtl"
              style="width:100%;max-width:600px;background:#ffffff;border-radius:12px;">
         <tr><td dir="rtl" style="padding:32px 24px;text-align:right;">
-          ${para(APP_NAME, { size: 22, color: '#1d4ed8', margin: '0 0 20px' }).replace('font-size:22px;', 'font-size:22px;font-weight:bold;')}
+          ${brandHeader()}
           ${bodyHtml}
           ${para(`ההודעה נשלחה אוטומטית מ-${APP_NAME}.${footer ? ` ${footer}` : ''}`, { size: 12, color: '#6b7280', margin: '24px 0 0' })}
         </td></tr>
@@ -62,4 +74,4 @@ function layout({ title, bodyHtml, kind = 'security', unsubscribeUrl = '' }) {
 </html>`;
 }
 
-module.exports = { APP_NAME, layout, para, button, codeBlock, rawLink, escapeHtml };
+module.exports = { APP_NAME, layout, para, button, codeBlock, rawLink, escapeHtml, brandHeader };

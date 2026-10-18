@@ -246,7 +246,10 @@ const numericColumns = (rows, headers) =>
 // the moment its figures are true for. A report that outlives the screen
 // it came from has to carry its own date - and say which figures are
 // older than that date and where they come from (see buildReportAsOf).
-function drawCoverHeader(doc, asOf) {
+//
+// logo: the light emblem as a PNG data URL (see loadReportLogo), drawn at
+// the band's left edge before the name; without it the name stands alone.
+function drawCoverHeader(doc, asOf, logo = null) {
   doc.setFillColor(...ACCENT);
   doc.rect(0, 0, PAGE_WIDTH, 36, 'F');
 
@@ -263,10 +266,19 @@ function drawCoverHeader(doc, asOf) {
 
   // The product name stays Latin and stays on its own text() call - see
   // toPdfDisplayText's note on why a mixed-script string is not safe here.
+  let nameX = MARGIN;
+  if (logo) {
+    try {
+      doc.addImage(logo, 'PNG', MARGIN, 8, 24, 20);
+      nameX = MARGIN + 27;
+    } catch {
+      // An unreadable image is not worth a failed report.
+    }
+  }
   doc.setFontSize(13);
-  doc.text('AfikInvest', MARGIN, 15);
+  doc.text('AfikInvest', nameX, 17);
   doc.setFontSize(8);
-  doc.text('Portfolio Report', MARGIN, 21);
+  doc.text('Portfolio Report', nameX, 23);
 
   doc.setTextColor(...INK);
 }
@@ -658,7 +670,8 @@ export function buildPortfolioPdfDoc(data) {
       generatedAt: data.generatedAt || new Date(),
       pricesAsOf: data.pricesAsOf || null,
       pensionFunds: data.pensionFunds
-    })
+    }),
+    data.logo || null
   );
 
   const flow = createFlow(doc);
@@ -706,6 +719,24 @@ export function buildPortfolioPdfDoc(data) {
   stampFooters(doc);
 
   return doc;
+}
+
+// The emblem for the cover band, as a data URL; null if it cannot be
+// fetched - the report then goes out with the name alone.
+export async function loadReportLogo(url = `${process.env.PUBLIC_URL || ''}/brand/mark-dark.png`) {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
 }
 
 export function downloadPortfolioPdf(data) {

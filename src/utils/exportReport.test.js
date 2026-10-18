@@ -153,5 +153,17 @@ describe('buildPortfolioPdfDoc', () => {
     const doc = buildPortfolioPdfDoc(sampleData);
     expect(doc.getFontList().Alef).toBeDefined();
   });
+
+  // The cover carries the logo when one was loaded, and a broken or missing
+  // one never costs the user the report.
+  test('draws the logo on the cover, and goes on without a usable one', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const png = fs.readFileSync(path.join(__dirname, '..', '..', 'public', 'brand', 'mark-dark.png')).toString('base64');
+    const withLogo = buildPortfolioPdfDoc({ ...sampleData, logo: `data:image/png;base64,${png}` }).output('arraybuffer').byteLength;
+    const without = buildPortfolioPdfDoc(sampleData).output('arraybuffer').byteLength;
+    expect(withLogo).toBeGreaterThan(without);
+    expect(() => buildPortfolioPdfDoc({ ...sampleData, logo: 'data:image/png;base64,bm90IGEgcG5n' })).not.toThrow();
+  });
 });
 

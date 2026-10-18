@@ -1,4 +1,5 @@
 import React from 'react';
+import BrandLogo from './ui/BrandLogo';
 
 // /terms and /privacy - public pages, readable signed in or out (the
 // sign-up form links to them, and Google and Facebook require a privacy
@@ -245,10 +246,7 @@ function LegalPage({ path, onBack }) {
     <div className="legal-page">
       <article className="legal-card">
         <div className="auth-brand">
-          <span className="side-nav-mark" aria-hidden="true">
-            ₪
-          </span>
-          <span>AfikInvest</span>
+          <BrandLogo variant="full" />
         </div>
         {path === '/privacy' ? <Privacy /> : <Terms />}
         <nav className="legal-nav" aria-label="מסמכים">
