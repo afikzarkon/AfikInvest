@@ -94,6 +94,21 @@ function openSqlite(dbPathOverride) {
   return db;
 }
 
+// The account lifecycle's columns (see accountStore.js), in both databases:
+//   email_verified_at - when the address was proven (ISO text); NULL until
+//                       then. Backfilled for accounts that predate it.
+//   password_set      - 0 for an account opened through Google/Facebook or a
+//                       sign-in link, whose password_hash is a random value
+//                       nobody knows.
+//   deleted_at / purge_after - a deletion request and when its grace period
+//                       ends (ISO text); signing in before then restores it.
+const ACCOUNT_COLUMNS_SQLITE = [
+  ['email_verified_at', 'TEXT'],
+  ['password_set', 'INTEGER NOT NULL DEFAULT 1'],
+  ['deleted_at', 'TEXT'],
+  ['purge_after', 'TEXT']
+];
+
 // Columns and table behind session revocation, 2FA and password reset.
 // SQLite has no ADD COLUMN IF NOT EXISTS, so check the existing columns.
 function migrateSqliteAuth(db) {
@@ -102,11 +117,15 @@ function migrateSqliteAuth(db) {
     ['token_version', 'INTEGER NOT NULL DEFAULT 0'],
     ['totp_secret', 'TEXT'],
     ['totp_enabled', 'INTEGER NOT NULL DEFAULT 0'],
-    ['totp_last_step', 'INTEGER']
+    ['totp_last_step', 'INTEGER'],
+    ...ACCOUNT_COLUMNS_SQLITE
   ];
   add.forEach(([name, type]) => {
     if (!have.has(name)) db.exec(`ALTER TABLE users ADD COLUMN ${name} ${type}`);
   });
+  // Accounts from before email verification existed count as verified - as
+  // of when they were created - so nobody is locked out by the change.
+  if (!have.has('email_verified_at')) db.exec('UPDATE users SET email_verified_at = created_at');
   db.exec(`
     CREATE TABLE IF NOT EXISTS password_reset_tokens (
       token_hash TEXT PRIMARY KEY,
@@ -119,7 +138,7 @@ function migrateSqliteAuth(db) {
 }
 
 const AUTH_USER_COLUMNS =
-  'id, email, password_hash, token_version, totp_secret, totp_enabled, totp_last_step';
+  'id, email, password_hash, token_version, totp_secret, totp_enabled, totp_last_step, email_verified_at, password_set, deleted_at, purge_after';
 
 // One shape for both databases (SQLite stores booleans as 0/1, Postgres
 // returns BIGINT as a string).
@@ -132,7 +151,11 @@ function toAuthUser(row) {
     token_version: Number(row.token_version) || 0,
     totp_secret: row.totp_secret || null,
     totp_enabled: row.totp_enabled === true || Number(row.totp_enabled) === 1,
-    totp_last_step: row.totp_last_step == null ? null : Number(row.totp_last_step)
+    totp_last_step: row.totp_last_step == null ? null : Number(row.totp_last_step),
+    email_verified_at: row.email_verified_at || null,
+    password_set: row.password_set === undefined || row.password_set === null ? true : Number(row.password_set) === 1 || row.password_set === true,
+    deleted_at: row.deleted_at || null,
+    purge_after: row.purge_after || null
   };
 }
 
@@ -148,11 +171,12 @@ function sqliteStore(db) {
     async findUserIdByEmail(email) {
       return db.prepare('SELECT id FROM users WHERE email = ?').get(email) || null;
     },
-    async insertUser(email, passwordHash) {
-      const r = db.prepare('INSERT INTO users (email, password_hash) VALUES (?, ?)').run(
-        email,
-        passwordHash
-      );
+    // emailVerified: the address is already proven (a provider that verified
+    // it); passwordSet false: password_hash is a random value nobody knows.
+    async insertUser(email, passwordHash, { emailVerified = false, passwordSet = true } = {}) {
+      const r = db
+        .prepare('INSERT INTO users (email, password_hash, email_verified_at, password_set) VALUES (?, ?, ?, ?)')
+        .run(email, passwordHash, emailVerified ? new Date().toISOString() : null, passwordSet ? 1 : 0);
       return { id: Number(r.lastInsertRowid) };
     },
     async findUserForLogin(email) {
@@ -214,7 +238,7 @@ function sqliteStore(db) {
         if (!row) return null;
         const userId = Number(row.user_id);
         db.prepare('DELETE FROM password_reset_tokens WHERE user_id = ?').run(userId);
-        db.prepare('UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?').run(
+        db.prepare('UPDATE users SET password_hash = ?, password_set = 1, token_version = token_version + 1 WHERE id = ?').run(
           passwordHash,
           userId
         );
@@ -393,8 +417,22 @@ async function pgStore(connectionString) {
       ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0,
       ADD COLUMN IF NOT EXISTS totp_secret TEXT,
       ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN NOT NULL DEFAULT FALSE,
-      ADD COLUMN IF NOT EXISTS totp_last_step BIGINT;
+      ADD COLUMN IF NOT EXISTS totp_last_step BIGINT,
+      ADD COLUMN IF NOT EXISTS password_set INTEGER NOT NULL DEFAULT 1,
+      ADD COLUMN IF NOT EXISTS deleted_at TEXT,
+      ADD COLUMN IF NOT EXISTS purge_after TEXT;
   `);
+  // email_verified_at: added with a marker default, so the rows that exist
+  // at that moment - and only they - get it; those are then dated to their
+  // creation (counted as verified, nobody is locked out) and the default
+  // dropped, so a new account starts unverified. Every step is a no-op on a
+  // later start.
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TEXT DEFAULT '__backfill__'`);
+  await pool.query(
+    `UPDATE users SET email_verified_at = to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+     WHERE email_verified_at = '__backfill__'`
+  );
+  await pool.query('ALTER TABLE users ALTER COLUMN email_verified_at DROP DEFAULT');
   await pool.query(`
     CREATE TABLE IF NOT EXISTS password_reset_tokens (
       token_hash TEXT PRIMARY KEY,
@@ -754,10 +792,10 @@ async function pgStore(connectionString) {
       const { rows } = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
       return rows[0] || null;
     },
-    async insertUser(email, passwordHash) {
+    async insertUser(email, passwordHash, { emailVerified = false, passwordSet = true } = {}) {
       const { rows } = await pool.query(
-        'INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id',
-        [email, passwordHash]
+        'INSERT INTO users (email, password_hash, email_verified_at, password_set) VALUES ($1, $2, $3, $4) RETURNING id',
+        [email, passwordHash, emailVerified ? new Date().toISOString() : null, passwordSet ? 1 : 0]
       );
       return { id: Number(rows[0].id) };
     },
@@ -833,7 +871,7 @@ async function pgStore(connectionString) {
         }
         const userId = Number(rows[0].user_id);
         await client.query('DELETE FROM password_reset_tokens WHERE user_id = $1', [userId]);
-        await client.query('UPDATE users SET password_hash = $1, token_version = token_version + 1 WHERE id = $2', [
+        await client.query('UPDATE users SET password_hash = $1, password_set = 1, token_version = token_version + 1 WHERE id = $2', [
           passwordHash,
           userId
         ]);

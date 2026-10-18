@@ -3,6 +3,7 @@
 // job runner.
 const { initDataStore } = require('./dataStore');
 const { initFeatureStore } = require('./featureStore');
+const { initAccountStore } = require('./accountStore');
 const { createMarketData } = require('./alertEngine');
 const { createJobRunner } = require('./jobRunner');
 const { createJobHandlers } = require('./jobs');
@@ -10,12 +11,13 @@ const { createJobHandlers } = require('./jobs');
 async function bootstrapServices() {
   const store = await initDataStore();
   const features = await initFeatureStore(store);
+  const accounts = await initAccountStore(store);
   const marketData = createMarketData();
   const runner = createJobRunner({
     features,
     handlers: createJobHandlers({ store, features, marketData })
   });
-  return { store, features, marketData, runner };
+  return { store, features, accounts, marketData, runner };
 }
 
 module.exports = { bootstrapServices };
