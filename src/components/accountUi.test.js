@@ -164,3 +164,22 @@ test('without the privacy context, no eye is drawn', async () => {
   const { container } = render(<PrivacyToggle />);
   await waitFor(() => expect(container).toBeEmptyDOMElement());
 });
+
+describe('legal pages', () => {
+  const LegalPage = require('./LegalPage').default;
+
+  test('the terms say plainly that nothing is investment or tax advice', () => {
+    render(<LegalPage path="/terms" onBack={jest.fn()} />);
+    expect(screen.getByRole('heading', { name: /אין ייעוץ השקעות ואין המלצה/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /אין ייעוץ מס/ })).toBeInTheDocument();
+    expect(screen.getByText(/חוק הסדרת העיסוק בייעוץ השקעות/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /הגבלת אחריות/ })).toBeInTheDocument();
+  });
+
+  test('the privacy policy commits to confidentiality and drops the old warnings', () => {
+    const { container } = render(<LegalPage path="/privacy" onBack={jest.fn()} />);
+    expect(screen.getByRole('heading', { name: 'סודיות' })).toBeInTheDocument();
+    expect(screen.getByText(/איננו מוכרים, משכירים או סוחרים במידע/)).toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/סייבר|אל תזינו|אין להזין/);
+  });
+});

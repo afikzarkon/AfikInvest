@@ -5,14 +5,28 @@ import BetaBanner from './BetaBanner';
 describe('BetaNoticeModal', () => {
   const noop = () => {};
 
-  // The four things the notice exists to say. Asserted by their substance
+  // The things the notice exists to say. Asserted by their substance
   // rather than by exact sentence, so rewording the copy does not fail the
-  // test but dropping one of the warnings does.
-  test('states that the system is a beta, is not secured, and must not hold real data', () => {
+  // test but dropping one of them does.
+  test('states that the system is a beta and that nothing in it is investment advice', () => {
     render(<BetaNoticeModal onAcknowledge={noop} />);
-    expect(screen.getByText(/בשלב בדיקות/)).toBeInTheDocument();
-    expect(screen.getByText(/אינה מאובטחת סייבר/)).toBeInTheDocument();
-    expect(screen.getByText(/אין להזין נתונים פיננסיים אמיתיים/)).toBeInTheDocument();
+    expect(screen.getByText(/נמצאת כרגע בשלב בדיקות/)).toBeInTheDocument();
+    expect(screen.getByText(/אין כאן ייעוץ השקעות או המלצה/)).toBeInTheDocument();
+    expect(screen.getByText(/ההחלטות והאחריות שלכם/)).toBeInTheDocument();
+  });
+
+  // The site is no longer described as unsecured or as a place for dummy
+  // data only - it says how the data is kept instead.
+  test('promises confidentiality rather than warning off real data', () => {
+    const { container } = render(<BetaNoticeModal onAcknowledge={noop} />);
+    expect(screen.getByText(/המידע שלכם נשמר בסודיות/)).toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/סייבר|נתוני דמה|אין להזין/);
+  });
+
+  test('links the terms and the privacy policy it asks the user to accept', () => {
+    render(<BetaNoticeModal onAcknowledge={noop} />);
+    expect(screen.getByRole('link', { name: 'תנאי השימוש' })).toHaveAttribute('href', '/terms');
+    expect(screen.getByRole('link', { name: 'מדיניות הפרטיות' })).toHaveAttribute('href', '/privacy');
   });
 
   test('warns that the tax figures are an estimate and points at a professional', () => {
@@ -61,9 +75,22 @@ describe('BetaNoticeModal', () => {
 });
 
 describe('BetaBanner', () => {
-  test('leads with the data warning on the screens where figures are typed', () => {
-    render(<BetaBanner tone="data" />);
-    expect(screen.getByText(/אין להזין נתונים אמיתיים/)).toBeInTheDocument();
+  test('says the typed-in figures are kept confidential, where figures are typed', () => {
+    const { container } = render(<BetaBanner tone="data" />);
+    expect(screen.getByText(/נשמרים בסודיות/)).toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/סייבר|נתוני דמה|אין להזין/);
+  });
+
+  test('says a valuation is not a recommendation to buy or sell', () => {
+    render(<BetaBanner tone="invest" />);
+    expect(screen.getByText(/אין זו המלצה/)).toBeInTheDocument();
+    expect(screen.getByText(/אינם ייעוץ השקעות, המלצה או הצעה לקנות או למכור/)).toBeInTheDocument();
+  });
+
+  test('says suggested actions are not advice, and the tax in them an estimate', () => {
+    render(<BetaBanner tone="advice" />);
+    expect(screen.getByText(/ואינן ייעוץ השקעות, ייעוץ מס או המלצה לבצע פעולה/)).toBeInTheDocument();
+    expect(screen.getByText(/חישובי המס הם אומדן בלבד/)).toBeInTheDocument();
   });
 
   test('leads with the estimate warning where a tax figure is being claimed', () => {

@@ -149,7 +149,7 @@ function RecommendationsView({
       <div className="analysis-container">
         <div className="analysis-content">
           <PageToolbar title="המלצות" subtitle="איזון, מימוש רווחים, קיזוז הפסדים ומזומן עודף - לפי היעדים והספים שלכם" />
-          <BetaBanner tone="tax" />
+          <BetaBanner tone="advice" />
 
           <div className="analysis-section">
             {!hasTargets && (

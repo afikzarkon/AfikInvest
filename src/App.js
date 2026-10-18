@@ -229,7 +229,7 @@ function App() {
   const [editingField, setEditingField] = useState(null);
   const [expandedGroups, setExpandedGroups] = useState({});
 
-  // The beta/security disclaimer (see BetaNoticeModal.js). Plain component
+  // The beta and legal notice (see BetaNoticeModal.js). Plain component
   // state, not localStorage: it is meant to be seen on every arrival -
   // each login and each refresh - so there is deliberately nothing here
   // that outlives the page.
@@ -1081,8 +1081,8 @@ function App() {
   return (
     <PrivacyContext.Provider value={{ hideAmounts: accountState.hideAmounts, toggle: () => accountState.setHideAmounts(!accountState.hideAmounts) }}>
       {/* Rendered outside the shell, over everything, and before the page
-          is usable - it states what must not be typed into the system, so
-          it has to arrive ahead of the screens that invite typing. */}
+          is usable - it states how everything on the screens behind it may
+          be relied on, so it has to arrive ahead of them. */}
       {!betaNoticeAcknowledged && (
         <BetaNoticeModal onAcknowledge={() => setBetaNoticeAcknowledged(true)} />
       )}

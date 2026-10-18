@@ -96,7 +96,7 @@ const PASSWORD_MIN = 8;
 const PASSWORD_MAX = 128;
 // bcrypt reads only the first 72 bytes.
 const PASSWORD_MAX_BYTES = 72;
-const TERMS_VERSION = '2026-10';
+const TERMS_VERSION = '2026-10b';
 
 const emailSchema = z
   .string({ error: 'יש להזין כתובת אימייל' })

@@ -94,7 +94,7 @@ function ValuationView({ americanStocks = [] }) {
       <div className="analysis-container">
         <div className="analysis-content">
           <PageToolbar title="הערכת שווי" subtitle="האם המניה זולה או יקרה? שלוש בדיקות פשוטות (מניות אמריקאיות)" />
-          <BetaBanner tone="tax" />
+          <BetaBanner tone="invest" />
 
           <div className="analysis-section">
             <div className="rebalance-sum-row">

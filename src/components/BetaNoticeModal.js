@@ -1,12 +1,13 @@
 import React, { useEffect, useRef } from 'react';
 
-// The disclaimer shown on arrival: what this system is, what it is not
-// secured against, and what must not be typed into it.
+// The notice shown on arrival: the system is in testing, nothing in it is
+// investment or tax advice, the decisions are the user's own, and their
+// data is kept confidential. Acknowledging it is acknowledging the terms.
 //
 // Shown on every load rather than once per browser. A "don't show again"
 // flag would be read as a preference, and this is not one - the warning is
-// about what the user is about to type into the system, so it has to be in
-// front of them each time they arrive at it, including after a refresh.
+// about how everything the user is about to see may be relied on, so it has
+// to be in front of them each time they arrive, including after a refresh.
 //
 // It cannot be dismissed by clicking away or by Escape either. Both are the
 // gestures for closing something optional, and acknowledging what the
@@ -50,32 +51,42 @@ function BetaNoticeModal({ onAcknowledge }) {
 
         <div className="beta-modal-body" id="beta-modal-body">
           <p className="beta-modal-lead">
-            AfikInvest נמצאת כרגע בשלב פיתוח ובדיקות. היא מסופקת כסביבת ניסיון (sandbox) בלבד - לא
-            כמערכת פיננסית לשימוש אמיתי.
+            AfikInvest נמצאת כרגע בשלב בדיקות (Beta). ייתכנו שינויים, תקלות ושיפורים שוטפים, והשירות מסופק כמות שהוא (AS IS).
           </p>
 
           <ul className="beta-modal-list">
             <li>
-              <strong>המערכת אינה מאובטחת סייבר.</strong> אין להסתמך עליה לשמירת מידע רגיש, ואין להניח
-              שהנתונים שיוזנו בה מוגנים או פרטיים.
+              <strong>אין כאן ייעוץ השקעות או המלצה.</strong> AfikInvest ומפעיליה אינם בעלי רישיון לייעוץ השקעות, לשיווק השקעות או לניהול תיקים. הערכות שווי,
+              הצעות איזון, התראות ונתונים הם מידע כללי שנוצר אוטומטית - לא המלצה ולא הצעה לקנות, למכור או להחזיק נייר ערך, והם אינם מתחשבים בנתונים ובצרכים
+              האישיים שלכם.
             </li>
             <li>
-              <strong>אין להזין נתונים פיננסיים אמיתיים.</strong> אל תזינו יתרות, סכומים, מספרי חשבון או
-              פרטים מזהים המייצגים כספים אמיתיים שלכם. השתמשו בנתוני דמה בלבד.
+              <strong>חישובי המס הם אומדן בלבד.</strong> קיזוז הפסדים (Tax-Loss Harvesting), חישובי מס רווח הון וההצמדה למדד הם הערכה חישובית בהנחות מפושטות -
+              לא ייעוץ מס, לא חוות דעת ולא קביעה מחייבת. חבות המס בפועל נקבעת על ידי רשות המסים ועשויה להיות שונה.
             </li>
             <li>
-              <strong>חישובי המס הם אומדן בלבד.</strong> קיזוז הפסדים (Tax-Loss Harvesting), חישובי מס רווח
-              הון וההצמדה למדד המוצגים כאן הם הערכה חישובית - לא חוות דעת, לא ייעוץ מס ולא קביעה מחייבת.
+              <strong>ההחלטות והאחריות שלכם.</strong> כל פעולה בכספים, בניירות ערך או בדיווח למס היא באחריותכם בלבד. מחירים, תשואות ונתונים מגיעים ממקורות
+              חיצוניים ועשויים להיות חלקיים, מתעכבים או שגויים. ביצועי עבר אינם מבטיחים תשואה בעתיד.
             </li>
             <li>
-              <strong>התייעצו עם איש מקצוע מוסמך.</strong> לפני כל פעולה או החלטה בעלת השלכות מס או השקעה,
-              פנו ליועץ מס, רואה חשבון או יועץ השקעות מורשה.
+              <strong>התייעצו עם איש מקצוע מוסמך.</strong> לפני כל החלטה בעלת השלכות מס או השקעה, פנו ליועץ מס, רואה חשבון או יועץ השקעות מורשה.
+            </li>
+            <li>
+              <strong>המידע שלכם נשמר בסודיות.</strong> התקשורת מוצפנת, הסיסמאות נשמרות כגיבוב בלבד, והנתונים שלכם אינם נמכרים, אינם משמשים לפרסום ואינם
+              מועברים לאחרים, מלבד ספקי התשתית הנדרשים להפעלת האתר או כשהדין מחייב.
             </li>
           </ul>
 
           <p className="beta-modal-note">
-            נתונים, מחירים ותשואות עשויים להיות חלקיים, מתעכבים או שגויים. המערכת אינה מהווה המלצה
-            לביצוע פעולה בניירות ערך.
+            ההמשך לשימוש באתר מהווה הסכמה ל
+            <a href="/terms" target="_blank" rel="noopener noreferrer">
+              תנאי השימוש
+            </a>{' '}
+            ול
+            <a href="/privacy" target="_blank" rel="noopener noreferrer">
+              מדיניות הפרטיות
+            </a>
+            .
           </p>
         </div>
 
@@ -86,7 +97,7 @@ function BetaNoticeModal({ onAcknowledge }) {
             onClick={onAcknowledge}
             ref={buttonRef}
           >
-            הבנתי, אני נכנס/ת לסביבת בדיקות
+            קראתי, הבנתי ואני מסכים/ה
           </button>
         </div>
       </div>

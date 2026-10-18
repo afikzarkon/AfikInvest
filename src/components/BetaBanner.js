@@ -1,32 +1,43 @@
 import React from 'react';
 
-// The standing "this is a test system" strip.
+// The standing "this system is in testing" strip, with the legal note that
+// fits the page it sits on.
 //
 // Deliberately a separate component from BetaNoticeModal rather than a
 // prop on it: the modal is an interruption shown once per visit and then
-// dismissed, and the thing a user needs while they are actually typing a
-// balance in is a notice that is still on the page. One says it on
-// arrival; this says it wherever the warning still applies.
+// dismissed, and what a user needs while acting on a figure is a notice
+// that is still on the page. One says it on arrival; this says it wherever
+// it still applies.
 //
-// `tone` picks which half of the warning leads. The pages where money is
-// entered lead with "do not put real figures in"; the tax pages lead with
-// "these numbers are an estimate", because that is the claim being made on
-// the screen the banner is sitting on. The rest get the general one.
+// `tone` picks which note leads: "data" where holdings are typed in, "tax"
+// where a tax figure is claimed, "invest" where a stock is valued, "advice"
+// where actions are suggested, and the general one elsewhere.
+const BETA = 'המערכת בשלב בדיקות (Beta)';
+const NOT_ADVICE = 'אינו ייעוץ השקעות, ייעוץ מס או המלצה לקנות, למכור או להחזיק נייר ערך כלשהו';
+
 const MESSAGES = {
   general: {
-    title: 'המערכת בשלב בדיקות (Beta)',
-    body:
-      'זוהי גרסת ניסיון שאינה מאובטחת סייבר ומיועדת לבדיקות בלבד. אין להזין נתונים פיננסיים אמיתיים או פרטים מזהים.'
+    title: BETA,
+    body: `ייתכנו שינויים ותקלות. התוכן באתר הוא מידע כללי וכלי עזר בלבד, ${NOT_ADVICE}.`
   },
   data: {
-    title: 'המערכת בשלב בדיקות (Beta) - אין להזין נתונים אמיתיים',
-    body:
-      'הזינו נתוני דמה בלבד. המערכת אינה מאובטחת סייבר ואינה מיועדת להחזקת מידע פיננסי אמיתי.'
+    title: BETA,
+    body: `הנתונים שאתם מזינים נשמרים בסודיות בחשבון שלכם בלבד. החישובים הם כלי עזר, ${NOT_ADVICE}.`
   },
   tax: {
-    title: 'המערכת בשלב בדיקות (Beta) - חישובי המס הם אומדן',
+    title: `${BETA} - חישובי המס הם אומדן`,
     body:
-      'קיזוז הפסדים וחישובי המס המוצגים הם הערכה בלבד ואינם ייעוץ או חוות דעת. לפני כל פעולה התייעצו עם יועץ מס או איש מקצוע מוסמך.'
+      'קיזוז ההפסדים וחישובי המס המוצגים הם הערכה בהנחות מפושטות בלבד, ואינם ייעוץ מס, חוות דעת או המלצה לבצע פעולה. חבות המס בפועל נקבעת על ידי רשות המסים ועשויה להיות שונה. לפני כל פעולה התייעצו עם יועץ מס או איש מקצוע מוסמך.'
+  },
+  invest: {
+    title: `${BETA} - אין זו המלצה`,
+    body:
+      'הערכות השווי והחישובים כאן הם מידע כללי שנוצר אוטומטית מנתונים חיצוניים, ואינם ייעוץ השקעות, המלצה או הצעה לקנות או למכור ניירות ערך. הם אינם מתחשבים בנתונים ובצרכים האישיים שלכם. ההחלטה והאחריות שלכם בלבד.'
+  },
+  advice: {
+    title: `${BETA} - הצעות לעיון בלבד`,
+    body:
+      'ההצעות (איזון, מימוש רווחים, קיזוז הפסדים) מחושבות אוטומטית לפי הספים שהגדרתם, ואינן ייעוץ השקעות, ייעוץ מס או המלצה לבצע פעולה. חישובי המס הם אומדן בלבד. לפני כל פעולה התייעצו עם יועץ השקעות מורשה, יועץ מס או איש מקצוע מוסמך.'
   }
 };
 

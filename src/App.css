@@ -7684,6 +7684,11 @@ select {
   color: var(--sw-text-muted);
 }
 
+.beta-modal-note a {
+  color: var(--sw-accent);
+  font-weight: 600;
+}
+
 .beta-modal-actions {
   padding: 16px 24px 22px;
 }
