@@ -1,9 +1,11 @@
 import React from 'react';
-import { readMultiple, describeGap } from '../../utils/valuationInsights';
+import { readMultiple, describeGap, peerStats, PEER_OUTLIER_RATIO } from '../../utils/valuationInsights';
 import { Num, ToneBadge, fmtX, fmtPlain, fmtPct } from './shared';
 
 // The price multiples, first as one card each in plain words, then the full
-// table for whoever wants every number.
+// table for whoever wants every number, and the peers they are compared
+// with. Peers are compared by their MEDIAN; the mean is shown beside it,
+// with a warning when an outlier pulls it to 3x the median or more.
 
 const METRICS = {
   PE: { title: 'מחיר מול רווח', code: 'P/E', per: 'רווח שנתי' },
@@ -32,9 +34,20 @@ function RangeBar({ row }) {
   );
 }
 
-function MultipleCard({ row }) {
+function PeerOutlier({ stats }) {
+  if (!stats.outlier) return null;
+  return (
+    <p className="val-peer-outlier" role="note">
+      הממוצע של החברות הדומות (<Num>{fmtPlain(stats.mean)}</Num>) גבוה פי <Num>{(stats.mean / stats.median).toFixed(1)}</Num> מהחציון (<Num>{fmtPlain(stats.median)}</Num>) - חברה חריגה מושכת אותו
+      למעלה. ההשוואה היא לפי החציון.
+    </p>
+  );
+}
+
+function MultipleCard({ row, peers }) {
   const m = METRICS[row.metric];
   const reading = readMultiple(row);
+  const stats = peerStats(peers, row.metric);
   return (
     <article className="val-card" aria-label={m.title}>
       <header className="val-card-head">
@@ -63,14 +76,23 @@ function MultipleCard({ row }) {
             )}
             {reading.peers !== 'na' && (
               <li>
-                <span>חברות דומות ({row.peerCount})</span>
+                <span>חברות דומות ({row.peerCount}), חציון</span>
                 <span>
                   <Num>{fmtPlain(row.sectorMedian)}</Num> · <strong>{describeGap(row.vsSectorPct)}</strong>
                   <span className="visually-hidden"> ({PEER_WORDS[reading.peers]})</span>
                 </span>
               </li>
             )}
+            {reading.peers !== 'na' && stats.count > 0 && (
+              <li className="val-compare-minor">
+                <span>ממוצע החברות הדומות</span>
+                <span>
+                  <Num>{fmtPlain(stats.mean)}</Num>
+                </span>
+              </li>
+            )}
           </ul>
+          <PeerOutlier stats={stats} />
           <div className="val-range" dir="ltr">
             <RangeBar row={row} />
           </div>
@@ -86,7 +108,7 @@ function MultipleCard({ row }) {
   );
 }
 
-function MultiplesTable({ rows }) {
+function MultiplesTable({ rows, peers }) {
   return (
     <div className="stocks-table-container">
       <table className="analysis-table" aria-label="מכפילים">
@@ -98,6 +120,7 @@ function MultiplesTable({ rows }) {
             <th>חציון 5 שנים</th>
             <th>אחוזון</th>
             <th>חציון מתחרים</th>
+            <th>ממוצע מתחרים</th>
             <th>טווח</th>
           </tr>
         </thead>
@@ -123,6 +146,10 @@ function MultiplesTable({ rows }) {
                 ) : null}
               </td>
               <td>
+                <Num>{fmtX(peerStats(peers, row.metric).mean)}</Num>
+                {peerStats(peers, row.metric).outlier ? <span className="muted-note"> (חריג)</span> : null}
+              </td>
+              <td>
                 <RangeBar row={row} />
               </td>
             </tr>
@@ -136,7 +163,57 @@ function MultiplesTable({ rows }) {
   );
 }
 
-export default function MultiplesSection({ rows }) {
+// The companies the comparison is made with, and each one's multiples.
+function PeerList({ peers }) {
+  if (!peers || !peers.length) return null;
+  return (
+    <div className="stocks-table-container">
+      <table className="analysis-table val-peers" aria-label="חברות להשוואה">
+        <thead>
+          <tr>
+            <th>חברה</th>
+            <th>P/E</th>
+            <th>P/S</th>
+            <th>P/FCF</th>
+          </tr>
+        </thead>
+        <tbody>
+          {peers.map((p) => (
+            <tr key={p.symbol}>
+              <td>
+                <Num>{p.symbol}</Num>
+              </td>
+              {['PE', 'PS', 'PFCF'].map((k) => (
+                <td key={k}>
+                  <Num>{Number.isFinite(p[k]) && p[k] > 0 ? fmtX(p[k]) : 'N/M'}</Num>
+                </td>
+              ))}
+            </tr>
+          ))}
+          {['median', 'mean'].map((kind) => (
+            <tr key={kind} className="val-peers-summary">
+              <th scope="row">{kind === 'median' ? 'חציון (להשוואה)' : 'ממוצע'}</th>
+              {['PE', 'PS', 'PFCF'].map((k) => {
+                const st = peerStats(peers, k);
+                return (
+                  <td key={k}>
+                    <Num>{fmtX(st[kind])}</Num>
+                    {kind === 'mean' && st.outlier ? <span className="muted-note"> (חריג)</span> : null}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="muted-note">
+        N/M = לא משמעותי (שלילי או חסר) ואינו נספר. ממוצע שגבוה פי {PEER_OUTLIER_RATIO} ומעלה מהחציון מסומן כחריג.
+      </p>
+    </div>
+  );
+}
+
+export default function MultiplesSection({ rows, peers = [] }) {
   return (
     <div className="analysis-section">
       <h2 className="section-title">1. יקרה או זולה מהרגיל?</h2>
@@ -145,15 +222,19 @@ export default function MultiplesSection({ rows }) {
       </p>
       <div className="val-cards">
         {rows.map((row) => (
-          <MultipleCard key={row.metric} row={row} />
+          <MultipleCard key={row.metric} row={row} peers={peers} />
         ))}
       </div>
       <p className="muted-note val-legend" aria-hidden="true">
         בפס: <span className="val-legend-now">●</span> היום · <span className="val-legend-avg">|</span> ממוצע 5 שנים · <span className="val-legend-peer">◆</span> חברות דומות · שמאל = נמוך (זול), ימין = גבוה (יקר)
       </p>
       <details className="val-details">
+        <summary>החברות הדומות ({peers.length})</summary>
+        <PeerList peers={peers} />
+      </details>
+      <details className="val-details">
         <summary>טבלה מלאה עם כל המספרים</summary>
-        <MultiplesTable rows={rows} />
+        <MultiplesTable rows={rows} peers={peers} />
       </details>
     </div>
   );

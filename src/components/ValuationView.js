@@ -3,7 +3,7 @@ import PageToolbar from './PageToolbar';
 import BetaBanner from './BetaBanner';
 import { useValuation } from '../hooks/useValuation';
 import { useDcfSnapshot } from '../hooks/useDcfSnapshot';
-import { evaluateDcf } from '../shared/dcfRules';
+import { evaluateDcf, EMPTY_OVERRIDES, DEFAULT_RULES, LEGACY_RULES } from '../shared/dcfRules';
 import ValuationSummary from './valuation/ValuationSummary';
 import MultiplesSection from './valuation/MultiplesSection';
 import DcfCalculator from './valuation/DcfCalculator';
@@ -36,9 +36,18 @@ function SourceDiagnostics({ diagnostics }) {
 
 function ValuationResult({ data }) {
   const { snapshot, loading: dcfLoading, error: dcfError } = useDcfSnapshot(data.symbol);
-  // The automatic model, on the day it is viewed. Pure: the same snapshot
-  // and date always give the same numbers.
-  const autoEvaluation = useMemo(() => (snapshot ? evaluateDcf({ mode: 'auto', snapshot, valuationDate: new Date().toISOString().slice(0, 10) }) : null), [snapshot]);
+  // What a person added to the auto model (consensus growth, guided
+  // margins, a normalized FCF, a missing rate - each with its source), and
+  // the two rule settings shown for editing: k and the legacy switch.
+  const [overrides, setOverrides] = useState(EMPTY_OVERRIDES);
+  const [ruleEdits, setRuleEdits] = useState({});
+  const rules = useMemo(() => Object.assign({}, ruleEdits.legacy ? LEGACY_RULES : DEFAULT_RULES, Number.isFinite(ruleEdits.fadeK) ? { fadeK: ruleEdits.fadeK } : {}), [ruleEdits]);
+  // The automatic model, on the day it is viewed. Pure: the same snapshot,
+  // additions, rules and date always give the same numbers.
+  const autoEvaluation = useMemo(
+    () => (snapshot ? evaluateDcf({ mode: 'auto', snapshot, overrides, rules, valuationDate: new Date().toISOString().slice(0, 10) }) : null),
+    [snapshot, overrides, rules]
+  );
   return (
     <>
       <div className="analysis-section">
@@ -59,7 +68,7 @@ function ValuationResult({ data }) {
       </div>
 
       <ValuationSummary data={data} autoEvaluation={autoEvaluation} dcfLoading={dcfLoading} snapshot={snapshot} />
-      <MultiplesSection rows={data.multiples} />
+      <MultiplesSection rows={data.multiples} peers={data.peers || []} />
 
       <div className="analysis-section">
         <h2 className="section-title">2. כמה החברה שווה לפי הכסף שהיא תייצר?</h2>
@@ -68,7 +77,15 @@ function ValuationResult({ data }) {
         </p>
         {dcfLoading && <p className="history-empty-note">טוען נתוני DCF…</p>}
         {dcfError && <p className="profit-negative">{dcfError}</p>}
-        {(snapshot || !dcfLoading) && <DcfCalculator key={data.symbol} ticker={data.symbol} snapshot={snapshot} autoEvaluation={autoEvaluation} />}
+        {(snapshot || !dcfLoading) && <DcfCalculator
+            key={data.symbol}
+            ticker={data.symbol}
+            snapshot={snapshot}
+            autoEvaluation={autoEvaluation}
+            overrides={overrides}
+            onOverrides={setOverrides}
+            onRules={(patch) => setRuleEdits((r) => Object.assign({}, r, patch))}
+          />}
         <p className="section-subtitle">
           FCF = תזרים מפעילות שוטפת פחות השקעות הוניות, ובניכוי תגמול מבוסס מניות (SBC). ערך סופי בשיטת Gordon. אינו ייעוץ השקעות. אפשר לייצא את כל הקלטים לכרטיס JSON ולשחזר את החישוב מחוץ לאתר.
         </p>

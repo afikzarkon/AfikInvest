@@ -75,3 +75,18 @@ export function describeGap(pct) {
 }
 
 export const DCF_VERDICT_TONE = { UNDERVALUED: 'cheap', OVERVALUED: 'expensive', FAIRLY_VALUED: 'normal', 'N/A': 'na' };
+
+// Peers for one multiple: the median (what the comparison uses), the mean
+// beside it, and whether the mean is pulled up by an outlier - a mean three
+// times the median or more. Same values as the median: positive and finite.
+export const PEER_OUTLIER_RATIO = 3;
+
+export function peerStats(peers, metric) {
+  const values = (peers || []).map((p) => p && p[metric]).filter((v) => Number.isFinite(v) && v > 0);
+  if (!values.length) return { count: 0, median: null, mean: null, outlier: false };
+  const sorted = values.slice().sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const median = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  const mean = values.reduce((s, v) => s + v, 0) / values.length;
+  return { count: values.length, median, mean, outlier: median > 0 && mean >= PEER_OUTLIER_RATIO * median };
+}

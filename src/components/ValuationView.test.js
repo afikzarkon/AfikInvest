@@ -135,3 +135,133 @@ test('a P/E driven by tiny earnings is called out instead of read', async () => 
   expect(within(card).getByText(/לא משמעותי כרגע/)).toBeInTheDocument();
   expect(within(card).queryByText('יקר מהרגיל')).toBeNull();
 });
+
+// ---------------------------------------------------------------------------
+// Rules v2 on the page, with NOW (fixtures/dcf-snapshot-now.json).
+describe('NOW: added figures, the FCF basis, presets, peers', () => {
+  const nowSnapshot = require('../shared/fixtures/dcf-snapshot-now.json');
+  const peers = [
+    { symbol: 'CRM', PE: 40, PS: 7, PFCF: 25 },
+    { symbol: 'WDAY', PE: 45, PS: 6.5, PFCF: 22 },
+    { symbol: 'ADBE', PE: 30, PS: 8, PFCF: 24 },
+    { symbol: 'INTU', PE: 55, PS: 9, PFCF: 30 },
+    { symbol: 'PLTR', PE: 400, PS: 70, PFCF: 240 }
+  ];
+  const nowPayload = payload({ symbol: 'NOW', name: 'ServiceNow, Inc.', price: 141.97, peers });
+  const day = () => new Date().toISOString().slice(0, 10);
+  const auto = (overrides, rules) => evaluateDcf({ mode: 'auto', snapshot: nowSnapshot, overrides, rules, valuationDate: day() });
+  const renderNow = async (snapshot = nowSnapshot) => {
+    mockApi({ valuation: nowPayload, snapshot });
+    render(<ValuationView americanStocks={[{ stockName: 'NOW' }]} />);
+    await screen.findByTestId('dcf-value-base');
+  };
+  const warnings = () => screen.getByRole('list', { name: 'אזהרות' }).textContent;
+
+  test('auto: cash 6.707 in three parts, the two warnings, and the implied growth beside the IRR', async () => {
+    await renderNow();
+    const e = auto();
+    expect(screen.getByTestId('dcf-value-base')).toHaveTextContent(money(e.results.base.perShare));
+    expect(warnings()).toMatch(/צמיחה ב-FY\+2 אינה מקונצנזוס/);
+    expect(warnings()).toMatch(/אין הנחיית שוליים, הדעיכה היא כלל גנרי/);
+    expect(screen.getByTestId('dcf-implied-growth')).toHaveTextContent(`${(e.impliedGrowth * 100).toFixed(1)}%`);
+    const sources = screen.getByRole('table', { name: 'נתוני מקור' });
+    expect(within(sources).getByText('6.71B USD')).toBeInTheDocument();
+    expect(within(sources).getByText('↳ השקעות לטווח קצר')).toBeInTheDocument();
+    expect(within(sources).getByText('2.16B USD')).toBeInTheDocument();
+    expect(within(sources).getByText('2.04B USD')).toBeInTheDocument();
+  });
+
+  test('a consensus FY+2 growth: used, its source shown, the warning gone, the value moves', async () => {
+    await renderNow();
+    fireEvent.change(screen.getByLabelText('צמיחה מקונצנזוס / הנחיה, FY28'), { target: { value: '18.6' } });
+    fireEvent.change(screen.getByLabelText('מקור הצמיחה שהוזנה'), { target: { value: 'קונצנזוס' } });
+    const e = auto({ growth: [null, { value: 0.186, source: 'קונצנזוס', asOf: day() }, null, null, null] });
+    expect(screen.getByTestId('dcf-value-base')).toHaveTextContent(money(e.results.base.perShare));
+    expect(warnings()).not.toMatch(/FY\+2 אינה מקונצנזוס/);
+    expect(screen.getAllByText('קונצנזוס', { selector: '.val-badge' }).length).toBeGreaterThanOrEqual(2);
+  });
+
+  test('guided margins: held after the last guided year; the generic-rule warning goes', async () => {
+    await renderNow();
+    fireEvent.change(screen.getByLabelText('שולי FCF מהנחיה / קונצנזוס, FY27'), { target: { value: '36' } });
+    const e = auto({ fcfMargin: [{ value: 0.36, source: '', asOf: day() }, null, null, null, null] });
+    expect(screen.getByTestId('dcf-value-base')).toHaveTextContent(money(e.results.base.perShare));
+    expect(warnings()).not.toMatch(/אין הנחיית שוליים/);
+    expect(screen.getAllByText('מוחזק', { selector: '.val-badge' })).toHaveLength(4);
+  });
+
+  test('the normalized FCF basis, once entered and chosen', async () => {
+    await renderNow();
+    const before = screen.getByTestId('dcf-value-base').textContent;
+    fireEvent.change(screen.getByLabelText('FCF מנורמל, 12 חודשים'), { target: { value: '4.92' } });
+    expect(screen.getByTestId('dcf-value-base').textContent).toBe(before); // the default basis stays
+    fireEvent.click(screen.getByRole('radio', { name: /FCF מנורמל של החברה/ }));
+    const e = auto({ normalizedFcfTtm: { value: 4.92e9, source: '', asOf: day() }, fcfBasis: 'normalized' });
+    expect(e.derived.fcfBasis).toBe('normalized');
+    expect(screen.getByTestId('dcf-value-base')).toHaveTextContent(money(e.results.base.perShare));
+  });
+
+  test('the NOW preset: 60.08 / 127.35 / 166.53, weighted 120.33', async () => {
+    await renderNow();
+    fireEvent.click(screen.getByRole('button', { name: /^פריסט NOW/ }));
+    expect(screen.getByTestId('dcf-value-bear')).toHaveTextContent('60.08 USD');
+    expect(screen.getByTestId('dcf-value-base')).toHaveTextContent('127.35 USD');
+    expect(screen.getByTestId('dcf-value-bull')).toHaveTextContent('166.53 USD');
+    expect(screen.getByTestId('dcf-value-weighted')).toHaveTextContent('120.33 USD');
+  });
+
+  test('legacy rules, for comparison: back to 67.85', async () => {
+    await renderNow();
+    fireEvent.click(screen.getByRole('checkbox', { name: /legacy/ }));
+    expect(screen.getByTestId('dcf-value-base')).toHaveTextContent('67.85 USD');
+  });
+
+  test('peers: all five listed, the median labelled as the one compared with, the mean beside it', async () => {
+    await renderNow();
+    const list = screen.getByRole('table', { name: 'חברות להשוואה' });
+    ['CRM', 'WDAY', 'ADBE', 'INTU', 'PLTR'].forEach((s) => expect(within(list).getByText(s)).toBeInTheDocument());
+    expect(within(list).getByText('חציון (להשוואה)')).toBeInTheDocument();
+    expect(within(list).getByText('ממוצע')).toBeInTheDocument();
+  });
+
+  test('an outlier pulling the mean to 3x the median is flagged on the card', async () => {
+    mockApi({ valuation: payload({ symbol: 'NOW', peers: peers.map((p) => (p.symbol === 'PLTR' ? { ...p, PS: 500 } : p)) }), snapshot: nowSnapshot });
+    render(<ValuationView americanStocks={[{ stockName: 'NOW' }]} />);
+    const card = await screen.findByRole('article', { name: 'מחיר מול מכירות' });
+    expect(within(card).getByRole('note')).toHaveTextContent(/ההשוואה היא לפי החציון/);
+  });
+
+  test('no rate today and none saved: no number, and a field to enter it', async () => {
+    mockApi({ valuation: nowPayload, snapshot: { ...nowSnapshot, rf: null, rfLastSaved: null } });
+    render(<ValuationView americanStocks={[{ stockName: 'NOW' }]} />);
+    // Said in the summary and in the calculator alike.
+    expect((await screen.findAllByText(/אין ערך עדכני ואין ערך שמור/)).length).toBe(2);
+    expect(screen.queryByTestId('dcf-value-base')).toBeNull();
+    fireEvent.change(screen.getByLabelText(/ריבית חסרת סיכון \(אג"ח/), { target: { value: '5.098' } });
+    expect(screen.getByTestId('dcf-value-base')).toHaveTextContent(money(auto().results.base.perShare));
+  });
+
+  test('the card carries the added figures and reproduces them', async () => {
+    let blob;
+    global.URL.createObjectURL = jest.fn((b) => {
+      blob = b;
+      return 'blob:card';
+    });
+    global.URL.revokeObjectURL = jest.fn();
+    await renderNow();
+    fireEvent.change(screen.getByLabelText('צמיחה מקונצנזוס / הנחיה, FY28'), { target: { value: '18.6' } });
+    fireEvent.click(screen.getByRole('button', { name: 'ייצוא כרטיס קלטים' }));
+    const card = JSON.parse(
+      await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.readAsText(blob);
+      })
+    );
+    expect(card.overrides.growth[1].value).toBeCloseTo(0.186, 12);
+    expect(card.sources.growth[1].kind).toBe('consensus');
+    expect(card.cash.parts.shortTermInvestments).toBeCloseTo(2.161e9, 0);
+    const { fromRaw } = reproduceFromCard(card);
+    expect(fromRaw.results.base.perShare).toBe(card.results.scenarios.base.perShare);
+  });
+});

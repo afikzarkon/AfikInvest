@@ -8604,6 +8604,115 @@ button.dcf-scenario-card:hover {
   min-width: 0;
 }
 
+/* Rules v2: figures added with their sources, the FCF basis, the legacy
+   switch, and the peers' outlier note. */
+.dcf-text {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--sw-border-strong);
+  border-radius: 8px;
+  background: var(--sw-surface);
+  color: var(--sw-text);
+  font: inherit;
+  font-size: 14px;
+}
+
+.dcf-text:focus-visible {
+  outline: none;
+  box-shadow: var(--sw-ring);
+  border-color: var(--sw-accent);
+}
+
+.dcf-guidance-row th,
+.dcf-source-row th {
+  font-size: 12px;
+  color: var(--sw-text-secondary);
+  font-weight: 600;
+}
+
+.dcf-guidance-row {
+  background: var(--sw-accent-soft);
+}
+
+.dcf-source-row td {
+  padding-top: 2px;
+  padding-bottom: 6px;
+}
+
+.dcf-source-cell .val-badge {
+  font-size: 11px;
+  padding: 1px 8px;
+}
+
+.dcf-basis {
+  display: grid;
+  gap: 8px;
+}
+
+.dcf-basis-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--sw-text);
+  cursor: pointer;
+}
+
+.dcf-basis-option input {
+  margin-top: 4px;
+  accent-color: var(--sw-accent);
+}
+
+.dcf-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--sw-text-secondary);
+}
+
+.dcf-check input {
+  accent-color: var(--sw-accent);
+}
+
+.dcf-legacy-note {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: var(--sw-radius-sm);
+  background: var(--sw-amber-soft);
+  color: var(--sw-text);
+  font-size: 13px;
+}
+
+.dcf-sub-row td:first-child {
+  padding-inline-start: 24px;
+  color: var(--sw-text-secondary);
+}
+
+.val-compare .val-compare-minor {
+  border-top: none;
+  padding-top: 0;
+  font-size: 12px;
+  color: var(--sw-text-muted);
+}
+
+.val-peer-outlier {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--sw-radius-sm);
+  background: var(--sw-amber-soft);
+  color: var(--sw-text);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.val-peers-summary th,
+.val-peers-summary td {
+  font-weight: 600;
+  background: var(--sw-surface-2);
+}
+
 /* =============================================================
    ACCOUNT: sign-in additions, settings page, onboarding, privacy
    Built only from the --sw-* tokens above, so both themes follow.

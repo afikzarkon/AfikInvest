@@ -38,3 +38,14 @@ test('gaps read as percentages, and as "times" past doubling', () => {
   expect(describeGap(45)).toBe('יקר ב-45%');
   expect(describeGap(394)).toBe('יקר פי 4.9');
 });
+
+test('peers: the median for the comparison, the mean beside it, and an outlier flagged at 3x', () => {
+  const { peerStats } = require('./valuationInsights');
+  const peers = [{ PS: 10 }, { PS: 12 }, { PS: 9 }, { PS: 11 }, { PS: 120 }, { PS: -3 }, { PS: null }];
+  const s = peerStats(peers, 'PS');
+  expect(s).toMatchObject({ count: 5, median: 11 });
+  expect(s.mean).toBeCloseTo(32.4, 10);
+  expect(s.outlier).toBe(false); // 32.4 < 3 x 11
+  expect(peerStats([{ PS: 10 }, { PS: 11 }, { PS: 200 }], 'PS').outlier).toBe(true);
+  expect(peerStats([], 'PS')).toEqual({ count: 0, median: null, mean: null, outlier: false });
+});
