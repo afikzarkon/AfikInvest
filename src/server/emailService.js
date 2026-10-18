@@ -11,6 +11,8 @@
 // message to the console so the reset flow can still be exercised locally;
 // in production it skips the send and logs a warning.
 const nodemailer = require('nodemailer');
+const { escapeHtml } = require('./emails/html');
+const { buildWelcomeEmail } = require('./emails/welcomeEmail');
 
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GMAIL_SEND_URL = 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send';
@@ -82,15 +84,6 @@ function buildTransport(user, pass) {
 
 const APP_NAME = 'StockView';
 
-function escapeHtml(value) {
-  return String(value == null ? '' : value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
 // The public address of the web app, used to build links in emails. Taken
 // only from configuration - never from the request's Host header, which an
 // attacker controls and could use to point a reset link at their own site.
@@ -133,22 +126,11 @@ function button(href, label) {
   </p>`;
 }
 
-function welcomeMessage(email) {
-  const appUrl = getAppUrl();
-  const html = layout(
-    `ברוכים הבאים ל-${APP_NAME}`,
-    `<p style="font-size:16px;">שלום,</p>
-     <p style="font-size:16px;">החשבון <strong>${escapeHtml(email)}</strong> נוצר בהצלחה.
-       אפשר להתחיל להוסיף אחזקות ולעקוב אחרי התיק.</p>
-     ${appUrl ? button(appUrl, `כניסה ל-${APP_NAME}`) : ''}
-     <p style="font-size:14px;color:#4b5563;">מומלץ להפעיל אימות דו-שלבי (2FA) בעמוד האבטחה באפליקציה.</p>
-     <p style="font-size:14px;color:#4b5563;">אם לא אתם נרשמתם, אפשר להתעלם מהודעה זו.</p>`
-  );
-  const text =
-    `ברוכים הבאים ל-${APP_NAME}!\n\nהחשבון ${email} נוצר בהצלחה.` +
-    (appUrl ? `\nכניסה: ${appUrl}` : '') +
-    '\n\nאם לא אתם נרשמתם, אפשר להתעלם מהודעה זו.';
-  return { subject: `ברוכים הבאים ל-${APP_NAME}`, html, text };
+// The welcome email's words and markup live in emails/welcomeEmail.js. Its
+// contact address is the account the mail is sent from - the one address
+// the system is configured with.
+function welcomeMessage(email, { name = '' } = {}) {
+  return buildWelcomeEmail({ name, email, appUrl: getAppUrl(), contactEmail: String(process.env.EMAIL_USER || '').trim() });
 }
 
 function passwordResetMessage(resetUrl, minutes) {
@@ -190,9 +172,10 @@ function createEmailService({ transport } = {}) {
 
   return {
     configured,
-    sendWelcomeEmail: (to) => send(to, welcomeMessage(to)),
+    // options.name: the user's name, when the signup collects one.
+    sendWelcomeEmail: (to, options) => send(to, welcomeMessage(to, options)),
     sendPasswordResetEmail: (to, resetUrl, minutes) => send(to, passwordResetMessage(resetUrl, minutes))
   };
 }
 
-module.exports = { createEmailService, createGmailApiTransport, gmailApiConfigured, getAppUrl, escapeHtml };
+module.exports = { createEmailService, createGmailApiTransport, gmailApiConfigured, getAppUrl, escapeHtml, welcomeMessage };
