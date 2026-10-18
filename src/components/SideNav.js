@@ -119,7 +119,30 @@ export const NAV_ITEMS = ROUTES.filter((route) => !route.hidden);
 // doesn't steal horizontal space a table needs.
 // badges: { [routeKey]: count } - a count shown on that link (unread alerts).
 // displayName / avatar: from the account (hooks/useAccount.js), optional.
-function SideNav({ activePage, onNavigate, user, onLogout, theme, onToggleTheme, badges = {}, displayName = '', avatar = null }) {
+// hiddenRoutes: route keys switched off by a feature flag - left out of the
+//   list entirely, not greyed (hooks/useFeatureFlags.js).
+// showAccount: false on a phone, where the theme switch and the account
+//   controls live in AccountRail.js instead of this footer.
+// isAdmin: adds the link to the admin panel. Only a convenience - the panel
+//   and its API check the role on the server.
+function SideNav({
+  activePage,
+  onNavigate,
+  user,
+  onLogout,
+  theme,
+  onToggleTheme,
+  badges = {},
+  displayName = '',
+  avatar = null,
+  hiddenRoutes = [],
+  showAccount = true,
+  isAdmin = false
+}) {
+  const hidden = new Set(hiddenRoutes);
+  const groups = NAV_GROUPS.map((group) => ({ ...group, keys: group.keys.filter((key) => !hidden.has(key)) })).filter(
+    (group) => group.keys.length > 0
+  );
   return (
     <nav className="side-nav" aria-label="ניווט ראשי">
       <div className="side-nav-brand">
@@ -128,7 +151,7 @@ function SideNav({ activePage, onNavigate, user, onLogout, theme, onToggleTheme,
       </div>
 
       <div className="side-nav-scroll">
-        {NAV_GROUPS.map((group) => (
+        {groups.map((group) => (
           <div className="side-nav-group" key={group.label}>
             {/* Hidden from the accessibility tree rather than announced: the
                 group's purpose is visual scanning, and each link already
@@ -167,6 +190,7 @@ function SideNav({ activePage, onNavigate, user, onLogout, theme, onToggleTheme,
         ))}
       </div>
 
+      {showAccount && (
       <div className="side-nav-footer">
         <ThemeToggleButton theme={theme} onToggleTheme={onToggleTheme} />
         {user && (
@@ -190,12 +214,23 @@ function SideNav({ activePage, onNavigate, user, onLogout, theme, onToggleTheme,
             >
               הגדרות
             </button>
+            {isAdmin && (
+              <button
+                type="button"
+                className={`side-nav-logout ${activePage === 'admin' ? 'is-active' : ''}`}
+                onClick={() => onNavigate('admin')}
+                aria-current={activePage === 'admin' ? 'page' : undefined}
+              >
+                ניהול
+              </button>
+            )}
             <button type="button" className="side-nav-logout" onClick={onLogout}>
               התנתקות
             </button>
           </div>
         )}
       </div>
+      )}
     </nav>
   );
 }

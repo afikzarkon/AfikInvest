@@ -126,3 +126,54 @@ describe('AppShell', () => {
     expect(container.querySelector('.app-shell')).not.toBeNull();
   });
 });
+
+describe('SideNav - flags and the phone layout', () => {
+  test('a page hidden by a flag is left out of the nav, not greyed', () => {
+    render(<SideNav {...makeProps({ hiddenRoutes: ['valuation'] })} />);
+    expect(screen.queryByText(routeByKey('valuation').label)).toBeNull();
+    expect(screen.getByText(routeByKey('home').label)).toBeInTheDocument();
+  });
+
+  test('showAccount=false drops the footer; the admin link only for admins', () => {
+    const { rerender } = render(<SideNav {...makeProps({ showAccount: false })} />);
+    expect(screen.queryByText('התנתקות')).toBeNull();
+    rerender(<SideNav {...makeProps()} />);
+    expect(screen.queryByText('ניהול')).toBeNull();
+    rerender(<SideNav {...makeProps({ isAdmin: true })} />);
+    expect(screen.getByText('ניהול')).toBeInTheDocument();
+  });
+});
+
+describe('AccountRail', () => {
+  // eslint-disable-next-line global-require
+  const AccountRail = require('./AccountRail').default;
+
+  test('holds profile, settings, theme and sign-out, each once', () => {
+    const onLogout = jest.fn();
+    const onNavigate = jest.fn();
+    const onToggleTheme = jest.fn();
+    render(<AccountRail {...makeProps({ onLogout, onNavigate, onToggleTheme, displayName: 'אפיק' })} />);
+    fireEvent.click(screen.getByRole('button', { name: 'התנתקות' }));
+    fireEvent.click(screen.getByRole('button', { name: 'הגדרות' }));
+    fireEvent.click(screen.getByRole('button', { name: 'עבור למצב בהיר' }));
+    expect(onLogout).toHaveBeenCalledTimes(1);
+    expect(onNavigate).toHaveBeenCalledWith('settings');
+    expect(onToggleTheme).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: 'ניהול' })).toBeNull();
+  });
+
+  test('the name shows on tapping the avatar, and closes on Escape', () => {
+    render(<AccountRail {...makeProps({ displayName: 'אפיק' })} />);
+    expect(screen.queryByText('test@example.com')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /פרופיל/ }));
+    expect(screen.getByText('אפיק')).toBeInTheDocument();
+    expect(screen.getByText('test@example.com')).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByText('test@example.com')).toBeNull();
+  });
+
+  test('renders nothing signed out', () => {
+    const { container } = render(<AccountRail {...makeProps({ user: null })} />);
+    expect(container.firstChild).toBeNull();
+  });
+});

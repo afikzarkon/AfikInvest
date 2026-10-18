@@ -6609,6 +6609,228 @@ select {
 }
 
 /* =============================================================
+   ACCOUNT RAIL (phones and narrow tablets)
+   =============================================================
+
+   Below 960px the theme switch, profile, settings and sign-out leave the
+   bottom bar for a narrow column of their own (components/AccountRail.js),
+   so the bar holds only the pages and stops losing room to them.
+
+   The column sits on the PHYSICAL left - `left`, not inset-inline-start,
+   on purpose: under RTL the logical start is the right, where the reading
+   starts and the page's own content begins. The content and the bottom bar
+   both start after it, so nothing sits under it.
+
+   Its width carries the left safe-area inset (a phone held in landscape
+   with the notch on that side); the top and bottom insets pad it inside. */
+@media (max-width: 960px) {
+  .app-shell.has-account-rail {
+    --account-rail-w: calc(52px + env(safe-area-inset-left));
+    padding-left: var(--account-rail-w);
+  }
+
+  .app-shell.has-account-rail .side-nav {
+    left: var(--account-rail-w);
+    right: 0;
+    width: auto;
+    padding-left: 8px;
+    padding-right: calc(8px + env(safe-area-inset-right));
+  }
+
+  .app-shell.has-account-rail .app-main-inner {
+    padding-left: 10px;
+    padding-right: calc(10px + env(safe-area-inset-right));
+  }
+
+  .account-rail {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: var(--account-rail-w);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: calc(10px + env(safe-area-inset-top)) 0 calc(10px + env(safe-area-inset-bottom));
+    padding-left: env(safe-area-inset-left);
+    border-right: 1px solid var(--sw-border);
+    background: var(--sw-surface);
+    z-index: 21;
+  }
+
+  @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+    .account-rail {
+      background: var(--sw-glass);
+      -webkit-backdrop-filter: blur(var(--sw-glass-blur)) saturate(180%);
+      backdrop-filter: blur(var(--sw-glass-blur)) saturate(180%);
+    }
+  }
+}
+
+@media (max-width: 520px) {
+  .app-shell.has-account-rail .app-main-inner {
+    padding-left: 8px;
+    padding-right: calc(8px + env(safe-area-inset-right));
+  }
+}
+
+@media (min-width: 961px) {
+  .account-rail {
+    display: none;
+  }
+}
+
+.account-rail-button {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--sw-radius-sm);
+  background: none;
+  color: var(--sw-text-secondary);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color var(--sw-transition), color var(--sw-transition), border-color var(--sw-transition);
+}
+
+.account-rail-button:hover,
+.account-rail-button:focus-visible {
+  background: var(--sw-surface-2);
+  color: var(--sw-text);
+}
+
+.account-rail-button:focus-visible,
+.account-rail-theme:focus-visible {
+  outline: 2px solid var(--sw-accent);
+  outline-offset: 2px;
+}
+
+.account-rail-button.is-active {
+  background: var(--sw-accent-soft);
+  color: var(--sw-accent);
+}
+
+.account-rail-icon {
+  width: 22px;
+  height: 22px;
+}
+
+/* Sign-out sits apart at the foot of the column, in the warning color, so
+   it is not the button a thumb lands on by habit. */
+.account-rail-logout {
+  margin-top: auto;
+  color: var(--sw-red);
+}
+
+.account-rail-logout:hover,
+.account-rail-logout:focus-visible {
+  background: var(--sw-red-soft);
+  color: var(--sw-red);
+}
+
+.account-rail-profile {
+  position: relative;
+}
+
+.account-rail-avatar[aria-expanded='true'] {
+  border-color: var(--sw-accent);
+}
+
+/* The name card opens into the page, to the right of the column. */
+.account-rail-card {
+  position: absolute;
+  top: 0;
+  left: calc(100% + 10px);
+  min-width: 170px;
+  max-width: calc(100vw - 52px - env(safe-area-inset-left) - 28px);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--sw-border-strong);
+  border-radius: var(--sw-radius-sm);
+  background: var(--sw-surface-3);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+  text-align: start;
+  z-index: 40;
+}
+
+.account-rail-card-name {
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--sw-text);
+  overflow-wrap: anywhere;
+}
+
+.account-rail-card-email {
+  direction: ltr;
+  text-align: start;
+  font-size: 0.8rem;
+  color: var(--sw-text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* The vertical theme switch: moon on top, sun below, the thumb resting on
+   the current one. 44px wide like every control in the column. */
+.account-rail-theme {
+  position: relative;
+  width: 44px;
+  height: 76px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 0;
+  border: 1px solid var(--sw-border);
+  border-radius: var(--sw-radius-pill);
+  background: var(--sw-surface-3);
+  color: var(--sw-text-secondary);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.account-rail-theme-thumb {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--sw-accent), var(--sw-accent-2));
+  box-shadow: 0 2px 8px var(--sw-accent-glow);
+  transition: transform var(--sw-transition);
+}
+
+.account-rail-theme[data-state='light'] .account-rail-theme-thumb {
+  transform: translateY(32px);
+}
+
+.account-rail-theme-icon {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  padding: 7px;
+  transition: color var(--sw-transition);
+}
+
+.account-rail-theme[data-state='dark'] .account-rail-theme-icon:first-of-type,
+.account-rail-theme[data-state='light'] .account-rail-theme-icon:last-of-type {
+  color: #ffffff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .account-rail-theme-thumb,
+  .account-rail-button {
+    transition: none;
+  }
+}
+
+/* =============================================================
    ANALYSIS PAGE - dashboard grid
    =============================================================
 
@@ -9609,4 +9831,203 @@ select.auth-input[dir='ltr'] {
    the "(לא חובה)" hint sits on the label's line. */
 .auth-field > .auth-label {
   display: block;
+}
+
+/* =============================================================
+   ADMIN PANEL (components/admin/AdminView.js)
+   ============================================================= */
+.admin-flag-list,
+.admin-audit-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.admin-flag {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--sw-border);
+  border-radius: var(--sw-radius-sm);
+  background: var(--sw-surface-2);
+}
+
+.admin-flag-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-flag-key {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.92rem;
+  font-weight: 500;
+  color: var(--sw-text);
+}
+
+.admin-flag-tag {
+  padding: 2px 8px;
+  border-radius: var(--sw-radius-pill);
+  background: var(--sw-surface-3);
+  color: var(--sw-text-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.admin-flag-desc {
+  margin: 0;
+  color: var(--sw-text-secondary);
+  font-size: 0.88rem;
+}
+
+.admin-flag-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.admin-state-switch {
+  display: inline-flex;
+  padding: 3px;
+  gap: 3px;
+  border: 1px solid var(--sw-border);
+  border-radius: var(--sw-radius-pill);
+  background: var(--sw-surface-3);
+}
+
+.admin-state-option {
+  min-height: 38px;
+  padding: 0 14px;
+  border: none;
+  border-radius: var(--sw-radius-pill);
+  background: none;
+  color: var(--sw-text-secondary);
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color var(--sw-transition), color var(--sw-transition);
+}
+
+.admin-state-option:hover:not(:disabled) {
+  color: var(--sw-text);
+}
+
+.admin-state-option:disabled {
+  cursor: progress;
+}
+
+.admin-state-option.active.is-off {
+  background: var(--sw-red-soft);
+  color: var(--sw-red);
+}
+
+.admin-state-option.active.is-admin {
+  background: var(--sw-accent-soft);
+  color: var(--sw-accent);
+}
+
+.admin-state-option.active.is-all {
+  background: linear-gradient(135deg, var(--sw-accent), var(--sw-accent-2));
+  color: #ffffff;
+}
+
+.admin-flag-delete {
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--sw-red-border);
+  border-radius: var(--sw-radius-sm);
+  background: none;
+  color: var(--sw-red);
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.admin-flag-meta {
+  margin: 0;
+  color: var(--sw-text-muted);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.admin-new-flag {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) minmax(200px, 2fr) minmax(130px, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.admin-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8rem;
+  color: var(--sw-text-secondary);
+}
+
+.admin-submit {
+  min-height: 44px;
+}
+
+.admin-error {
+  grid-column: 1 / -1;
+  margin: 8px 0;
+  color: var(--sw-red);
+  font-size: 0.88rem;
+}
+
+.admin-audit-entry {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 4px 12px;
+  align-items: baseline;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--sw-border);
+  font-size: 0.85rem;
+}
+
+.admin-audit-when {
+  color: var(--sw-text-muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.admin-audit-what {
+  color: var(--sw-text);
+}
+
+.admin-audit-what code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.82rem;
+}
+
+.admin-audit-change {
+  color: var(--sw-text-secondary);
+}
+
+.admin-audit-who {
+  color: var(--sw-text-muted);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 720px) {
+  .admin-new-flag {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-audit-entry {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-state-option {
+    padding: 0 10px;
+  }
 }
