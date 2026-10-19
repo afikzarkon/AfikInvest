@@ -11486,3 +11486,451 @@ select.auth-input[dir='ltr'] {
   font-weight: 500;
   color: var(--sw-text-muted);
 }
+
+/* =============================================================
+   VALUATION FOR EVERYONE (components/valuation/ValuationSimple.js)
+   =============================================================
+   One answer on a cheap-to-expensive scale, the three checks as short
+   stories, what the price assumes, and three futures. Tone colors carry
+   meaning together with a word, never alone: cheap = green, expensive =
+   red, fair = the accent, mixed = amber. */
+.vs {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.vs-answer {
+  padding: 22px 22px 18px;
+  border: 1px solid var(--sw-border);
+  border-radius: var(--sw-radius-lg);
+  background: var(--sw-surface);
+  border-top: 4px solid var(--sw-border-strong);
+}
+
+.vs-answer.is-cheap {
+  border-top-color: var(--sw-green);
+}
+
+.vs-answer.is-expensive {
+  border-top-color: var(--sw-red);
+}
+
+.vs-answer.is-normal {
+  border-top-color: var(--sw-accent);
+}
+
+.vs-answer.is-mixed {
+  border-top-color: var(--sw-amber);
+}
+
+.vs-stock {
+  margin: 0 0 6px;
+  font-size: 0.86rem;
+  color: var(--sw-text-secondary);
+}
+
+.vs-answer h2 {
+  margin: 0;
+  font-size: 1.7rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--sw-text);
+  text-wrap: balance;
+}
+
+.vs-answer.is-cheap h2 {
+  color: var(--sw-green);
+}
+
+.vs-answer.is-expensive h2 {
+  color: var(--sw-red);
+}
+
+.vs-answer-line {
+  margin: 8px 0 0;
+  font-size: 1rem;
+  line-height: 1.6;
+  color: var(--sw-text);
+  max-width: 62ch;
+}
+
+.vs-gauge {
+  margin-top: 18px;
+  max-width: 520px;
+}
+
+.vs-gauge-track {
+  position: relative;
+  display: flex;
+  height: 12px;
+  border-radius: var(--sw-radius-pill);
+  overflow: visible;
+}
+
+.vs-gauge-zone {
+  flex: 1;
+}
+
+.vs-gauge-zone.is-cheap {
+  border-radius: 0 var(--sw-radius-pill) var(--sw-radius-pill) 0;
+  background: var(--sw-green-soft);
+  border: 1px solid var(--sw-green-border);
+}
+
+.vs-gauge-zone.is-fair {
+  background: var(--sw-accent-soft);
+  border-block: 1px solid var(--sw-border);
+}
+
+.vs-gauge-zone.is-expensive {
+  border-radius: var(--sw-radius-pill) 0 0 var(--sw-radius-pill);
+  background: var(--sw-red-soft);
+  border: 1px solid var(--sw-red-border);
+}
+
+.vs-gauge-marker {
+  position: absolute;
+  top: -5px;
+  width: 18px;
+  height: 22px;
+  border-radius: 9px;
+  border: 3px solid var(--sw-surface);
+  background: var(--sw-text);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.vs-gauge-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--sw-text-secondary);
+}
+
+.vs-gauge.is-empty {
+  opacity: 0.45;
+}
+
+.vs-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.vs-block > h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--sw-text);
+}
+
+.vs-block > p {
+  margin: 0;
+  line-height: 1.65;
+  color: var(--sw-text);
+  max-width: 70ch;
+}
+
+.vs-checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.vs-check {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--sw-border);
+  border-radius: var(--sw-radius);
+  background: var(--sw-surface);
+}
+
+.vs-check p {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.65;
+  color: var(--sw-text-secondary);
+}
+
+.vs-check-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.vs-check-head h3 {
+  flex: 1;
+  margin: 0;
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: var(--sw-text);
+}
+
+.vs-check-icon {
+  font-size: 1.2rem;
+}
+
+.vs-chip {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  border-radius: var(--sw-radius-pill);
+  font-size: 0.76rem;
+  font-weight: 700;
+  background: var(--sw-surface-3);
+  color: var(--sw-text-secondary);
+}
+
+.vs-chip.is-cheap {
+  background: var(--sw-green-soft);
+  color: var(--sw-green);
+}
+
+.vs-chip.is-expensive {
+  background: var(--sw-red-soft);
+  color: var(--sw-red);
+}
+
+.vs-chip.is-normal {
+  background: var(--sw-accent-soft);
+  color: var(--sw-accent);
+}
+
+.vs-check .vs-takeaway,
+.vs-takeaway {
+  margin: 0;
+  padding-top: 8px;
+  border-top: 1px dashed var(--sw-border);
+  font-weight: 600;
+  color: var(--sw-text);
+}
+
+.vs-assume {
+  padding: 16px 18px;
+  border: 1px solid var(--sw-border);
+  border-radius: var(--sw-radius);
+  background: var(--sw-surface);
+  border-inline-start: 4px solid var(--sw-accent);
+}
+
+.vs-assume.is-expensive {
+  border-inline-start-color: var(--sw-red);
+}
+
+.vs-assume.is-cheap {
+  border-inline-start-color: var(--sw-green);
+}
+
+.vs-muted {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--sw-text-secondary);
+}
+
+.vs-futures {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+}
+
+.vs-future {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border: 1px solid var(--sw-border);
+  border-radius: var(--sw-radius-sm);
+  background: var(--sw-surface);
+}
+
+.vs-future-label {
+  font-size: 0.84rem;
+  color: var(--sw-text-secondary);
+}
+
+.vs-future-value {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--sw-text);
+}
+
+.vs-future-note {
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.vs-future.is-above .vs-future-note {
+  color: var(--sw-green);
+}
+
+.vs-future.is-below .vs-future-note {
+  color: var(--sw-red);
+}
+
+/* A number line - low on the left - with the three futures as dots and
+   today's price as a flag. */
+.vs-scale {
+  direction: ltr;
+  /* Room at both ends for the price flag's label. */
+  margin: 26px 40px 8px;
+}
+
+.vs-scale-track {
+  position: relative;
+  height: 6px;
+  border-radius: var(--sw-radius-pill);
+  background: var(--sw-surface-3);
+}
+
+.vs-scale-range {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border-radius: var(--sw-radius-pill);
+  background: var(--sw-accent-soft);
+  border: 1px solid var(--sw-accent);
+}
+
+.vs-scale-dot {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  background: var(--sw-accent);
+  border: 2px solid var(--sw-surface);
+}
+
+.vs-scale-price {
+  position: absolute;
+  top: -22px;
+  bottom: -6px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--sw-text);
+}
+
+.vs-scale-price span {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--sw-text);
+  color: var(--sw-bg);
+  font-size: 0.68rem;
+  font-weight: 700;
+  white-space: nowrap;
+  direction: rtl;
+}
+
+.vs-explain {
+  border: 1px solid var(--sw-border);
+  border-radius: var(--sw-radius);
+  background: var(--sw-surface);
+  padding: 0 16px;
+}
+
+.vs-explain summary {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  font-weight: 700;
+  cursor: pointer;
+  color: var(--sw-accent);
+}
+
+.vs-explain p {
+  margin: 0 0 12px;
+  line-height: 1.7;
+  color: var(--sw-text-secondary);
+  max-width: 70ch;
+}
+
+.vs-explain p strong {
+  color: var(--sw-text);
+}
+
+.vs-disclaimer {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--sw-text-muted);
+}
+
+/* The professional detail, folded. */
+.vs-advanced {
+  margin-top: 6px;
+  border: 1px solid var(--sw-border);
+  border-radius: var(--sw-radius);
+  background: var(--sw-surface-2);
+}
+
+.vs-advanced > summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 18px;
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--sw-text);
+  list-style: none;
+}
+
+.vs-advanced > summary::-webkit-details-marker {
+  display: none;
+}
+
+.vs-advanced > summary::after {
+  content: 'לחצו כדי לפתוח ▾';
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--sw-accent);
+}
+
+.vs-advanced[open] > summary::after {
+  content: 'לחצו כדי לסגור ▴';
+}
+
+.vs-advanced-hint {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--sw-text-secondary);
+}
+
+.vs-advanced[open] {
+  padding-bottom: 8px;
+}
+
+.vs-advanced > .analysis-section {
+  margin-inline: 10px;
+}
+
+@media (max-width: 720px) {
+  .vs-answer {
+    padding: 18px 16px 16px;
+  }
+
+  .vs-answer h2 {
+    font-size: 1.4rem;
+  }
+}
+
+.vs-answer-note {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--sw-radius-sm);
+  background: var(--sw-amber-soft);
+  color: var(--sw-text);
+  font-size: 0.88rem;
+  line-height: 1.6;
+  max-width: 70ch;
+}

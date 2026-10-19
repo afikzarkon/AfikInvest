@@ -5,15 +5,18 @@ import { useValuation } from '../hooks/useValuation';
 import { useDcfSnapshot } from '../hooks/useDcfSnapshot';
 import { evaluateDcf, EMPTY_OVERRIDES, DEFAULT_RULES, LEGACY_RULES } from '../shared/dcfRules';
 import ValuationSummary from './valuation/ValuationSummary';
+import ValuationSimple from './valuation/ValuationSimple';
 import MultiplesSection from './valuation/MultiplesSection';
 import DcfCalculator from './valuation/DcfCalculator';
 import { fmtMoney } from './valuation/shared';
 
 // /valuation - is this stock cheap or expensive? Written for someone who has
-// never heard of a multiple: the answer first in plain words, then price
-// multiples against the company's own 5-year history and its peers, then a
-// DCF on the one engine (shared/dcfEngine.js) - automatic by visible rules,
-// or manual. Market data comes from the server (server/valuationService.js
+// never heard of a multiple: the answer first, on a cheap-to-expensive
+// scale, then the three checks told as short stories with their numbers
+// (valuation/ValuationSimple.js). Everything a professional wants - price
+// multiples against the company's own 5-year history and its peers, and a
+// DCF on the one engine (shared/dcfEngine.js), automatic by visible rules
+// or manual - is folded below it under "למתקדמים". Market data comes from the server (server/valuationService.js
 // for the multiples, server/dcfSnapshot.js for the DCF's raw data); the DCF
 // runs here, so every edit recomputes instantly. Every technical number is
 // still there, folded away under "details".
@@ -50,6 +53,13 @@ function ValuationResult({ data }) {
   );
   return (
     <>
+      <ValuationSimple data={data} evaluation={autoEvaluation} dcfLoading={dcfLoading} />
+
+      <details className="vs-advanced">
+        <summary>
+          <span>כל הנתונים והחישובים</span>
+          <span className="vs-advanced-hint">למתקדמים: מכפילים, מחשבון DCF והנחות</span>
+        </summary>
       <div className="analysis-section">
         <h2 className="section-title">
           {data.name || data.symbol} ({data.symbol})
@@ -90,6 +100,7 @@ function ValuationResult({ data }) {
           FCF = תזרים מפעילות שוטפת פחות השקעות הוניות, ובניכוי תגמול מבוסס מניות (SBC). ערך סופי בשיטת Gordon. אינו ייעוץ השקעות. אפשר לייצא את כל הקלטים לכרטיס JSON ולשחזר את החישוב מחוץ לאתר.
         </p>
       </div>
+      </details>
     </>
   );
 }
@@ -107,14 +118,14 @@ function ValuationView({ americanStocks = [] }) {
     <div className="App">
       <div className="analysis-container">
         <div className="analysis-content">
-          <PageToolbar title="הערכת שווי" subtitle="האם המניה זולה או יקרה? שלוש בדיקות פשוטות (מניות אמריקאיות)" />
+          <PageToolbar title="הערכת שווי" subtitle="האם המניה זולה או יקרה? תשובה פשוטה, עם הסבר (מניות אמריקאיות)" />
           <BetaBanner tone="invest" />
 
           <div className="analysis-section">
             <div className="rebalance-sum-row">
               {held.length > 0 && (
                 <>
-                  <label htmlFor="val-held">מהתיק</label>
+                  <label htmlFor="val-held">בחרו מניה מהתיק</label>
                   <select id="val-held" value={held.includes(symbol) ? symbol : ''} onChange={(e) => setSymbol(e.target.value)}>
                     <option value="">—</option>
                     {held.map((s) => (
@@ -131,7 +142,7 @@ function ValuationView({ americanStocks = [] }) {
                   if (draft.trim()) setSymbol(draft.trim().toUpperCase());
                 }}
               >
-                <label htmlFor="val-symbol">סימול אחר</label> <input id="val-symbol" className="inline-input" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="AAPL" />{' '}
+                <label htmlFor="val-symbol">או הקלידו סימול של מניה</label> <input id="val-symbol" className="inline-input" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="AAPL" />{' '}
                 <button type="submit" className="benchmark-toggle-button">
                   הצגה
                 </button>
@@ -139,10 +150,14 @@ function ValuationView({ americanStocks = [] }) {
             </div>
           </div>
 
-          {loading && <p className="history-empty-note">טוען נתונים פיננסיים…</p>}
+          {loading && <p className="history-empty-note">אוספים נתונים על החברה…</p>}
           {error && <p className="profit-negative">{error}</p>}
           {error && diagnostics && <SourceDiagnostics diagnostics={diagnostics} />}
-          {!symbol && !loading && <p className="history-empty-note">בחרו מניה אמריקאית מהתיק או הקלידו סימול.</p>}
+          {!symbol && !loading && (
+            <p className="history-empty-note">
+              בחרו מניה אמריקאית מהתיק או הקלידו את הסימול שלה (למשל AAPL לאפל), ונסביר בפשטות אם היא נראית זולה או יקרה.
+            </p>
+          )}
 
           {data && <ValuationResult key={data.symbol} data={data} />}
 

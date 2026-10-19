@@ -121,7 +121,7 @@ test('a bank is not valued by DCF: a reason, no number', async () => {
 test('any symbol can be typed; errors are shown', async () => {
   global.fetch = jest.fn(async () => ({ ok: false, json: async () => ({ error: 'לא ניתן היה לטעון' }) }));
   render(<ValuationView americanStocks={[]} />);
-  fireEvent.change(screen.getByLabelText('סימול אחר'), { target: { value: 'msft' } });
+  fireEvent.change(screen.getByLabelText('או הקלידו סימול של מניה'), { target: { value: 'msft' } });
   fireEvent.click(screen.getByRole('button', { name: 'הצגה' }));
   await waitFor(() => expect(global.fetch.mock.calls[0][0]).toMatch(/\/api\/valuation\/MSFT$/));
   expect(await screen.findByText('לא ניתן היה לטעון')).toBeInTheDocument();
