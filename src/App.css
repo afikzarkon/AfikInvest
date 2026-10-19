@@ -5298,6 +5298,45 @@ select {
   gap: 8px;
 }
 
+/* The phone's "⋯" menu (PageToolbar.js, ToolbarMoreMenu): the secondary
+   actions, one per row, opening under the button toward the inline end. */
+.toolbar-more {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.toolbar-more-button {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 10px;
+  border-color: var(--sw-border);
+  background: var(--sw-surface-2);
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.toolbar-more-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  inset-inline-end: 0;
+  z-index: 30;
+  min-width: 210px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--sw-border-strong);
+  border-radius: var(--sw-radius-sm);
+  background: var(--sw-surface-3);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+}
+
+.toolbar-more-menu .toolbar-btn {
+  width: 100%;
+  min-height: 44px;
+  text-align: start;
+}
+
 .toolbar-btn {
   padding: 8px 14px;
   border-radius: var(--sw-radius-sm);
@@ -8042,6 +8081,67 @@ select {
   color: var(--sw-text-secondary);
 }
 
+/* The phone's one-line form (BetaBanner.js, CompactBetaBanner). */
+.beta-banner.is-compact {
+  position: relative;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 0;
+}
+
+.beta-banner-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 12px;
+  padding-inline-end: 48px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-family: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.beta-banner.is-compact .beta-banner-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.beta-banner.is-compact.is-open .beta-banner-title {
+  white-space: normal;
+}
+
+.beta-banner-more {
+  color: var(--sw-text-secondary);
+  font-size: 0.8rem;
+}
+
+.beta-banner.is-compact .beta-banner-body {
+  margin: 0;
+  padding: 0 12px 10px;
+}
+
+.beta-banner-close {
+  position: absolute;
+  top: 0;
+  inset-inline-end: 0;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  background: none;
+  color: var(--sw-text-secondary);
+  font-size: 1.3rem;
+  cursor: pointer;
+}
+
 @media (max-width: 600px) {
   .beta-modal-header,
   .beta-modal-body,
@@ -10393,4 +10493,971 @@ select.auth-input[dir='ltr'] {
 
 .maintenance-icon {
   font-size: 2.4rem;
+}
+
+/* =============================================================
+   PHONE BOTTOM BAR & PAGE SHEET (SideNav.js, BottomNav / NavSheet)
+   ============================================================= */
+.bottom-nav-list {
+  display: flex;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bottom-nav-list li {
+  flex: 1;
+  min-width: 0;
+}
+
+.bottom-nav-item {
+  position: relative;
+  width: 100%;
+  min-height: 52px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 4px 2px;
+  border: 0;
+  border-radius: var(--sw-radius-sm);
+  background: none;
+  color: var(--sw-text-secondary);
+  font-family: inherit;
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bottom-nav-item.active {
+  background: var(--sw-accent-soft);
+  color: var(--sw-accent);
+}
+
+.bottom-nav-item .side-nav-badge {
+  position: absolute;
+  top: 3px;
+  inset-inline-end: 18%;
+}
+
+.bottom-nav-item:focus-visible,
+.nav-sheet-item:focus-visible,
+.nav-sheet-close:focus-visible {
+  outline: 2px solid var(--sw-accent);
+  outline-offset: 2px;
+}
+
+.nav-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.nav-sheet {
+  width: 100%;
+  max-height: 82vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 12px calc(16px + env(safe-area-inset-right)) calc(18px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
+  border-radius: var(--sw-radius-lg) var(--sw-radius-lg) 0 0;
+  background: var(--sw-surface-3);
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.3);
+  outline: none;
+}
+
+.nav-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.nav-sheet-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--sw-text);
+}
+
+.nav-sheet-close {
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--sw-text-secondary);
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+
+.nav-sheet-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.nav-sheet-group-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--sw-text-dim);
+}
+
+.nav-sheet-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.nav-sheet-item {
+  position: relative;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--sw-border);
+  border-radius: var(--sw-radius-sm);
+  background: var(--sw-surface-2);
+  color: var(--sw-text);
+  font-family: inherit;
+  font-size: 0.86rem;
+  font-weight: 600;
+  text-align: start;
+  cursor: pointer;
+}
+
+.nav-sheet-item.active {
+  border-color: var(--sw-accent);
+  background: var(--sw-accent-soft);
+  color: var(--sw-accent);
+}
+
+.nav-sheet-item-label {
+  flex: 1;
+  min-width: 0;
+}
+
+/* =============================================================
+   THE ENTRY FORM ON A PHONE (AssetEntryModal.js)
+   =============================================================
+   A floating pane that scrolled inside itself left a few lines of form
+   between a header and the page behind it. On a phone it takes the whole
+   screen, and save/cancel stay pinned at the bottom - reachable whatever
+   field the keyboard has scrolled to. */
+@media (max-width: 720px) {
+  .asset-entry-overlay {
+    padding: 0;
+    align-items: stretch;
+  }
+
+  .asset-entry-modal {
+    width: 100%;
+    min-height: 100%;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    border: 0;
+    border-radius: 0;
+    /* .beta-modal clips its corners with overflow: hidden, which would
+       also stop the header and the buttons from sticking. */
+    overflow: visible;
+  }
+
+  .asset-entry-header {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    padding-top: calc(12px + env(safe-area-inset-top));
+    background: var(--sw-bg-elevated);
+  }
+
+  .asset-entry-close {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .asset-entry-body {
+    flex: 1;
+    max-height: none;
+    overflow: visible;
+    padding-bottom: 0;
+  }
+
+  .asset-entry-body .form-buttons {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    margin: 18px -16px 0;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--sw-border);
+    background: var(--sw-bg-elevated);
+  }
+
+  .asset-entry-body .form-buttons.form-buttons {
+    flex-direction: row;
+  }
+
+  .asset-entry-body .form-buttons button {
+    flex: 1;
+    min-height: 48px;
+    margin: 0;
+  }
+
+  .asset-entry-body input,
+  .asset-entry-body select {
+    min-height: 44px;
+    /* 16px stops iOS zooming the page into a field on focus. */
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 720px) and (prefers-reduced-motion: no-preference) {
+  .asset-entry-modal {
+    animation: entry-sheet-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  @keyframes entry-sheet-in {
+    from {
+      transform: translateY(24px);
+      opacity: 0;
+    }
+  }
+}
+
+/* The percent beside its amount in a summary row (PortfolioSummary.js,
+   AmountPercentRow): same color, lighter. */
+.summary-pct {
+  /* The span is left-to-right (for its sign), so its inline end is the
+     side that faces the amount in a right-to-left row. */
+  margin-inline-end: 8px;
+  font-weight: 500;
+  font-size: 0.88em;
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+/* =============================================================
+   HOME ON A PHONE (HomeView.js, CompactKpis / CompactSummaryItem)
+   ============================================================= */
+.home-kpis {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--sw-border);
+  border-radius: var(--sw-radius);
+  background: var(--sw-surface);
+}
+
+.home-kpi-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--sw-border);
+}
+
+.home-kpi-total {
+  font-size: 1.75rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--sw-text);
+}
+
+.home-kpi-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--sw-border);
+}
+
+.home-kpi-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.home-kpi-label {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 0.84rem;
+  color: var(--sw-text-secondary);
+}
+
+.home-kpi-sub {
+  font-size: 0.72rem;
+  color: var(--sw-text-muted);
+}
+
+.home-kpi-value {
+  font-weight: 700;
+  font-size: 0.98rem;
+  white-space: nowrap;
+}
+
+.home-folds {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.home-fold {
+  border: 1px solid var(--sw-border);
+  border-radius: var(--sw-radius);
+  background: var(--sw-surface);
+  overflow: hidden;
+}
+
+.home-fold[open] {
+  border-color: var(--sw-accent);
+}
+
+.home-fold-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 56px;
+  padding: 10px 14px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.home-fold-head::-webkit-details-marker {
+  display: none;
+}
+
+.home-fold-head::after {
+  content: '▾';
+  color: var(--sw-text-muted);
+  font-size: 0.8rem;
+  transition: transform var(--sw-transition);
+}
+
+.home-fold[open] .home-fold-head::after {
+  transform: rotate(180deg);
+}
+
+.home-fold-head:focus-visible {
+  outline: 2px solid var(--sw-accent);
+  outline-offset: -2px;
+}
+
+.home-fold-title {
+  font-weight: 700;
+  color: var(--sw-text);
+  font-size: 0.92rem;
+}
+
+.home-fold-figures {
+  margin-inline-start: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+}
+
+.home-fold-value {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--sw-text);
+  white-space: nowrap;
+}
+
+.home-fold-pct {
+  font-size: 0.78rem;
+  font-weight: 600;
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.home-fold-body {
+  padding: 0 10px 12px;
+}
+
+.home-fold-body .summary-section {
+  border: 0;
+  background: none;
+  padding: 0;
+  box-shadow: none;
+}
+
+.home-fold-link {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 8px;
+  border: 1px solid var(--sw-border);
+  border-radius: var(--sw-radius-sm);
+  background: var(--sw-surface-2);
+  color: var(--sw-accent);
+  font-family: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* =============================================================
+   MERGED HOLDINGS COLUMNS & PHONE CARDS (components/holdings/)
+   =============================================================
+   A merged cell: the main figure, a percent beside it when it has one,
+   and a quieter second figure under it. */
+.mv {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.mv-main {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.mv-sub {
+  font-size: 0.78em;
+  font-weight: 500;
+  color: var(--sw-text-muted);
+  white-space: nowrap;
+}
+
+.mv-sub .mv-num {
+  color: inherit;
+}
+
+.mv-sub .mv-num.profit-positive,
+.mv-sub .mv-num.profit-negative {
+  font-weight: 600;
+}
+
+.mv-sub .profit-positive {
+  color: var(--sw-green);
+}
+
+.mv-sub .profit-negative {
+  color: var(--sw-red);
+}
+
+.mv-pct {
+  font-weight: 500;
+  font-size: 0.9em;
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.mv-head {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.mv-head-title {
+  font-weight: 700;
+}
+
+.mv-head-hint {
+  font-size: 0.78em;
+  font-weight: 500;
+  color: var(--sw-text-muted);
+}
+
+.mv-sub .editable-cell {
+  display: inline;
+}
+
+/* A grouped holding's name cell: the expand control, the name, and how
+   many purchases it holds. */
+.group-name-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.expand-button {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--sw-border);
+  border-radius: 8px;
+  background: var(--sw-surface);
+  color: var(--sw-accent);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.lots-badge,
+.hc-badge {
+  display: inline-block;
+  margin-inline-start: 6px;
+  padding: 1px 7px;
+  border-radius: var(--sw-radius-pill);
+  background: var(--sw-surface-3);
+  color: var(--sw-text-secondary);
+  font-size: 0.68rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.holdings-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.holdings-section-head .section-title {
+  margin-bottom: 0;
+}
+
+/* Cards / full table, on a phone. */
+.hv-toggle {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--sw-border);
+  border-radius: var(--sw-radius-pill);
+  background: var(--sw-surface-2);
+}
+
+.hv-toggle button {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--sw-radius-pill);
+  background: none;
+  color: var(--sw-text-secondary);
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.hv-toggle button.active {
+  background: var(--sw-surface);
+  color: var(--sw-text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.holdings-cards-section .hc-list {
+  margin-top: 12px;
+}
+
+.hc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hc-card {
+  border: 1px solid var(--sw-border);
+  border-radius: var(--sw-radius-sm);
+  background: var(--sw-surface);
+  overflow: hidden;
+}
+
+.hc-card.is-open {
+  border-color: var(--sw-accent);
+}
+
+.hc-head {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  align-items: start;
+  padding: 12px 14px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-family: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.hc-head:focus-visible,
+.hc-lot-head:focus-visible {
+  outline: 2px solid var(--sw-accent);
+  outline-offset: -2px;
+}
+
+.hc-id {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.hc-name {
+  font-weight: 700;
+  font-size: 0.98rem;
+  color: var(--sw-text);
+  overflow-wrap: anywhere;
+}
+
+.hc-idline {
+  font-size: 0.74rem;
+  color: var(--sw-text-muted);
+}
+
+.hc-figures {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.hc-value {
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--sw-text);
+  white-space: nowrap;
+}
+
+.hc-valuesub {
+  font-size: 0.74rem;
+  color: var(--sw-text-muted);
+  white-space: nowrap;
+}
+
+.hc-line {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.hc-daily {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-top: 6px;
+  border-top: 1px dashed var(--sw-border);
+  font-size: 0.74rem;
+  color: var(--sw-text-muted);
+}
+
+.hc-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 14px 14px;
+  border-top: 1px solid var(--sw-border);
+}
+
+.hc-fields {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.hc-field {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 40px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--sw-border);
+}
+
+.hc-field:last-child {
+  border-bottom: 0;
+}
+
+.hc-field dt {
+  font-size: 0.8rem;
+  color: var(--sw-text-secondary);
+}
+
+.hc-field dd {
+  margin: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 0.86rem;
+  text-align: end;
+}
+
+.hc-field dd input {
+  max-width: 150px;
+  min-height: 40px;
+  font-size: 16px;
+}
+
+.hc-ext {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  border-radius: var(--sw-radius-sm);
+  background: var(--sw-amber-soft);
+}
+
+.hc-ext-title,
+.hc-lots-title {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--sw-text-secondary);
+}
+
+.hc-ext-title {
+  color: var(--sw-text);
+}
+
+.hc-lots {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hc-lot {
+  border-radius: var(--sw-radius-sm);
+  background: var(--sw-surface-2);
+  overflow: hidden;
+}
+
+.hc-lot-head {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 10px;
+  align-items: baseline;
+  min-height: 52px;
+  padding: 10px 12px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-family: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.hc-lot-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--sw-text);
+}
+
+.hc-lot-more {
+  grid-column: 1 / -1;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--sw-accent);
+}
+
+.hc-lot-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 12px 12px;
+}
+
+.hc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.hc-actions .delete-button {
+  min-height: 40px;
+}
+
+/* =============================================================
+   ACCOUNT CARDS (FinancialAccountsTables.js on a phone)
+   =============================================================
+   The account tables as cards: the same rows and cells, each row laid out
+   as a card and each cell as a "label - value" line, the label taken from
+   the cell's data-label (its column's name). The deposits and movements of
+   an opened account follow as a lighter list. Editing works exactly as in
+   the table - it is the same markup. */
+.acct-cards table,
+.acct-cards tbody,
+.acct-cards tr,
+.acct-cards td {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+.acct-cards thead {
+  display: none;
+}
+
+.acct-cards .table-container,
+.acct-cards .stocks-table-container {
+  overflow: visible;
+  border: 0;
+  background: none;
+  margin: 12px 0 0;
+  width: 100%;
+  max-width: 100%;
+}
+
+.acct-cards tbody tr:not(.detail-row) {
+  margin-top: 8px;
+  padding: 4px 14px;
+  border: 1px solid var(--sw-border);
+  border-radius: var(--sw-radius-sm);
+  background: var(--sw-surface);
+}
+
+.acct-cards tbody tr.detail-row {
+  margin-top: -2px;
+  padding: 2px 14px;
+  border-radius: 0 0 var(--sw-radius-sm) var(--sw-radius-sm);
+  background: var(--sw-surface-2);
+  font-size: 0.86em;
+}
+
+.acct-cards td,
+.acct-cards td:first-child {
+  position: static;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border: 0;
+  border-bottom: 1px solid var(--sw-border);
+  background: none;
+  box-shadow: none;
+  white-space: normal;
+  text-align: end;
+}
+
+.acct-cards td:last-child {
+  border-bottom: 0;
+}
+
+.acct-cards td::before {
+  content: attr(data-label);
+  flex-shrink: 0;
+  max-width: 50%;
+  color: var(--sw-text-secondary);
+  font-size: 0.8rem;
+  font-weight: 500;
+  text-align: start;
+}
+
+.acct-cards td:not([data-label])::before {
+  content: none;
+}
+
+.acct-cards td:empty {
+  display: none;
+}
+
+/* The row's first cell is its name: the card's title, no label. */
+.acct-cards tbody tr:not(.detail-row) > td:first-child {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  font-size: 1rem;
+  font-weight: 700;
+  text-align: start;
+}
+
+.acct-cards tbody tr:not(.detail-row) > td:first-child::before {
+  content: none;
+}
+
+.acct-cards td[colspan] {
+  justify-content: flex-start;
+}
+
+.acct-cards .mv {
+  align-items: flex-end;
+}
+
+.acct-cards td input {
+  max-width: 160px;
+  min-height: 40px;
+  font-size: 16px;
+}
+
+.acct-cards .delete-button {
+  min-height: 40px;
+}
+
+/* Merged account cells: the security number / track under the name, the
+   date under a value. */
+.merged-id {
+  display: block;
+  font-size: 0.78em;
+  font-weight: 500;
+  color: var(--sw-text-muted);
+}
+
+.acct-cards tbody tr:not(.detail-row) > td:first-child .merged-id {
+  flex-basis: 100%;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.merged-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.merged-date {
+  display: inline-block;
+}
+
+/* The table's pinned first column, its no-wrap figures and its phone
+   density do not apply to the cards. */
+.acct-cards .stocks-table {
+  min-width: 0;
+  width: 100%;
+  font-size: 0.86rem;
+}
+
+.acct-cards .stocks-table td,
+.acct-cards .stocks-table td:first-child,
+.acct-cards .stocks-table tbody tr:hover td:first-child,
+.acct-cards .stocks-table .detail-row td:first-child,
+.acct-cards .stocks-table .summary-row-expanded td:first-child {
+  position: static;
+  min-width: 0;
+  max-width: none;
+  padding: 9px 0;
+  background: none;
+  box-shadow: none;
+  white-space: normal;
+}
+
+.acct-cards .stocks-table td::before {
+  white-space: nowrap;
+}
+
+/* A purchase's title in a stock card: the date, and under it what was
+   bought at what price. */
+.hc-lot-title {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.hc-lot-qty {
+  font-size: 0.74rem;
+  font-weight: 500;
+  color: var(--sw-text-muted);
 }

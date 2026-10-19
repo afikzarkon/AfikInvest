@@ -150,8 +150,14 @@ describe('responsiveness of the new layout', () => {
   // A table stays a table at every width: the rows used to become one
   // card per holding on a phone, which reads well for a single position
   // and makes comparing two of them impossible.
+  //
+  // The one exception is opt-in: on a phone the user can choose cards
+  // (the holdings pages' "כרטיסים / טבלה מלאה" toggle), and the account
+  // tables then render under .acct-cards. Those rules are left out here;
+  // everything else - the table a user gets by default - stays a table.
   test('rows stay table rows rather than becoming cards on a phone', () => {
-    const phone = CSS.slice(CSS.indexOf('@media (max-width: 720px)'));
+    const optIn = /[^{}]*\.acct-cards[^{}]*\{[^}]*\}/g;
+    const phone = CSS.slice(CSS.indexOf('@media (max-width: 720px)')).replace(optIn, '');
     // The card layout turned rows and cells into blocks and printed the
     // column name from a data attribute. Neither may come back.
     expect(phone).not.toMatch(/content:\s*attr\(data-label\)/);

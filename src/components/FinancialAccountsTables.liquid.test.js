@@ -58,10 +58,10 @@ describe('money-market fund (כספית שקלית)', () => {
     const fund = { id: 10, fundName: 'כספית', securityId: '5119609', currentValue: 5000, currentValueDate: '2024-01-01', deposits: [{ date: '2024-01-01', amount: 5000 }] };
     const { container } = render(<Harness initialCashFunds={[fund]} />);
     const row = container.querySelector('tbody tr');
-    recordValue(row.children[3], '5200', '2024-02-01');
-    expect(row.children[3].textContent).toBe('5200 ₪');
-    expect(row.children[4].textContent).toBe('2024-02-01');
-    expect(row.children[7].textContent).toBe('5000 ₪');
+    recordValue(row.children[2], '5200', '2024-02-01');
+    expect(main(row.children[2]).textContent).toBe('5200 ₪');
+    expect(dateOf(row.children[2]).textContent).toBe('2024-02-01');
+    expect(main(row.children[5]).textContent).toBe('5000 ₪');
   });
 
   // The reported case (moved into the past): 14,000 and 2,500 deposited the
@@ -86,17 +86,17 @@ describe('money-market fund (כספית שקלית)', () => {
     };
     const { container } = render(<Harness initialCashFunds={[fund]} />);
     const row = container.querySelector('tbody tr');
-    expect(row.children[2].textContent).toBe('16500 ₪');
-    expect(row.children[4].textContent).toBe('לפי ההפקדות');
-    expect(row.children[5].textContent).toBe('-');
+    expect(row.children[1].textContent).toBe('16500 ₪');
+    expect(dateOf(row.children[2]).textContent).toBe('לפי ההפקדות');
+    expect(row.children[3].textContent).toBe('-');
 
-    recordValue(row.children[3], '15000', '2026-10-05');
+    recordValue(row.children[2], '15000', '2026-10-05');
     // The previous value is the deposits' own sum, so it says so, and the
     // return is measured from the opening.
-    expect(row.children[7].textContent).toBe('16500 ₪סכום ההפקדות');
-    expect(row.children[5].textContent).toBe('-9.09%-1500 ₪מאז הפתיחה (2026-10-04)');
-    expect(row.children[6].textContent).toContain('-9.09%');
-    expect(row.children[6].textContent).toContain('-1500 ₪');
+    expect(main(row.children[5]).textContent).toBe('16500 ₪סכום ההפקדות');
+    expect(row.children[3].textContent).toBe('-9.09%-1500 ₪מאז הפתיחה (2026-10-04)');
+    expect(row.children[4].textContent).toContain('-9.09%');
+    expect(row.children[4].textContent).toContain('-1500 ₪');
   });
 
   // 40,000 on 02/04 and 20,000 on 10/10, worth 70,000 on 14/10: the 10,000
@@ -123,9 +123,9 @@ describe('money-market fund (כספית שקלית)', () => {
     };
     const { container } = render(<Harness initialCashFunds={[fund]} />);
     const row = container.querySelector('tbody tr');
-    recordValue(row.children[3], '70000', '2026-10-14');
-    expect(row.children[5].textContent).toBe('24.75%10000 ₪מאז הפתיחה (2026-04-02)');
-    expect(row.children[6].textContent).toContain('16.67%'); // overall: 10,000 on 60,000 paid in
+    recordValue(row.children[2], '70000', '2026-10-14');
+    expect(row.children[3].textContent).toBe('24.75%10000 ₪מאז הפתיחה (2026-04-02)');
+    expect(row.children[4].textContent).toContain('16.67%'); // overall: 10,000 on 60,000 paid in
   });
 
   test('a withdrawal shows in the expanded ledger labeled "(משיכה)"', () => {
@@ -149,9 +149,9 @@ describe('money-market fund (כספית שקלית)', () => {
     const legacy = { id: 12, fundName: 'כספית ישנה', securityId: '123', amount: 800, updateDate: '2023-01-01' };
     const { container } = render(<Harness initialCashFunds={[legacy]} />);
     const row = container.querySelector('tbody tr');
-    expect(row.children[3].textContent).toBe('800 ₪');
-    expect(row.children[6].textContent).toBe('-');
-    expect(row.children[7].textContent).toBe('0 ₪');
+    expect(main(row.children[2]).textContent).toBe('800 ₪');
+    expect(row.children[4].textContent).toBe('-');
+    expect(main(row.children[5]).textContent).toBe('0 ₪');
   });
 });
 
@@ -284,4 +284,9 @@ describe('current account (עו"ש)', () => {
     expect(row.children[0].textContent).toContain('2000 ₪');
     expect(row.children[1].textContent).toBe('2023-01-01');
   });
-});
+});
+
+// The money-market table merges each value with its date: the value is the
+// cell's main line, the date the line under it.
+const main = (cell) => cell.querySelector('.mv-main') || cell;
+const dateOf = (cell) => cell.querySelector('.merged-date');

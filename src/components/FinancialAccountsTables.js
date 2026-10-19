@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import ScrollableTable from './ScrollableTable';
 import EditableCell from './EditableCell';
+import { Merged, MergedHeader, Pct } from './holdings/MergedValue';
+import { HoldingsViewToggle, useHoldingsView } from './holdings/useHoldingsView';
+import { useCompactLayout } from '../hooks/useMediaQuery';
 import { calculatePensionRealGainTax, calculateBankSavingsFundTax, monthKeyFromDate } from '../utils/cpiTax';
 import {
   calculateLedgerPeriodReturn,
@@ -86,6 +89,19 @@ const SAVINGS_COL = {
 // else. As a card it says what it actually is.
 const DEPOSIT_COL = { date: 'תאריך הפקדה', amount: 'סכום' };
 
+// The merged columns' names (each value with its date, each profit with
+// its percent) - headers and the phone cards' labels.
+const PENSION_MERGED = {
+  current: 'שווי כיום',
+  previous: 'שווי בעדכון הקודם',
+  index: 'מדד ביום ההפקדה / היום',
+  real: 'רווח ריאלי / אינפלציוני',
+  update: 'רווח/הפסד מעדכון קודם',
+  total: 'סך רווח/הפסד'
+};
+const CASH_MERGED = { name: 'שם · מספר נייר', current: 'שווי היום', previous: 'שווי בעדכון הקודם' };
+const SAVINGS_MERGED = { name: 'שם · מסלול', rate: 'ריבית שנתית · הצמדה', current: 'שווי נוכחי / הפקדות', profit: 'רווח/הפסד', tax: 'מס / רווח אחרי מס' };
+
 function FinancialAccountsTables({
   pensionFunds,
   cashFunds,
@@ -119,6 +135,29 @@ function FinancialAccountsTables({
   // without its other callbacks.
   onUpdateTransaction
 }) {
+  // An amount in a merged cell, through the page's own formatter (privacy
+  // mode masks it).
+  const Money = ({ value, signed = false }) => (
+    <span className={`mv-num ${signed && value > 0 ? 'profit-positive' : signed && value < 0 ? 'profit-negative' : ''}`}>
+      {`${formatPriceWithSign(value)} ₪`}
+    </span>
+  );
+
+  // On a phone: each row as a card (App.css, ACCOUNT CARDS) - every cell
+  // already carries its column's name in data-label, which becomes the
+  // card's label for it - or the full table, as on the desktop. The same
+  // choice as the holdings pages.
+  const compact = useCompactLayout();
+  const [holdingsView, setHoldingsView] = useHoldingsView();
+  const asCards = compact && holdingsView === 'cards';
+  const sectionHead = (title) => (
+    <div className="holdings-section-head">
+      <h2 className="section-title">{title}</h2>
+      {compact && <HoldingsViewToggle view={holdingsView} onChange={setHoldingsView} />}
+    </div>
+  );
+  const sectionClass = `stocks-section ${asCards ? 'acct-cards' : ''}`;
+
   const formatPercent = (value) => {
     if (value === null || value === undefined || Number.isNaN(value)) {
       return '-';
@@ -423,26 +462,23 @@ function FinancialAccountsTables({
   return (
     <>
       {shows('pension') && pensionFunds.length > 0 && (
-        <div className="stocks-section">
-          <h2 className="section-title">קופות גמל</h2>
+        <div className={sectionClass}>
+          {sectionHead('קופות גמל')}
           <ScrollableTable label="קופות גמל">
               <thead>
                 <tr>
+                  {/* Merged columns: each value with its date, each profit
+                      with its percent - 6 columns instead of 9 (9 instead
+                      of 15 with the extended data), every figure kept. */}
                   <th>{PENSION_COL.name}</th>
                   <th>{PENSION_COL.initial}</th>
-                  <th>{PENSION_COL.current}</th>
-                  <th>{PENSION_COL.currentDate}</th>
-                  <th>{PENSION_COL.previous}</th>
-                  {showAdditionalData && <th>{PENSION_COL.previousDate}</th>}
-                  {showAdditionalData && <th>{PENSION_COL.indexToday}</th>}
-                  {showAdditionalData && <th>{PENSION_COL.indexAtDeposit}</th>}
-                  {showAdditionalData && <th>{PENSION_COL.realGain}</th>}
-                  {showAdditionalData && <th>{PENSION_COL.inflationary}</th>}
+                  <th><MergedHeader title={PENSION_MERGED.current} hint="₪ · תאריך" /></th>
+                  <th><MergedHeader title={PENSION_MERGED.previous} hint="₪ · תאריך" /></th>
+                  {showAdditionalData && <th><MergedHeader title={PENSION_MERGED.index} /></th>}
+                  {showAdditionalData && <th><MergedHeader title={PENSION_MERGED.real} hint="₪" /></th>}
                   {showAdditionalData && <th>{PENSION_COL.afterTax}</th>}
-                  <th>{PENSION_COL.periodReturn}</th>
-                  <th>{PENSION_COL.cumulative}</th>
-                  <th>{PENSION_COL.totalProfit}</th>
-                  <th>{PENSION_COL.updateProfit}</th>
+                  <th><MergedHeader title={PENSION_MERGED.update} hint="₪ · %" /></th>
+                  <th><MergedHeader title={PENSION_MERGED.total} hint="₪ · % מול הפקדות" /></th>
                   {isEditMode && <th>{PENSION_COL.actions}</th>}
                 </tr>
               </thead>
@@ -547,70 +583,86 @@ function FinancialAccountsTables({
                               onKeyDown={(e) => { if (e.key === 'Enter') commitValueEdit(item, 'pension'); }}
                             />
                           </div>
-                        ) : `${formatPriceWithSign(currentValue)} ₪`}
-                      </td>
-                      <td onClick={() => handleCellClick(item.id, 'currentValueDate', 'pension')} className={isEditMode ? 'editable-cell' : ''} data-label={PENSION_COL.currentDate}>
-                        {editingField === `${item.id}-currentValueDate` ? (
-                          <input
-                            type="date"
-                            value={item.currentValueDate || ''}
-                            onChange={(e) => handleInlineEdit(item.id, 'currentValueDate', e.target.value, 'pension')}
-                            onBlur={finishInlineEdit}
-                            onKeyDown={(e) => handleKeyDown(e, item.id, 'currentValueDate', 'pension')}
-                            autoFocus
+                        ) : (
+                          <Merged
+                            main={`${formatPriceWithSign(currentValue)} ₪`}
+                            sub={
+                              // The value's date, editable on its own; a click
+                              // here edits the date, not the value.
+                              // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
+                              <span
+                                className={`merged-date ${isEditMode ? 'editable-cell' : ''}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleCellClick(item.id, 'currentValueDate', 'pension');
+                                }}
+                              >
+                                {editingField === `${item.id}-currentValueDate` ? (
+                                  <input
+                                    type="date"
+                                    aria-label={PENSION_COL.currentDate}
+                                    value={item.currentValueDate || ''}
+                                    onChange={(e) => handleInlineEdit(item.id, 'currentValueDate', e.target.value, 'pension')}
+                                    onBlur={finishInlineEdit}
+                                    onKeyDown={(e) => handleKeyDown(e, item.id, 'currentValueDate', 'pension')}
+                                    autoFocus
+                                  />
+                                ) : (item.currentValueDate ? formatDate(item.currentValueDate) : '-')}
+                              </span>
+                            }
                           />
-                        ) : (item.currentValueDate ? formatDate(item.currentValueDate) : '-')}
+                        )}
                       </td>
                       {/* previousValue/previousValueDate הן תצוגה בלבד בכוונה - עריכה ישירה
                           שלהן תעקוף את applyPensionValueUpdate שדואג לשמר היסטוריה נכונה
                           כשמעדכנים "שווי נוכחי" (ראו portfolioMath.js). זה בעצמו הבאג שהיה
                           כאן בעבר - השדות האלה משתנים רק כתוצאה מעדכון "שווי נוכחי" חדש. */}
-                      <td data-label={PENSION_COL.previous}>{renderPreviousValue(item, previousValue)}</td>
-                      {showAdditionalData && (
-                        <td data-label={PENSION_COL.previousDate}>{item.previousValueDate ? formatDate(item.previousValueDate) : '-'}</td>
-                      )}
-                      {showAdditionalData && (
-                        <td data-label={PENSION_COL.indexToday}>{cpi && cpi.currentIndex != null ? cpi.currentIndex : '-'}</td>
-                      )}
+                      <td data-label={PENSION_COL.previous}>
+                        <Merged main={renderPreviousValue(item, previousValue)} sub={<span className="merged-date">{item.previousValueDate ? formatDate(item.previousValueDate) : '-'}</span>} />
+                      </td>
                       {/* מדד ביום ההפקדה הוא ערך פר-הפקדה (לכל הפקדה החודש שלה) - לא
                           מוצג כאן בשורת הסיכום כי לקופה יכולות להיות הפקדות ממספר
-                          חודשים שונים; ראו את הערך האמיתי בשורות ההפקדה המורחבות למטה. */}
-                      {showAdditionalData && <td data-label={PENSION_COL.indexAtDeposit}>-</td>}
+                          חודשים שונים; ראו את הערך האמיתי בשורות ההפקדה המורחבות למטה.
+                          מדד היום מוצג מתחתיו. */}
                       {showAdditionalData && (
-                      <td className={realGain !== null && realGain > 0 ? 'profit-positive' : realGain !== null && realGain < 0 ? 'profit-negative' : ''} data-label={PENSION_COL.realGain}>
-                        {realGain !== null ? `${formatPriceWithSign(realGain)} ₪` : '-'}
-                      </td>
+                        <td data-label={PENSION_MERGED.index}>
+                          <Merged main="-" sub={<span className="cpi-today">{`היום ${cpi && cpi.currentIndex != null ? cpi.currentIndex : '-'}`}</span>} />
+                        </td>
                       )}
                       {showAdditionalData && (
-                      <td data-label={PENSION_COL.inflationary}>
-                        {inflationaryGain !== null ? `${formatPriceWithSign(inflationaryGain)} ₪` : '-'}
-                      </td>
+                        <td data-label={PENSION_MERGED.real}>
+                          <Merged
+                            main={realGain !== null ? <Money value={realGain} signed /> : '-'}
+                            sub={inflationaryGain !== null ? <>אינפלציוני <Money value={inflationaryGain} /></> : null}
+                          />
+                        </td>
                       )}
                       {showAdditionalData && (
                       <td className={afterTaxProfit !== null && afterTaxProfit > 0 ? 'profit-positive' : afterTaxProfit !== null && afterTaxProfit < 0 ? 'profit-negative' : ''} data-label={PENSION_COL.afterTax}>
                         {afterTaxProfit !== null ? `${formatPriceWithSign(afterTaxProfit)} ₪` : '-'}
                       </td>
                       )}
-                      <td className={previousProfitPercent > 0 ? 'profit-positive' : previousProfitPercent < 0 ? 'profit-negative' : ''} data-label={PENSION_COL.periodReturn}>
-                        {ambiguousPeriod && (
-                          <span
-                            className="ambiguous-period-warning"
-                            title='תאריך "שווי קודם" זהה לתאריך "שווי נוכחי" - כל הפקדה שקדמה לתאריך הזה, גם אם קדמה זמן רב, לא נלקחת בחשבון בחישוב הזה. ודאו שהתאריכים משקפים נכון מתי כל שווי היה נכון.'
-                          >
-                            ⚠️{' '}
-                          </span>
-                        )}
-                        {formatPercent(previousProfitPercent)}
-                        {renderSinceOpeningNote(item, previousProfitPercent)}
+                      <td data-label={PENSION_MERGED.update}>
+                        <Merged
+                          main={
+                            <>
+                              {ambiguousPeriod && (
+                                <span
+                                  className="ambiguous-period-warning"
+                                  title='תאריך "שווי קודם" זהה לתאריך "שווי נוכחי" - כל הפקדה שקדמה לתאריך הזה, גם אם קדמה זמן רב, לא נלקחת בחשבון בחישוב הזה. ודאו שהתאריכים משקפים נכון מתי כל שווי היה נכון.'
+                                >
+                                  ⚠️
+                                </span>
+                              )}
+                              {updateProfitLoss !== null ? <Money value={updateProfitLoss} signed /> : '-'}
+                              {previousProfitPercent !== null && <Pct value={previousProfitPercent} />}
+                            </>
+                          }
+                          sub={renderSinceOpeningNote(item, previousProfitPercent)}
+                        />
                       </td>
-                      <td className={profitPercent > 0 ? 'profit-positive' : profitPercent < 0 ? 'profit-negative' : ''} data-label={PENSION_COL.cumulative}>
-                        {formatPercent(profitPercent)}
-                      </td>
-                      <td className={totalProfitLoss > 0 ? 'profit-positive' : totalProfitLoss < 0 ? 'profit-negative' : ''} data-label={PENSION_COL.totalProfit}>
-                        {`${formatPriceWithSign(totalProfitLoss)} ₪`}
-                      </td>
-                      <td className={updateProfitLoss > 0 ? 'profit-positive' : updateProfitLoss < 0 ? 'profit-negative' : ''} data-label={PENSION_COL.updateProfit}>
-                        {updateProfitLoss !== null ? `${formatPriceWithSign(updateProfitLoss)} ₪` : '-'}
+                      <td data-label={PENSION_MERGED.total}>
+                        <Merged main={<><Money value={totalProfitLoss} signed />{profitPercent !== null && <Pct value={profitPercent} />}</>} />
                       </td>
                       {isEditMode && (
                         <td data-label={PENSION_COL.actions}>
@@ -618,10 +670,10 @@ function FinancialAccountsTables({
                         </td>
                       )}
                     </tr>
-                    {isExpanded && renderRecordTransactionRow('pension', item, (showAdditionalData ? 15 : 9) + (isEditMode ? 1 : 0), '+ רישום פעולה (הפקדה / משיכה / עדכון שווי)')}
+                    {isExpanded && renderRecordTransactionRow('pension', item, (showAdditionalData ? 9 : 6) + (isEditMode ? 1 : 0), '+ רישום פעולה (הפקדה / משיכה / עדכון שווי)')}
                     {isExpanded && deposits.length === 0 && (
                       <tr className={`${isEditMode ? 'editable-row' : ''} detail-row`}>
-                        <td style={{ paddingLeft: '20px' }} colSpan={(showAdditionalData ? 15 : 9) + (isEditMode ? 1 : 0)}>אין הפקדות רשומות</td>
+                        <td style={{ paddingLeft: '20px' }} colSpan={(showAdditionalData ? 9 : 6) + (isEditMode ? 1 : 0)}>אין הפקדות רשומות</td>
                       </tr>
                     )}
                     {isExpanded && deposits.map((d, i) => (
@@ -630,17 +682,11 @@ function FinancialAccountsTables({
                         {renderMovementAmount(item, d, i, 'pension', { label: DEPOSIT_COL.amount })}
                         <td></td>
                         <td></td>
-                        <td></td>
-                        {showAdditionalData && <td></td>}
-                        {showAdditionalData && <td></td>}
                         {showAdditionalData && (
                           <td data-label={PENSION_COL.indexAtDeposit}>{cpi && cpi.indexByMonth ? cpi.indexByMonth[monthKeyFromDate(d.date)] ?? '-' : '-'}</td>
                         )}
                         {showAdditionalData && <td></td>}
                         {showAdditionalData && <td></td>}
-                        {showAdditionalData && <td></td>}
-                        <td></td>
-                        <td></td>
                         <td></td>
                         <td></td>
                         {isEditMode && (
@@ -659,20 +705,19 @@ function FinancialAccountsTables({
       )}
 
       {shows('cash') && cashFunds.length > 0 && (
-        <div className="stocks-section">
-          <h2 className="section-title">כספית שקלית</h2>
+        <div className={sectionClass}>
+          {sectionHead('כספית שקלית')}
           <ScrollableTable label="כספית שקלית">
               <thead>
                 <tr>
-                  <th>{CASH_COL.name}</th>
-                  <th>{CASH_COL.securityId}</th>
+                  {/* Merged: the name with its security number, each value
+                      with its date - 5 columns instead of 7. */}
+                  <th>{CASH_MERGED.name}</th>
                   <th>{CASH_COL.deposited}</th>
-                  <th>{CASH_COL.current}</th>
-                  <th>{CASH_COL.currentDate}</th>
+                  <th><MergedHeader title={CASH_MERGED.current} hint="₪ · תאריך" /></th>
                   <th>{CASH_COL.periodReturn}</th>
                   <th>{CASH_COL.totalReturn}</th>
-                  {showAdditionalData && <th>{CASH_COL.previous}</th>}
-                  {showAdditionalData && <th>{CASH_COL.previousDate}</th>}
+                  {showAdditionalData && <th><MergedHeader title={CASH_MERGED.previous} hint="₪ · תאריך" /></th>}
                   {isEditMode && <th>{CASH_COL.actions}</th>}
                 </tr>
               </thead>
@@ -681,7 +726,7 @@ function FinancialAccountsTables({
                   const deposits = Array.isArray(item.deposits) ? item.deposits : [];
                   const previousValue = item.previousValue ?? 0;
                   const isExpanded = !!expandedCashFunds[item.id];
-                  const columnCount = (showAdditionalData ? 9 : 7) + (isEditMode ? 1 : 0);
+                  const columnCount = (showAdditionalData ? 6 : 5) + (isEditMode ? 1 : 0);
                   return (
                     <React.Fragment key={item.id}>
                       <tr className={isEditMode ? 'editable-row' : ''}>
@@ -699,18 +744,27 @@ function FinancialAccountsTables({
                               autoFocus
                             />
                           ) : (item.fundName || '-')}
-                        </td>
-                        <td onClick={() => handleCellClick(item.id, 'securityId', 'cash_fund')} className={isEditMode ? 'editable-cell' : ''} data-label={CASH_COL.securityId}>
-                          {editingField === `${item.id}-securityId` ? (
-                            <input
-                              type="text"
-                              value={item.securityId}
-                              onChange={(e) => handleInlineEdit(item.id, 'securityId', e.target.value, 'cash_fund')}
-                              onBlur={finishInlineEdit}
-                              onKeyDown={(e) => handleKeyDown(e, item.id, 'securityId', 'cash_fund')}
-                              autoFocus
-                            />
-                          ) : item.securityId}
+                          {/* The security number under the name, editable on its own. */}
+                          {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
+                          <span
+                            className={`merged-id ${isEditMode ? 'editable-cell' : ''}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCellClick(item.id, 'securityId', 'cash_fund');
+                            }}
+                          >
+                            {editingField === `${item.id}-securityId` ? (
+                              <input
+                                type="text"
+                                aria-label={CASH_COL.securityId}
+                                value={item.securityId}
+                                onChange={(e) => handleInlineEdit(item.id, 'securityId', e.target.value, 'cash_fund')}
+                                onBlur={finishInlineEdit}
+                                onKeyDown={(e) => handleKeyDown(e, item.id, 'securityId', 'cash_fund')}
+                                autoFocus
+                              />
+                            ) : item.securityId}
+                          </span>
                         </td>
                         <td data-label={CASH_COL.deposited}>{`${formatPriceWithSign(netMovements(item))} ₪`}</td>
                         <td
@@ -743,17 +797,20 @@ function FinancialAccountsTables({
                                 onKeyDown={(e) => { if (e.key === 'Enter') commitValueEdit(item, 'cash_fund'); }}
                               />
                             </div>
-                          ) : renderLiquidBalance(item)}
-                        </td>
-                        <td data-label={CASH_COL.currentDate}>
-                          {item.valueFromLedger ? 'לפי ההפקדות' : item.currentValueDate ? formatDate(item.currentValueDate) : '-'}
+                          ) : (
+                            <Merged
+                              main={renderLiquidBalance(item)}
+                              sub={<span className="merged-date">{item.valueFromLedger ? 'לפי ההפקדות' : item.currentValueDate ? formatDate(item.currentValueDate) : '-'}</span>}
+                            />
+                          )}
                         </td>
                         {renderLiquidReturnCells(item, CASH_COL)}
                         {/* previousValue/previousValueDate הן תצוגה בלבד בכוונה - ראו
                             הערת השדות המקבילים בטבלת קופות הגמל למעלה. */}
-                        {showAdditionalData && <td data-label={CASH_COL.previous}>{renderPreviousValue(item, previousValue)}</td>}
                         {showAdditionalData && (
-                          <td data-label={CASH_COL.previousDate}>{item.previousValueDate ? formatDate(item.previousValueDate) : '-'}</td>
+                          <td data-label={CASH_MERGED.previous}>
+                            <Merged main={renderPreviousValue(item, previousValue)} sub={<span className="merged-date">{item.previousValueDate ? formatDate(item.previousValueDate) : '-'}</span>} />
+                          </td>
                         )}
                         {isEditMode && (
                           <td data-label={CASH_COL.actions}>
@@ -774,9 +831,6 @@ function FinancialAccountsTables({
                           <td></td>
                           <td></td>
                           <td></td>
-                          <td></td>
-                          <td></td>
-                          {showAdditionalData && <td></td>}
                           {showAdditionalData && <td></td>}
                           {isEditMode && (
                             <td>
@@ -794,8 +848,8 @@ function FinancialAccountsTables({
       )}
 
       {shows('bank') && bankBalances.length > 0 && (
-        <div className="stocks-section">
-          <h2 className="section-title">עו"ש</h2>
+        <div className={sectionClass}>
+          {sectionHead('עו"ש')}
           {/* A current account does not grow, so it has no value to record
               and no return to measure: its balance is its deposits less its
               withdrawals (plus, for an account recorded before the ledger,
@@ -859,20 +913,19 @@ function FinancialAccountsTables({
       )}
 
       {shows('bank_savings') && bankSavingsFunds.length > 0 && (
-        <div className="stocks-section">
-          <h2 className="section-title">קופות חיסכון בבנק</h2>
+        <div className={sectionClass}>
+          {sectionHead('קופות חיסכון בבנק')}
           <ScrollableTable label="קופות חיסכון בבנק">
               <thead>
                 <tr>
-                  <th>{SAVINGS_COL.name}</th>
-                  <th>{SAVINGS_COL.track}</th>
-                  <th>{SAVINGS_COL.rate}</th>
-                  <th>{SAVINGS_COL.linked}</th>
-                  <th>{SAVINGS_COL.deposited}</th>
-                  <th>{SAVINGS_COL.current}</th>
-                  <th>{SAVINGS_COL.profit}</th>
-                  {showAdditionalData && <th>{SAVINGS_COL.tax}</th>}
-                  {showAdditionalData && <th>{SAVINGS_COL.afterTax}</th>}
+                  {/* Merged: name with track, rate with indexation, value
+                      with deposits, profit with its percent - 4 columns
+                      instead of 7 (5 instead of 9 with the extended data). */}
+                  <th>{SAVINGS_MERGED.name}</th>
+                  <th>{SAVINGS_MERGED.rate}</th>
+                  <th><MergedHeader title={SAVINGS_MERGED.current} hint="₪" /></th>
+                  <th><MergedHeader title={SAVINGS_MERGED.profit} hint="₪ · % מול הפקדות" /></th>
+                  {showAdditionalData && <th><MergedHeader title={SAVINGS_MERGED.tax} hint="₪" /></th>}
                   {isEditMode && <th>{SAVINGS_COL.actions}</th>}
                 </tr>
               </thead>
@@ -913,18 +966,27 @@ function FinancialAccountsTables({
                             autoFocus
                           />
                         ) : item.fundName}
-                      </td>
-                      <td onClick={() => handleCellClick(item.id, 'investmentTrack', 'bank_savings')} className={isEditMode ? 'editable-cell' : ''} data-label={SAVINGS_COL.track}>
-                        {editingField === `${item.id}-investmentTrack` ? (
-                          <input
-                            type="text"
-                            value={item.investmentTrack || ''}
-                            onChange={(e) => handleInlineEdit(item.id, 'investmentTrack', e.target.value, 'bank_savings')}
-                            onBlur={finishInlineEdit}
-                            onKeyDown={(e) => handleKeyDown(e, item.id, 'investmentTrack', 'bank_savings')}
-                            autoFocus
-                          />
-                        ) : (item.investmentTrack || '-')}
+                        {/* The investment track under the name, editable on its own. */}
+                        {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
+                        <span
+                          className={`merged-id ${isEditMode ? 'editable-cell' : ''}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCellClick(item.id, 'investmentTrack', 'bank_savings');
+                          }}
+                        >
+                          {editingField === `${item.id}-investmentTrack` ? (
+                            <input
+                              type="text"
+                              aria-label={SAVINGS_COL.track}
+                              value={item.investmentTrack || ''}
+                              onChange={(e) => handleInlineEdit(item.id, 'investmentTrack', e.target.value, 'bank_savings')}
+                              onBlur={finishInlineEdit}
+                              onKeyDown={(e) => handleKeyDown(e, item.id, 'investmentTrack', 'bank_savings')}
+                              autoFocus
+                            />
+                          ) : (item.investmentTrack || '-')}
+                        </span>
                       </td>
                       <td onClick={() => handleCellClick(item.id, 'interestRate', 'bank_savings')} className={isEditMode ? 'editable-cell' : ''} data-label={SAVINGS_COL.rate}>
                         {editingField === `${item.id}-interestRate` ? (
@@ -939,26 +1001,30 @@ function FinancialAccountsTables({
                             min="0"
                           />
                         ) : `${item.interestRate ?? 0}%`}
+                        {/* Indexation under the rate. */}
+                        {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions */}
+                        <label className="merged-id merged-check" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={!!item.isLinkedToIndex}
+                            disabled={!isEditMode}
+                            onChange={(e) => handleInlineEdit(item.id, 'isLinkedToIndex', e.target.checked, 'bank_savings')}
+                          />
+                          צמוד למדד
+                        </label>
                       </td>
-                      <td data-label={SAVINGS_COL.linked}>
-                        <input
-                          type="checkbox"
-                          checked={!!item.isLinkedToIndex}
-                          disabled={!isEditMode}
-                          onChange={(e) => handleInlineEdit(item.id, 'isLinkedToIndex', e.target.checked, 'bank_savings')}
-                        />
+                      <td data-label={SAVINGS_MERGED.current}>
+                        <Merged main={<Money value={currentValue} />} sub={<>הפקדות <Money value={totalDeposited} /></>} />
                       </td>
-                      <td data-label={SAVINGS_COL.deposited}>{`${formatPriceWithSign(totalDeposited)} ₪`}</td>
-                      <td data-label={SAVINGS_COL.current}>{`${formatPriceWithSign(currentValue)} ₪`}</td>
-                      <td className={profitLoss > 0 ? 'profit-positive' : profitLoss < 0 ? 'profit-negative' : ''} data-label={SAVINGS_COL.profit}>
-                        {`${formatPriceWithSign(profitLoss)} ₪`}
+                      <td data-label={SAVINGS_MERGED.profit}>
+                        <Merged main={<><Money value={profitLoss} signed />{totalDeposited > 0 && <Pct value={(profitLoss / totalDeposited) * 100} />}</>} />
                       </td>
                       {showAdditionalData && (
-                        <td data-label={SAVINGS_COL.tax}>{tax !== null ? `${formatPriceWithSign(tax)} ₪` : '-'}</td>
-                      )}
-                      {showAdditionalData && (
-                        <td className={afterTaxProfit !== null && afterTaxProfit > 0 ? 'profit-positive' : afterTaxProfit !== null && afterTaxProfit < 0 ? 'profit-negative' : ''} data-label={SAVINGS_COL.afterTax}>
-                          {afterTaxProfit !== null ? `${formatPriceWithSign(afterTaxProfit)} ₪` : '-'}
+                        <td data-label={SAVINGS_MERGED.tax}>
+                          <Merged
+                            main={tax !== null ? <Money value={tax} /> : '-'}
+                            sub={afterTaxProfit !== null ? <>אחרי מס <Money value={afterTaxProfit} signed /></> : null}
+                          />
                         </td>
                       )}
                       {isEditMode && (
@@ -967,10 +1033,10 @@ function FinancialAccountsTables({
                         </td>
                       )}
                     </tr>
-                    {isExpanded && renderRecordTransactionRow('bank_savings', item, (showAdditionalData ? 9 : 7) + (isEditMode ? 1 : 0), '+ רישום הפקדה / משיכה')}
+                    {isExpanded && renderRecordTransactionRow('bank_savings', item, (showAdditionalData ? 5 : 4) + (isEditMode ? 1 : 0), '+ רישום הפקדה / משיכה')}
                     {isExpanded && deposits.length === 0 && (
                       <tr className={`${isEditMode ? 'editable-row' : ''} detail-row`}>
-                        <td style={{ paddingLeft: '20px' }} colSpan={(showAdditionalData ? 9 : 7) + (isEditMode ? 1 : 0)}>אין הפקדות רשומות</td>
+                        <td style={{ paddingLeft: '20px' }} colSpan={(showAdditionalData ? 5 : 4) + (isEditMode ? 1 : 0)}>אין הפקדות רשומות</td>
                       </tr>
                     )}
                     {isExpanded && deposits.map((d, i) => (
@@ -979,10 +1045,6 @@ function FinancialAccountsTables({
                         {renderMovementAmount(item, d, i, 'bank_savings', { label: DEPOSIT_COL.amount })}
                         <td></td>
                         <td></td>
-                        <td></td>
-                        <td></td>
-                        <td></td>
-                        {showAdditionalData && <td></td>}
                         {showAdditionalData && <td></td>}
                         {isEditMode && (
                           <td>

@@ -67,6 +67,27 @@ function percentClass(value) {
   return value >= 0 ? 'profit-positive' : 'profit-negative';
 }
 
+// An amount with its percent beside it, in one row - the two always read
+// together ("how much, and how much is that"), so they are no longer two
+// rows a reader has to pair up.
+function AmountPercentRow({ label, amount, percent, currency = '₪', formatPriceWithSign }) {
+  const tone = amount >= 0 ? 'profit-positive' : 'profit-negative';
+  return (
+    <div className="summary-item">
+      <span className="summary-label">{label}:</span>
+      <span className={`summary-value ${tone}`}>
+        {formatPriceWithSign(amount)} {currency}
+        {percent != null && Number.isFinite(percent) ? (
+          <span className="summary-pct">
+            {percent > 0 ? '+' : ''}
+            {percent.toFixed(2)}%
+          </span>
+        ) : null}
+      </span>
+    </div>
+  );
+}
+
 export function BankSavingsCard({ summary, formatPriceWithSign }) {
   const profitPercent = returnPercent(
     summary.bankSavingsTotalProfitILS,
@@ -77,8 +98,7 @@ export function BankSavingsCard({ summary, formatPriceWithSign }) {
         <h3 className="summary-section-title">קופת חיסכון בבנק - השקעה בש''ח(₪)</h3>
         <div className="summary-item"><span className="summary-label">סך הפקדות:</span><span className="summary-value">{formatPriceWithSign(summary.bankSavingsInitialInvestmentILS)} ₪</span></div>
         <div className="summary-item"><span className="summary-label">סך שווי היום:</span><span className="summary-value">{formatPriceWithSign(summary.bankSavingsCurrentValueILS)} ₪</span></div>
-        <div className="summary-item"><span className="summary-label">סה"כ רווח והפסד:</span><span className={`summary-value ${summary.bankSavingsTotalProfitILS >= 0 ? 'profit-positive' : 'profit-negative'}`}>{formatPriceWithSign(summary.bankSavingsTotalProfitILS)} ₪</span></div>
-        <div className="summary-item"><span className="summary-label">רווח מצטבר אל מול הפקדות:</span><span className={`summary-value ${percentClass(profitPercent)}`}>{percentText(profitPercent)}</span></div>
+        <AmountPercentRow label='סה"כ רווח והפסד' amount={summary.bankSavingsTotalProfitILS} percent={profitPercent} formatPriceWithSign={formatPriceWithSign} />
         <div className="summary-item"><span className="summary-label">רווח ריאלי - חייב במס:</span><span className={`summary-value ${summary.bankSavingsRealGainILS >= 0 ? 'profit-positive' : 'profit-negative'}`}>{formatPriceWithSign(summary.bankSavingsRealGainILS)} ₪</span></div>
         <div className="summary-item"><span className="summary-label">סה"כ מס שנשלם:</span><span className="summary-value profit-negative">{formatPriceWithSign(-summary.bankSavingsTaxILS)} ₪</span></div>
     </SummaryCard>
@@ -134,13 +154,11 @@ export function IsraeliMarketCard({ summary, formatPriceWithSign }) {
         <h3 className="summary-section-title"> בורסה ישראל - השקעה בש''ח(₪)</h3>
         <div className="summary-item"><span className="summary-label">סה"כ השקעה:</span><span className="summary-value">{formatPriceWithSign(summary.israeliOnlyPurchaseILS)} ₪</span></div>
         <div className="summary-item"><span className="summary-label">סה"כ שווי:</span><span className="summary-value">{formatPriceWithSign(summary.israeliOnlyCurrentValueILS)} ₪</span></div>
-        <div className="summary-item"><span className="summary-label">סך רווח והפסד:</span><span className={`summary-value ${summary.israeliOnlyProfitILS >= 0 ? 'profit-positive' : 'profit-negative'}`}>{formatPriceWithSign(summary.israeliOnlyProfitILS)} ₪</span></div>
+        <AmountPercentRow label="סך רווח והפסד" amount={summary.israeliOnlyProfitILS} percent={summary.israeliOnlyProfitPercent} formatPriceWithSign={formatPriceWithSign} />
+        <AmountPercentRow label="רווח והפסד יומי" amount={summary.israeliOnlyDailyProfitILS} percent={summary.israeliOnlyDailyPercent} formatPriceWithSign={formatPriceWithSign} />
         <div className="summary-item"><span className="summary-label">רווח ריאלי - חייב במס:</span><span className={`summary-value ${summary.israeliOnlyRealGainILS >= 0 ? 'profit-positive' : 'profit-negative'}`}>{formatPriceWithSign(summary.israeliOnlyRealGainILS)} ₪</span></div>
         <div className="summary-item"><span className="summary-label">רווח אינפלציוני - פטור ממס:</span><span className="summary-value">{formatPriceWithSign(summary.israeliOnlyInflationaryGainILS)} ₪</span></div>
         <div className="summary-item"><span className="summary-label">סה"כ מס שנשלם:</span><span className="summary-value profit-negative">{formatPriceWithSign(-summary.israeliOnlyTaxILS)} ₪</span></div>
-        <div className="summary-item"><span className="summary-label">אחוז רווח והפסד כללי:</span><span className={`summary-value ${summary.israeliOnlyProfitPercent >= 0 ? 'profit-positive' : 'profit-negative'}`}>{summary.israeliOnlyProfitPercent.toFixed(2)}%</span></div>
-        <div className="summary-item"><span className="summary-label">אחוז רווח והפסד יומי:</span><span className={`summary-value ${summary.israeliOnlyDailyPercent >= 0 ? 'profit-positive' : 'profit-negative'}`}>{summary.israeliOnlyDailyPercent.toFixed(2)}%</span></div>
-        <div className="summary-item"><span className="summary-label">רווח והפסד יומי בש"ח:</span><span className={`summary-value ${summary.israeliOnlyDailyProfitILS >= 0 ? 'profit-positive' : 'profit-negative'}`}>{formatPriceWithSign(summary.israeliOnlyDailyProfitILS)} ₪</span></div>
     </SummaryCard>
   );
 }
@@ -151,13 +169,14 @@ export function AmericanMarketCard({ summary, formatPriceWithSign }) {
         <h3 className="summary-section-title">בורסה אמריקאית - השקעה בדולר ($)</h3>
         <div className="summary-item"><span className="summary-label">סה"כ השקעה:</span><span className="summary-value">{formatPriceWithSign(summary.totalPurchaseUSD)} $</span></div>
         <div className="summary-item"><span className="summary-label">סה"כ שווי:</span><span className="summary-value">{formatPriceWithSign(summary.totalCurrentValueUSD)} $</span></div>
-        <div className="summary-item"><span className="summary-label">סה"כ רווח והפסד:</span><span className={`summary-value ${summary.totalProfitUSD >= 0 ? 'profit-positive' : 'profit-negative'}`}>{formatPriceWithSign(summary.totalProfitUSD)} $</span></div>
+        <AmountPercentRow label='סה"כ רווח והפסד' amount={summary.totalProfitUSD} percent={summary.americanOnlyProfitPercent} currency="$" formatPriceWithSign={formatPriceWithSign} />
+        <AmountPercentRow label="רווח והפסד יומי" amount={summary.americanOnlyDailyProfitUSD} percent={summary.americanOnlyDailyPercent} currency="$" formatPriceWithSign={formatPriceWithSign} />
         <div className="summary-item"><span className="summary-label">רווח ריאלי חייב במס:</span><span className={`summary-value ${summary.americanOnlyRealGainILS >= 0 ? 'profit-positive' : 'profit-negative'}`}>{formatPriceWithSign(summary.americanOnlyRealGainILS)} ₪</span></div>
         <div className="summary-item"><span className="summary-label">רווח אינפלציוני פטור ממס (משער חליפין):</span><span className="summary-value">{formatPriceWithSign(summary.americanOnlyCurrencyExemptGainILS)} ₪</span></div>
         <div className="summary-item"><span className="summary-label">סך מס שנשלם:</span><span className="summary-value profit-negative">{formatPriceWithSign(-summary.americanOnlyTaxUSD)} $</span></div>
-        <div className="summary-item"><span className="summary-label">אחוז רווח והפסד כללי:</span><span className={`summary-value ${summary.americanOnlyProfitPercent >= 0 ? 'profit-positive' : 'profit-negative'}`}>{summary.americanOnlyProfitPercent.toFixed(2)}%</span></div>
-        <div className="summary-item"><span className="summary-label">אחוז רווח והפסד יומי:</span><span className={`summary-value ${summary.americanOnlyDailyPercent >= 0 ? 'profit-positive' : 'profit-negative'}`}>{summary.americanOnlyDailyPercent.toFixed(2)}%</span></div>
-        <div className="summary-item"><span className="summary-label">רווח והפסד יומי:</span><span className={`summary-value ${summary.americanOnlyDailyProfitUSD >= 0 ? 'profit-positive' : 'profit-negative'}`}>{formatPriceWithSign(summary.americanOnlyDailyProfitUSD)} $</span></div>
+        {/* What the dollar's move did to these holdings in shekels - until
+            now only in the home page's overall summary. */}
+        <div className="summary-item"><span className="summary-label">השפעת הדולר על התיק:</span><span className={`summary-value ${summary.totalExchangeImpact >= 0 ? 'profit-positive' : 'profit-negative'}`}>{formatPriceWithSign(summary.totalExchangeImpact)} ₪</span></div>
     </SummaryCard>
   );
 }
@@ -169,8 +188,7 @@ export function NetInvestmentCard({ summary, formatPriceWithSign, present = ALL_
         <h3 className="summary-section-title">סיכום השקעות נטו (₪)</h3>
         <div className="summary-item"><span className="summary-label">סה"כ השקעה בש"ח:</span><span className="summary-value">{formatPriceWithSign(summary.totalPurchaseILS)} ₪</span></div>
         <div className="summary-item"><span className="summary-label">סה"כ שווי בש"ח:</span><span className="summary-value">{formatPriceWithSign(summary.totalCurrentValueILS)} ₪</span></div>
-        <div className="summary-item"><span className="summary-label">סה"כ רווח והפסד בש"ח:</span><span className={`summary-value ${summary.totalProfitILS >= 0 ? 'profit-positive' : 'profit-negative'}`}>{formatPriceWithSign(summary.totalProfitILS)} ₪</span></div>
-        <div className="summary-item"><span className="summary-label">תשואה כללית:</span><span className={`summary-value ${percentClass(totalReturn)}`}>{percentText(totalReturn)}</span></div>
+        <AmountPercentRow label='סה"כ רווח והפסד בש"ח' amount={summary.totalProfitILS} percent={totalReturn} formatPriceWithSign={formatPriceWithSign} />
         <div className="summary-item"><span className="summary-label">סה"כ רווח ריאלי חייב במס:</span><span className={`summary-value ${summary.totalRealGainILS >= 0 ? 'profit-positive' : 'profit-negative'}`}>{formatPriceWithSign(summary.totalRealGainILS)} ₪</span></div>
         <div className="summary-item"><span className="summary-label">סה"כ רווח אינפלציוני פטור ממס:</span><span className="summary-value">{formatPriceWithSign(summary.totalInflationaryGainILS)} ₪</span></div>
         <div className="summary-item"><span className="summary-label">סה"כ מס לשלם:</span><span className="summary-value profit-negative">{formatPriceWithSign(-summary.totalTaxILS)} ₪</span></div>
@@ -189,8 +207,7 @@ export function ProvidentFundsCard({ summary, formatPriceWithSign }) {
         <div className="summary-item"><span className="summary-label">סך הפקדות:</span><span className="summary-value">{formatPriceWithSign(summary.pensionInitialInvestmentILS)} ₪</span></div>
         <div className="summary-item"><span className="summary-label">סך שווי היום:</span><span className="summary-value">{formatPriceWithSign(summary.pensionCurrentValueILS)} ₪</span></div>
         <div className="summary-item"><span className="summary-label">תשואה מעדכון קודם:</span><span className={`summary-value ${summary.pensionPreviousProfitPercent >= 0 ? 'profit-positive' : 'profit-negative'}`}>{summary.pensionPreviousProfitPercent.toFixed(2)}%</span></div>
-        <div className="summary-item"><span className="summary-label">רווח מצטבר אל מול הפקדות:</span><span className={`summary-value ${summary.pensionProfitPercent >= 0 ? 'profit-positive' : 'profit-negative'}`}>{summary.pensionProfitPercent.toFixed(2)}%</span></div>
-        <div className="summary-item"><span className="summary-label">סה"כ רווח והפסד:</span><span className={`summary-value ${summary.pensionTotalProfitILS >= 0 ? 'profit-positive' : 'profit-negative'}`}>{formatPriceWithSign(summary.pensionTotalProfitILS)} ₪</span></div>
+        <AmountPercentRow label='סה"כ רווח והפסד' amount={summary.pensionTotalProfitILS} percent={summary.pensionProfitPercent} formatPriceWithSign={formatPriceWithSign} />
         <div className="summary-item"><span className="summary-label">רווח ריאלי - חייב במס:</span><span className={`summary-value ${summary.pensionRealGainILS >= 0 ? 'profit-positive' : 'profit-negative'}`}>{formatPriceWithSign(summary.pensionRealGainILS)} ₪</span></div>
         <div className="summary-item"><span className="summary-label">רווח אינפלציוני פטור:</span><span className="summary-value">{formatPriceWithSign(summary.pensionInflationaryGainILS)} ₪</span></div>
     </SummaryCard>

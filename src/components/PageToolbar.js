@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import PrivacyToggle from './PrivacyToggle';
 
 // The contextual action bar for whatever page is open: one sticky strip
@@ -72,6 +72,54 @@ export function ToolbarButton({ onClick, pressed, disabled, title, children }) {
     >
       {children}
     </button>
+  );
+}
+
+// The secondary actions folded behind one "⋯" button - the phone's form of
+// the toolbar, where a row of five buttons wrapped into a 300px block above
+// the page's own content. The same buttons, in a menu; choosing one closes
+// it, as do a tap outside and Escape.
+export function ToolbarMoreMenu({ label = 'פעולות נוספות', children }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onPointer = (e) => {
+      if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="toolbar-more" ref={rootRef}>
+      <button
+        type="button"
+        className={`toolbar-btn toolbar-more-button ${open ? 'is-pressed' : ''}`}
+        aria-haspopup="true"
+        aria-expanded={open}
+        aria-label={label}
+        title={label}
+        onClick={() => setOpen((o) => !o)}
+      >
+        ⋯
+      </button>
+      {open && (
+        // A click on any button inside runs that button and then closes.
+        // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
+        <div className="toolbar-more-menu" onClick={(e) => e.target.closest('button') && setOpen(false)}>
+          {children}
+        </div>
+      )}
+    </div>
   );
 }
 

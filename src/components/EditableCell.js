@@ -33,7 +33,10 @@ function EditableCell({
   // The input's accessible name, for a cell whose column header does not
   // say enough on its own - a movement row's "סכום" column, say, where the
   // sign carries the direction. Defaults to the column label.
-  ariaLabel
+  ariaLabel,
+  // 'td' in a table row; 'span' where the field sits inside another cell
+  // (a merged column's second line) or in a phone card.
+  as: Tag = 'td'
 }) {
   const isEditing = editingField === `${id}-${field}`;
   const cellClassName = [isEditMode ? 'editable-cell' : '', className].filter(Boolean).join(' ');
@@ -44,11 +47,16 @@ function EditableCell({
   };
 
   return (
-    <td
-      onClick={() => handleCellClick(id, field, exchange)}
+    <Tag
+      onClick={(e) => {
+        // Inside a card's header button, a tap on the field edits it
+        // rather than also folding the card.
+        if (Tag !== 'td') e.stopPropagation();
+        handleCellClick(id, field, exchange);
+      }}
       className={cellClassName}
       style={style}
-      data-label={label}
+      data-label={Tag === 'td' ? label : undefined}
     >
       {isEditing ? (
         <input
@@ -65,7 +73,7 @@ function EditableCell({
       ) : (
         displayValue
       )}
-    </td>
+    </Tag>
   );
 }
 

@@ -1,46 +1,44 @@
 import React from 'react';
 import EditableCell from './EditableCell';
 import PendingPriceValue from './PendingPriceValue';
-import ValuePill from './ValuePill';
 import AssetCell from './AssetCell';
 import ScrollableTable from './ScrollableTable';
-import { profitClass, formatDailyChangePercent } from '../utils/formatters';
+import { formatPriceWithSign as maskedAmount } from '../utils/formatters';
 import { effectiveDailyChangePercent } from '../utils/marketSession';
 import { calculateStockRealGainTax, monthKeyFromDate } from '../utils/cpiTax';
 import { sectorLabelHe } from '../utils/sectorLabels';
 import { effectiveExchangeForIsraeliStock, resolveIsraeliSector } from '../utils/israeliEtfClassifier';
 import { sectorFromTaseBranch } from '../utils/israeliSectorMapping';
+import { useCompactLayout } from '../hooks/useMediaQuery';
+import { Merged, MergedHeader, Money, Pct } from './holdings/MergedValue';
+import HoldingCards from './holdings/HoldingCards';
+import { HoldingsViewToggle, useHoldingsView } from './holdings/useHoldingsView';
 
-// The column headers, named once and used for BOTH the <th> row and each
-// cell's data-label. Mobile turns every row into a card whose values each
-// need their own label; sourcing them from the same object is what stops a
-// renamed header from leaving a card labelled with the old name.
 // A grouped row has several lots behind it, so the columns that differ
 // per lot have no single value to print. An em dash says that; the row
 // expands to show the lots themselves.
 const PER_LOT = '—';
 const PER_LOT_TITLE = 'ערך שונה לכל רכישה - הרחיבו את הקיבוץ כדי לראות את הפירוט';
 
+// The columns. Pairs that always read together are one column now - the
+// amount with its percent, the current price over the purchase price, the
+// value over the cost - so the table is 7 columns instead of 11 (11
+// instead of 18 with the extended data), and nothing that was shown is
+// gone. `title` heads the column; `hint` says what its figures are. The
+// same names label the fields in the phone's cards.
 const COL = {
-  name: 'שם מנייה',
-  date: 'תאריך קנייה',
-  buyPrice: 'מחיר קנייה (₪)',
-  quantity: 'כמות',
-  sector: 'סקטור',
-  totalBuy: 'סה"כ קנייה בש"ח',
-  currentPrice: 'מחיר נוכחי (₪)',
-  totalValue: 'סה"כ שווי היום (₪)',
-  profit: 'סה"כ רווח/הפסד בש"ח',
-  indexAtBuy: 'מדד ביום הקנייה',
-  indexToday: 'מדד היום (הידוע)',
-  tax: 'מס רווח הון (₪)',
-  afterTax: 'רווח לאחר מס (₪)',
-  inflationary: 'רווח אינפלציוני (₪)',
-  realGain: 'רווח ריאלי (₪)',
-  profitPercent: 'אחוז רווח/הפסד',
-  dailyPercent: 'אחוז שינוי יומי',
-  dailyProfit: 'רווח/הפסד יומי בש"ח',
-  actions: 'פעולות'
+  name: { title: 'שם מנייה' },
+  date: { title: 'תאריך קנייה' },
+  quantity: { title: 'כמות' },
+  sector: { title: 'סקטור' },
+  price: { title: 'מחיר נוכחי / קנייה', hint: '₪' },
+  value: { title: 'שווי היום / עלות', hint: '₪' },
+  profit: { title: 'רווח/הפסד', hint: '₪ · %' },
+  daily: { title: 'שינוי יומי', hint: '₪ · %' },
+  index: { title: 'מדד ביום הקנייה / היום' },
+  real: { title: 'רווח ריאלי / אינפלציוני', hint: '₪' },
+  tax: { title: 'מס רווח הון / רווח לאחר מס', hint: '₪' },
+  actions: { title: 'פעולות' }
 };
 
 // The security's name AND its security id ("מספר נייר"), which is what
@@ -72,117 +70,32 @@ function IsraeliAssetCell({ stock, prefix = null }) {
 
 // "סקטור" - resolved automatically (fund/ETF vs. the exchange's own branch
 // classification for a share, see israeliEtfClassifier.js's
-// resolveIsraeliSector), so it's plain text rather than an input.
-//
-// The "נכס זר?" dropdown that used to sit beside it is gone: whether a
-// holding is foreign exposure is now derived from its name and the
-// exchange's instrument type (a name containing "חוץ" is a foreign
-// tracking fund by the exchange's own naming), not something to ask the
-// user to classify by hand. The badge below shows what was derived, so the
-// classification driving the pie chart is still visible rather than hidden.
-function IsraeliClassificationFields({ stock }) {
+// resolveIsraeliSector), with a badge when the holding is foreign exposure.
+function SectorValue({ stock }) {
   const sectorKey = resolveIsraeliSector(stock, sectorFromTaseBranch);
   const isForeign = effectiveExchangeForIsraeliStock(stock) === 'american';
   return (
-    <td title={stock.branch || undefined} data-label={COL.sector}>
+    <span title={stock.branch || undefined}>
       {sectorLabelHe(sectorKey)}
       {isForeign && <span className="israeli-foreign-badge"> · נכס חוץ</span>}
-    </td>
+    </span>
   );
 }
 
-// Renders the 4 editable fields (name/date/price/quantity), plus (under
-// showAdditionalData) the classification fields, for one Israeli stock
-// row — used for both the single-stock row and each expanded detail row,
-// since they're identical apart from an optional style prop.
-function IsraeliEditableFields({ stock, editingField, isEditMode, handleCellClick, handleInlineEdit, finishInlineEdit, handleKeyDown, formatDate, formatPrice, nameCellStyle, showAdditionalData }) {
-  return (
-    <>
-      <EditableCell
-        id={stock.id}
-        field="stockName"
-        exchange="israeli"
-        value={stock.stockName}
-        editingField={editingField}
-        isEditMode={isEditMode}
-        handleCellClick={handleCellClick}
-        handleInlineEdit={handleInlineEdit}
-        finishInlineEdit={finishInlineEdit}
-        handleKeyDown={handleKeyDown}
-        displayValue={<IsraeliAssetCell stock={stock} />}
-        style={nameCellStyle}
-        label={COL.name}
-      />
-      <EditableCell
-        id={stock.id}
-        field="purchaseDate"
-        exchange="israeli"
-        value={stock.purchaseDate}
-        type="date"
-        editingField={editingField}
-        isEditMode={isEditMode}
-        handleCellClick={handleCellClick}
-        handleInlineEdit={handleInlineEdit}
-        finishInlineEdit={finishInlineEdit}
-        handleKeyDown={handleKeyDown}
-        displayValue={formatDate(stock.purchaseDate)}
-        label={COL.date}
-      />
-      <EditableCell
-        id={stock.id}
-        field="purchasePrice"
-        exchange="israeli"
-        value={stock.purchasePrice}
-        type="number"
-        step="0.01"
-        parse={(raw) => parseFloat(raw)}
-        editingField={editingField}
-        isEditMode={isEditMode}
-        handleCellClick={handleCellClick}
-        handleInlineEdit={handleInlineEdit}
-        finishInlineEdit={finishInlineEdit}
-        handleKeyDown={handleKeyDown}
-        displayValue={formatPrice(stock.purchasePrice)}
-        label={COL.buyPrice}
-      />
-      <EditableCell
-        id={stock.id}
-        field="quantity"
-        exchange="israeli"
-        value={stock.quantity}
-        type="number"
-        min="1"
-        parse={(raw) => parseInt(raw)}
-        editingField={editingField}
-        isEditMode={isEditMode}
-        handleCellClick={handleCellClick}
-        handleInlineEdit={handleInlineEdit}
-        finishInlineEdit={finishInlineEdit}
-        handleKeyDown={handleKeyDown}
-        displayValue={stock.quantity}
-        label={COL.quantity}
-      />
-      {showAdditionalData && <IsraeliClassificationFields stock={stock} />}
-    </>
-  );
-}
-
-// Renders the computed (non-editable) figures for one Israeli stock row —
-// used for both the single-stock row and each expanded detail row.
-function IsraeliComputedCells({ stock, normalizeIsraeliPrice, calculateProfitPercentage, TAX_RATE, cpi, showAdditionalData, formatPrice, formatPriceWithSign, isEditMode, handleDelete, pricesPending }) {
-  const displayCurrentPrice = normalizeIsraeliPrice(stock.currentPrice);
+// Every figure the table shows for one lot. Real-gain tax is CPI-linked by
+// the purchase date when the index is known (the same logic as
+// portfolioSummary.js, so a row always agrees with the summary above it),
+// and falls back to a flat tax on the nominal gain without an index. The
+// inflationary gain is what remains of the nominal gain after the real
+// gain - the asymmetric rule from the Moses ruling.
+function lotFigures(stock, { normalizeIsraeliPrice, calculateProfitPercentage, TAX_RATE, cpi }) {
+  const currentPrice = normalizeIsraeliPrice(stock.currentPrice);
   const totalPurchase = (stock.purchasePrice || 0) * (stock.quantity || 0);
-  const totalCurrentValue = (displayCurrentPrice || 0) * (stock.quantity || 0);
+  const totalCurrentValue = (currentPrice || 0) * (stock.quantity || 0);
   const profit = totalCurrentValue - totalPurchase;
-  const profitPercentage = calculateProfitPercentage(totalPurchase, totalCurrentValue);
-
-  // מס רווח הון ריאלי: מוצמד למדד לפי תאריך הקנייה כשהמדד זמין (אותה
-  // לוגיקה בדיוק כמו ב-portfolioSummary.js, כדי שהמספר בשורה הזו יהיה
-  // תמיד עקבי עם הסכום המצטבר שמוצג בסיכום התיק). אם אין מדד לתאריך
-  // הקנייה - נופלים חזרה למס שטוח על הרווח הנומינלי, בלי הצמדה.
   const indexAtPurchase = cpi && cpi.indexByMonth ? cpi.indexByMonth[monthKeyFromDate(stock.purchaseDate)] : null;
   const currentIndex = cpi ? cpi.currentIndex : null;
-  let capitalGainsTaxILS;
+  let tax;
   let realGain;
   if (currentIndex && indexAtPurchase) {
     const result = calculateStockRealGainTax({
@@ -192,49 +105,95 @@ function IsraeliComputedCells({ stock, normalizeIsraeliPrice, calculateProfitPer
       indexAtPurchase,
       currentIndex
     });
-    capitalGainsTaxILS = result.tax;
+    tax = result.tax;
     realGain = result.realGain;
   } else {
-    capitalGainsTaxILS = profit > 0 ? profit * TAX_RATE : 0;
+    tax = profit > 0 ? profit * TAX_RATE : 0;
     realGain = profit;
   }
-  // רווח אינפלציוני נגזר כ"מה שנשאר" מהנומינלי אחרי הרווח הריאלי - עקבי
-  // תמיד עם הכלל האסימטרי מפסק דין מוזס, בדיוק כמו ב-portfolioSummary.js.
-  const inflationaryGain = profit - realGain;
-  const afterTaxProfitILS = profit - capitalGainsTaxILS;
+  const dailyPercent = effectiveDailyChangePercent(stock) || 0;
+  return {
+    quantity: stock.quantity,
+    purchasePrice: stock.purchasePrice,
+    currentPrice,
+    totalPurchase,
+    totalCurrentValue,
+    profit,
+    profitPercent: Number(calculateProfitPercentage(totalPurchase, totalCurrentValue)),
+    indexAtPurchase,
+    currentIndex,
+    tax,
+    realGain,
+    inflationaryGain: profit - realGain,
+    afterTax: profit - tax,
+    dailyPercent,
+    dailyProfit: (dailyPercent / 100) * totalCurrentValue
+  };
+}
 
+// A grouped holding: the lots' figures summed (tax and real gain per lot,
+// since each lot has its own purchase date and index).
+function groupFigures(stocks, lots, summary) {
+  const sum = (k) => lots.reduce((s, f) => s + f[k], 0);
+  return {
+    quantity: summary.totalQuantity,
+    purchasePrice: summary.averagePurchasePrice,
+    currentPrice: summary.averageCurrentPrice,
+    totalPurchase: summary.totalPurchaseValue,
+    totalCurrentValue: summary.totalCurrentValue,
+    profit: summary.totalProfit,
+    profitPercent: Number(summary.profitPercentage),
+    indexAtPurchase: null,
+    currentIndex: lots[0] ? lots[0].currentIndex : null,
+    tax: sum('tax'),
+    realGain: sum('realGain'),
+    inflationaryGain: summary.totalProfit - sum('realGain'),
+    afterTax: summary.totalProfit - sum('tax'),
+    dailyPercent: effectiveDailyChangePercent(stocks[0]) || 0,
+    dailyProfit: ((effectiveDailyChangePercent(stocks[0]) || 0) / 100) * summary.totalCurrentValue
+  };
+}
+
+const priceText = (formatPrice) => (v) => formatPrice(v);
+const amountText = (v) => `${maskedAmount(v)} ₪`;
+
+// The cells that read the same in a single row, a group's row and a lot's
+// row. `buyPrice` is the purchase-price node - an editable field for a
+// lot, the average for a group.
+function FigureCells({ f, pending, showAdditionalData, formatPrice, buyPrice, isGroup }) {
   return (
     <>
-      <td data-label={COL.totalBuy}>{formatPrice(totalPurchase)}</td>
-      <td data-label={COL.currentPrice}>
-        <PendingPriceValue value={displayCurrentPrice} pending={pricesPending} format={formatPrice} />
+      <td>
+        <Merged
+          main={<PendingPriceValue value={f.currentPrice} pending={pending} format={priceText(formatPrice)} />}
+          sub={<>{isGroup ? 'קנייה ממוצע ' : 'קנייה '}{buyPrice}</>}
+        />
       </td>
-      <td data-label={COL.totalValue}>
-        <PendingPriceValue value={totalCurrentValue} pending={pricesPending} format={formatPrice} />
+      <td>
+        <Merged
+          main={<span className="mv-num"><PendingPriceValue value={f.totalCurrentValue} pending={pending} format={amountText} /></span>}
+          sub={<>עלות <Money value={f.totalPurchase} /></>}
+        />
       </td>
-      <td className={profitClass(profit)} data-label={COL.profit}>{formatPriceWithSign(profit)}</td>
-      {showAdditionalData && <td data-label={COL.indexAtBuy}>{indexAtPurchase != null ? indexAtPurchase : '-'}</td>}
-      {showAdditionalData && <td data-label={COL.indexToday}>{currentIndex != null ? currentIndex : '-'}</td>}
-      {showAdditionalData && <td className="profit-negative" data-label={COL.tax}>{formatPriceWithSign(-capitalGainsTaxILS)}</td>}
-      {showAdditionalData && <td className={profitClass(afterTaxProfitILS)} data-label={COL.afterTax}>{formatPriceWithSign(afterTaxProfitILS)}</td>}
-      {showAdditionalData && <td className={profitClass(inflationaryGain)} data-label={COL.inflationary}>{formatPriceWithSign(inflationaryGain)}</td>}
-      {showAdditionalData && <td className={profitClass(realGain)} data-label={COL.realGain}>{formatPriceWithSign(realGain)}</td>}
-      <td data-label={COL.profitPercent}>
-        <ValuePill value={profit}>{profitPercentage}%</ValuePill>
+      <td>
+        <Merged main={<><Money value={f.profit} signed /> <Pct value={f.profitPercent} /></>} />
       </td>
-      <td data-label={COL.dailyPercent}>
-        <ValuePill value={effectiveDailyChangePercent(stock)}>
-          {formatDailyChangePercent(effectiveDailyChangePercent(stock))}%
-        </ValuePill>
+      <td>
+        <Merged main={<><Money value={f.dailyProfit} signed /> <Pct value={f.dailyPercent} /></>} />
       </td>
-      <td className={profitClass(effectiveDailyChangePercent(stock))} data-label={COL.dailyProfit}>
-        {formatPriceWithSign((effectiveDailyChangePercent(stock) / 100) * totalCurrentValue)} ₪
-      </td>
-      {isEditMode && (
-        <td data-label={COL.actions}>
-          <button onClick={() => handleDelete(stock.id, 'israeli')} className="delete-button">
-            מחק
-          </button>
+      {showAdditionalData && (
+        <td title={isGroup ? PER_LOT_TITLE : undefined}>
+          <Merged main={isGroup ? PER_LOT : f.indexAtPurchase ?? '-'} sub={`היום ${f.currentIndex ?? '-'}`} />
+        </td>
+      )}
+      {showAdditionalData && (
+        <td>
+          <Merged main={<Money value={f.realGain} signed />} sub={<>אינפלציוני <Money value={f.inflationaryGain} /></>} />
+        </td>
+      )}
+      {showAdditionalData && (
+        <td>
+          <Merged main={<Money value={-f.tax} signed />} sub={<>לאחר מס <Money value={f.afterTax} signed /></>} />
         </td>
       )}
     </>
@@ -258,7 +217,7 @@ function IsraeliStocksTable({
   handleKeyDown,
   formatDate,
   formatPrice,
-  formatPriceWithSign,
+  formatPriceWithSign, // eslint-disable-line no-unused-vars -- amounts go through MergedValue's masked formatter
   handleDelete,
   toggleGroup,
   editingField,
@@ -268,180 +227,224 @@ function IsraeliStocksTable({
   // immediately either way.
   pricesPending = false
 }) {
-  return (
-    <>
-      {israeliStocks.length > 0 && (
-        <div className="stocks-section">
+  const compact = useCompactLayout();
+  const [view, setView] = useHoldingsView();
+  if (israeliStocks.length === 0) return null;
+
+  const ctx = { normalizeIsraeliPrice, calculateProfitPercentage, TAX_RATE, cpi };
+  const editProps = { editingField, isEditMode, handleCellClick, handleInlineEdit, finishInlineEdit, handleKeyDown };
+  const field = (stock, name, extra) => (
+    <EditableCell id={stock.id} exchange="israeli" field={name} value={stock[name]} {...editProps} {...extra} />
+  );
+  const nameField = (stock, as, style) =>
+    field(stock, 'stockName', { displayValue: <IsraeliAssetCell stock={stock} />, label: COL.name.title, as, style });
+  const dateField = (stock, as) =>
+    field(stock, 'purchaseDate', { type: 'date', displayValue: formatDate(stock.purchaseDate), label: COL.date.title, as });
+  const priceField = (stock, as = 'span') =>
+    field(stock, 'purchasePrice', {
+      type: 'number',
+      step: '0.01',
+      parse: (raw) => parseFloat(raw),
+      displayValue: formatPrice(stock.purchasePrice),
+      label: 'מחיר קנייה (₪)',
+      as
+    });
+  const quantityField = (stock, as) =>
+    field(stock, 'quantity', { type: 'number', min: '1', parse: (raw) => parseInt(raw), displayValue: stock.quantity, label: COL.quantity.title, as });
+  const deleteButton = (stock) => (
+    <button type="button" onClick={() => handleDelete(stock.id, 'israeli')} className="delete-button">
+      מחק
+    </button>
+  );
+
+  const groups = Object.entries(groupStocksByName(israeliStocks)).map(([stockName, stocks]) => {
+    const lots = stocks.map((s) => lotFigures(s, ctx));
+    const total = stocks.length === 1 ? lots[0] : groupFigures(stocks, lots, calculateGroupSummary(stocks));
+    return { stockName, stocks, lots, total };
+  });
+
+  // ---------- the phone: cards ----------
+  if (compact && view === 'cards') {
+    const extFields = (stock, f, isGroup) => [
+      { label: COL.sector.title, value: <SectorValue stock={stock} /> },
+      { label: 'מדד ביום הקנייה', value: isGroup ? PER_LOT : f.indexAtPurchase ?? '-' },
+      { label: 'מדד היום (הידוע)', value: f.currentIndex ?? '-' },
+      { label: 'רווח ריאלי', value: <Money value={f.realGain} signed /> },
+      { label: 'רווח אינפלציוני', value: <Money value={f.inflationaryGain} /> },
+      { label: 'מס רווח הון', value: <Money value={-f.tax} signed /> },
+      { label: 'רווח לאחר מס', value: <Money value={f.afterTax} signed /> }
+    ];
+    // In edit mode the name is edited here, in the details - the card's
+    // header is a button, and an input cannot live inside one.
+    const lotDetails = (stock, f) => [
+      ...(isEditMode ? [{ label: COL.name.title, value: nameField(stock, 'span') }] : []),
+      { label: COL.date.title, value: dateField(stock, 'span') },
+      { label: COL.quantity.title, value: quantityField(stock, 'span') },
+      { label: 'מחיר קנייה', value: priceField(stock) },
+      { label: 'מחיר נוכחי', value: <PendingPriceValue value={f.currentPrice} pending={pricesPending} format={priceText(formatPrice)} /> },
+      { label: 'עלות', value: <Money value={f.totalPurchase} /> },
+      { label: 'שווי היום', value: <Money value={f.totalCurrentValue} /> },
+      { label: COL.profit.title, value: <><Money value={f.profit} signed /> <Pct value={f.profitPercent} /></> },
+      { label: COL.daily.title, value: <><Money value={f.dailyProfit} signed /> <Pct value={f.dailyPercent} /></> }
+    ];
+    const items = groups.map(({ stockName, stocks, lots, total }) => {
+      const multi = stocks.length > 1;
+      const first = stocks[0];
+      const { name, securityId } = israeliStockNameParts(first);
+      return {
+        key: stockName,
+        name,
+        idLine: `${securityId ? `${securityId} · ` : ''}${total.quantity} יח׳`,
+        lotsCount: stocks.length,
+        value: <PendingPriceValue value={total.totalCurrentValue} pending={pricesPending} format={amountText} />,
+        pl: <><Money value={total.profit} signed /> <Pct value={total.profitPercent} /></>,
+        daily: <><Money value={total.dailyProfit} signed /> <Pct value={total.dailyPercent} /></>,
+        details: multi
+          ? [
+              { label: 'מחיר נוכחי', value: <PendingPriceValue value={total.currentPrice} pending={pricesPending} format={priceText(formatPrice)} /> },
+              { label: 'מחיר קנייה ממוצע', value: formatPrice(total.purchasePrice) },
+              { label: 'עלות', value: <Money value={total.totalPurchase} /> }
+            ]
+          : lotDetails(first, total).filter((d) => ![COL.profit.title, COL.daily.title, 'שווי היום'].includes(d.label)),
+        ext: extFields(first, total, multi),
+        actions: isEditMode && !multi ? deleteButton(first) : null,
+        lots: multi
+          ? stocks.map((stock, i) => ({
+              key: String(stock.id),
+              title: (
+                <>
+                  <span>{formatDate(stock.purchaseDate)}</span>
+                  <bdi dir="ltr" className="hc-lot-qty">
+                    {stock.quantity} × {formatPrice(stock.purchasePrice)}
+                  </bdi>
+                </>
+              ),
+              pl: <><Money value={lots[i].profit} signed /> <Pct value={lots[i].profitPercent} /></>,
+              details: lotDetails(stock, lots[i]),
+              ext: extFields(stock, lots[i], false),
+              actions: isEditMode ? deleteButton(stock) : null
+            }))
+          : null
+      };
+    });
+    return (
+      <div className="stocks-section holdings-cards-section">
+        <div className="holdings-section-head">
           <h2 className="section-title">בורסה ישראלית</h2>
-          <ScrollableTable label="בורסה ישראלית">
-              <thead>
-                <tr>
-                  <th>{COL.name}</th>
-                  <th>{COL.date}</th>
-                  <th>{COL.buyPrice}</th>
-                  <th>{COL.quantity}</th>
-                  {showAdditionalData && <th>{COL.sector}</th>}
-                  <th>{COL.totalBuy}</th>
-                  <th>{COL.currentPrice}</th>
-                  <th>{COL.totalValue}</th>
-                  <th>{COL.profit}</th>
-                  {showAdditionalData && <th>{COL.indexAtBuy}</th>}
-                  {showAdditionalData && <th>{COL.indexToday}</th>}
-                  {showAdditionalData && <th>{COL.tax}</th>}
-                  {showAdditionalData && <th>{COL.afterTax}</th>}
-                  {showAdditionalData && <th>{COL.inflationary}</th>}
-                  {showAdditionalData && <th>{COL.realGain}</th>}
-                  <th>{COL.profitPercent}</th>
-                  <th>{COL.dailyPercent}</th>
-                  <th>{COL.dailyProfit}</th>
-                  {isEditMode && <th>{COL.actions}</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(groupStocksByName(israeliStocks)).map(([stockName, stocks]) => {
-                  const isExpanded = expandedGroups[`israeli-${stockName}`];
-                  const summary = calculateGroupSummary(stocks);
-                  const editableFieldProps = {
-                    editingField,
-                    isEditMode,
-                    handleCellClick,
-                    handleInlineEdit,
-                    finishInlineEdit,
-                    handleKeyDown,
-                    formatDate,
-                    formatPrice,
-                    showAdditionalData
-                  };
-                  const computedCellProps = {
-                    normalizeIsraeliPrice,
-                    calculateProfitPercentage,
-                    TAX_RATE,
-                    cpi,
-                    showAdditionalData,
-                    formatPrice,
-                    formatPriceWithSign,
-                    isEditMode,
-                    handleDelete,
-                    pricesPending
-                  };
-
-                  if (stocks.length === 1) {
-                    const stock = stocks[0];
-                    return (
-                      <tr key={stock.id} className={isEditMode ? 'editable-row' : ''}>
-                        <IsraeliEditableFields stock={stock} {...editableFieldProps} />
-                        <IsraeliComputedCells stock={stock} {...computedCellProps} />
-                      </tr>
-                    );
-                  }
-
-                  return (
-                    <React.Fragment key={stockName}>
-                      <tr className={`${isEditMode ? 'editable-row' : ''} ${isExpanded ? 'summary-row-expanded' : ''}`}>
-                        <td
-                          onClick={() => handleCellClick(stocks[0].id, 'stockName', 'israeli')}
-                          className={isEditMode ? 'editable-cell' : ''}
-                        >
-                          <button
-                            onClick={() => toggleGroup(stockName, 'israeli')}
-                            className="expand-button"
-                            style={{ marginRight: '8px', background: 'none', border: 'none', cursor: 'pointer' }}
-                          >
-                            {isExpanded ? '▼' : '▶'}
-                          </button>
-                          <IsraeliAssetCell stock={stocks[0]} />
-                        </td>
-                        <td data-label={COL.date} title={PER_LOT_TITLE}>{PER_LOT}</td>
-                        <td data-label={COL.buyPrice} title={PER_LOT_TITLE}>{PER_LOT}</td>
-                        <td data-label={COL.quantity}>{summary.totalQuantity}</td>
-                        {showAdditionalData && <IsraeliClassificationFields stock={stocks[0]} />}
-                        <td data-label={COL.totalBuy}>{formatPrice(summary.totalPurchaseValue)}</td>
-                        <td data-label={COL.currentPrice}>
-                          <PendingPriceValue
-                            value={summary.averageCurrentPrice}
-                            pending={pricesPending}
-                            format={formatPrice}
-                          />
-                        </td>
-                        <td data-label={COL.totalValue}>
-                          <PendingPriceValue
-                            value={summary.totalCurrentValue}
-                            pending={pricesPending}
-                            format={formatPrice}
-                          />
-                        </td>
-                        <td className={profitClass(summary.totalProfit)} data-label={COL.profit}>{formatPriceWithSign(summary.totalProfit)}</td>
-                        {showAdditionalData && (
-                          <td colSpan={2} data-label={COL.indexAtBuy} title={PER_LOT_TITLE} style={{ color: 'var(--sw-text-secondary)', fontSize: '0.85em' }}>{PER_LOT}</td>
-                        )}
-                        {showAdditionalData && (() => {
-                          // סכימה per-lot של המס/הרווח הריאלי (לא על הרווח המצרפי),
-                          // כי לכל lot יש תאריך קנייה ומדד שונים.
-                          let tax = 0;
-                          let realGainSum = 0;
-                          stocks.forEach((stock) => {
-                            const displayCurrentPrice = normalizeIsraeliPrice(stock.currentPrice);
-                            const totalCurrentValueLot = (displayCurrentPrice || 0) * (stock.quantity || 0);
-                            const profitLot = totalCurrentValueLot - (stock.purchasePrice || 0) * (stock.quantity || 0);
-                            const indexAtPurchase = cpi && cpi.indexByMonth ? cpi.indexByMonth[monthKeyFromDate(stock.purchaseDate)] : null;
-                            if (cpi && cpi.currentIndex && indexAtPurchase) {
-                              const result = calculateStockRealGainTax({
-                                purchasePrice: stock.purchasePrice,
-                                quantity: stock.quantity,
-                                currentValue: totalCurrentValueLot,
-                                indexAtPurchase,
-                                currentIndex: cpi.currentIndex
-                              });
-                              tax += result.tax;
-                              realGainSum += result.realGain;
-                            } else {
-                              tax += profitLot > 0 ? profitLot * TAX_RATE : 0;
-                              realGainSum += profitLot;
-                            }
-                          });
-                          const after = summary.totalProfit - tax;
-                          const inflationarySum = summary.totalProfit - realGainSum;
-                          return (
-                            <>
-                              <td className="profit-negative" data-label={COL.tax}>{formatPriceWithSign(-tax)}</td>
-                              <td className={profitClass(after)} data-label={COL.afterTax}>{formatPriceWithSign(after)}</td>
-                              <td className={profitClass(inflationarySum)} data-label={COL.inflationary}>{formatPriceWithSign(inflationarySum)}</td>
-                              <td className={profitClass(realGainSum)} data-label={COL.realGain}>{formatPriceWithSign(realGainSum)}</td>
-                            </>
-                          );
-                        })()}
-                        <td data-label={COL.profitPercent}>
-                          <ValuePill value={summary.totalProfit}>{summary.profitPercentage}%</ValuePill>
-                        </td>
-                        <td data-label={COL.dailyPercent}>
-                          <ValuePill value={effectiveDailyChangePercent(stocks[0])}>
-                            {formatDailyChangePercent(effectiveDailyChangePercent(stocks[0]))}%
-                          </ValuePill>
-                        </td>
-                        <td className={profitClass(effectiveDailyChangePercent(stocks[0]))} data-label={COL.dailyProfit}>
-                          {formatPriceWithSign((effectiveDailyChangePercent(stocks[0]) / 100) * summary.totalCurrentValue)} ₪
-                        </td>
-                        {isEditMode && <td></td>}
-                      </tr>
-
-                      {isExpanded && stocks.map((stock) => (
-                        <tr key={stock.id} className={`${isEditMode ? 'editable-row' : ''} detail-row`}>
-                          <IsraeliEditableFields
-                            stock={stock}
-                            {...editableFieldProps}
-                            nameCellStyle={{ paddingLeft: '20px' }}
-                          />
-                          <IsraeliComputedCells stock={stock} {...computedCellProps} />
-                        </tr>
-                      ))}
-                    </React.Fragment>
-                  );
-                })}
-              </tbody>
-          </ScrollableTable>
+          <HoldingsViewToggle view={view} onChange={setView} />
         </div>
-      )}
-    </>
+        <HoldingCards items={items} showExtended={showAdditionalData} label="בורסה ישראלית" />
+      </div>
+    );
+  }
+
+  // ---------- the table ----------
+  const headers = [
+    COL.name,
+    COL.date,
+    COL.quantity,
+    showAdditionalData && COL.sector,
+    COL.price,
+    COL.value,
+    COL.profit,
+    COL.daily,
+    showAdditionalData && COL.index,
+    showAdditionalData && COL.real,
+    showAdditionalData && COL.tax,
+    isEditMode && COL.actions
+  ].filter(Boolean);
+  const cellProps = { pending: pricesPending, showAdditionalData, formatPrice };
+
+  return (
+    <div className="stocks-section">
+      <div className="holdings-section-head">
+        <h2 className="section-title">בורסה ישראלית</h2>
+        {compact && <HoldingsViewToggle view={view} onChange={setView} />}
+      </div>
+      <ScrollableTable label="בורסה ישראלית">
+        <thead>
+          <tr>
+            {headers.map((h) => (
+              <th key={h.title}>
+                <MergedHeader title={h.title} hint={h.hint} />
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {groups.map(({ stockName, stocks, lots, total }) => {
+            if (stocks.length === 1) {
+              const stock = stocks[0];
+              return (
+                <tr key={stock.id} className={isEditMode ? 'editable-row' : ''}>
+                  {nameField(stock)}
+                  {dateField(stock)}
+                  {quantityField(stock)}
+                  {showAdditionalData && (
+                    <td>
+                      <SectorValue stock={stock} />
+                    </td>
+                  )}
+                  <FigureCells f={total} buyPrice={priceField(stock)} {...cellProps} />
+                  {isEditMode && <td>{deleteButton(stock)}</td>}
+                </tr>
+              );
+            }
+            const isExpanded = expandedGroups[`israeli-${stockName}`];
+            return (
+              <React.Fragment key={stockName}>
+                <tr className={`${isEditMode ? 'editable-row' : ''} ${isExpanded ? 'summary-row-expanded' : ''}`}>
+                  <td
+                    onClick={() => handleCellClick(stocks[0].id, 'stockName', 'israeli')}
+                    className={isEditMode ? 'editable-cell' : ''}
+                  >
+                    <span className="group-name-cell">
+                      <button
+                        type="button"
+                        onClick={() => toggleGroup(stockName, 'israeli')}
+                        className="expand-button"
+                        aria-expanded={Boolean(isExpanded)}
+                        aria-label={isExpanded ? 'סגירת הקניות' : 'פתיחת הקניות'}
+                      >
+                        {isExpanded ? '▾' : '◂'}
+                      </button>
+                      <span>
+                        <IsraeliAssetCell stock={stocks[0]} />
+                        <span className="lots-badge">{stocks.length} קניות</span>
+                      </span>
+                    </span>
+                  </td>
+                  <td title={PER_LOT_TITLE}>{PER_LOT}</td>
+                  <td>{total.quantity}</td>
+                  {showAdditionalData && (
+                    <td>
+                      <SectorValue stock={stocks[0]} />
+                    </td>
+                  )}
+                  <FigureCells f={total} buyPrice={formatPrice(total.purchasePrice)} isGroup {...cellProps} />
+                  {isEditMode && <td></td>}
+                </tr>
+                {isExpanded &&
+                  stocks.map((stock, i) => (
+                    <tr key={stock.id} className={`${isEditMode ? 'editable-row' : ''} detail-row`}>
+                      {nameField(stock, 'td', { paddingInlineStart: '28px' })}
+                      {dateField(stock)}
+                      {quantityField(stock)}
+                      {showAdditionalData && (
+                        <td>
+                          <SectorValue stock={stock} />
+                        </td>
+                      )}
+                      <FigureCells f={lots[i]} buyPrice={priceField(stock)} {...cellProps} />
+                      {isEditMode && <td>{deleteButton(stock)}</td>}
+                    </tr>
+                  ))}
+              </React.Fragment>
+            );
+          })}
+        </tbody>
+      </ScrollableTable>
+    </div>
   );
 }
 

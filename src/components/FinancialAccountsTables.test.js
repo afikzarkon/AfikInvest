@@ -47,18 +47,23 @@ function Harness({ initialFund, initialCashFunds = [], initialBankBalances = [],
   );
 }
 
-// Column order in the pension table: 0=fundName, 1=initialInvestment,
-// 2=currentValue, 3=currentValueDate, 4=previousValue, 5=previousValueDate,
-// 6=todaysIndex, 7=depositIndex (showAdditionalData is true in these tests).
+// Column order in the pension table (merged columns): 0=fundName,
+// 1=initialInvestment, 2=currentValue with its date under it,
+// 3=previousValue with its date under it, 4=deposit index with today's
+// index under it (showAdditionalData is true in these tests). Read afresh
+// after each action - an edit replaces the cell's contents.
 function pensionRowCells(container) {
   const row = container.querySelector('tbody tr');
+  const main = (cell) => cell.querySelector('.mv-main') || cell;
   return {
     currentValue: row.children[2],
-    currentValueDate: row.children[3],
-    previousValue: row.children[4],
-    previousValueDate: row.children[5],
-    todaysIndex: row.children[6],
-    depositIndex: row.children[7]
+    currentValueText: main(row.children[2]),
+    currentValueDate: row.children[2].querySelector('.merged-date'),
+    previousValue: row.children[3],
+    previousValueText: main(row.children[3]),
+    previousValueDate: row.children[3].querySelector('.merged-date'),
+    todaysIndex: row.children[4].querySelector('.cpi-today'),
+    depositIndex: main(row.children[4])
   };
 }
 
@@ -85,11 +90,12 @@ describe('FinancialAccountsTables - pension "שווי נוכחי" edit', () => {
     expect(cells.currentValue.querySelector('input[type="number"]')).toBeNull();
 
     // the new value and the user-entered date landed together
-    expect(cells.currentValue.textContent).toBe('111000 ₪');
-    expect(cells.currentValueDate.textContent).toBe('2024-06-30');
+    const after = pensionRowCells(container);
+    expect(after.currentValueText.textContent).toBe('111000 ₪');
+    expect(after.currentValueDate.textContent).toBe('2024-06-30');
     // the old value/date rolled into "previous", not overwritten
-    expect(cells.previousValue.textContent).toBe('100000 ₪');
-    expect(cells.previousValueDate.textContent).toBe('2024-03-31');
+    expect(after.previousValueText.textContent).toBe('100000 ₪');
+    expect(after.previousValueDate.textContent).toBe('2024-03-31');
   });
 
   test('defaults the date field to today for a fund with no prior currentValueDate', () => {
@@ -118,8 +124,9 @@ describe('FinancialAccountsTables - pension "שווי נוכחי" edit', () => {
     fireEvent.blur(cells.currentValue.querySelector('.pension-value-edit-group'));
 
     expect(cells.currentValue.querySelector('input[type="number"]')).toBeNull();
-    expect(cells.currentValue.textContent).toBe('210000 ₪');
-    expect(cells.currentValueDate.textContent).toBe('2024-05-01');
+    const after = pensionRowCells(container);
+    expect(after.currentValueText.textContent).toBe('210000 ₪');
+    expect(after.currentValueDate.textContent).toBe('2024-05-01');
   });
 });
 
@@ -144,7 +151,7 @@ describe('FinancialAccountsTables - pension previousValue/previousValueDate are 
 
     fireEvent.click(cells.previousValue);
     expect(cells.previousValue.querySelector('input')).toBeNull();
-    expect(cells.previousValue.textContent).toBe('100000 ₪');
+    expect(cells.previousValueText.textContent).toBe('100000 ₪');
 
     fireEvent.click(cells.previousValueDate);
     expect(cells.previousValueDate.querySelector('input')).toBeNull();
@@ -183,7 +190,7 @@ describe('FinancialAccountsTables - pension CPI columns', () => {
       />
     );
     const cells = pensionRowCells(container);
-    expect(cells.todaysIndex.textContent).toBe('105.3');
+    expect(cells.todaysIndex.textContent).toBe('היום 105.3');
     // the summary row doesn't show a single deposit-month index (a fund
     // can have deposits from several different months)
     expect(cells.depositIndex.textContent).toBe('-');

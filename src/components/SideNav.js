@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import BrandLogo from './ui/BrandLogo';
 import ThemeToggleButton from './ThemeToggleButton';
 import Avatar from './ui/Avatar';
@@ -75,6 +76,13 @@ const ICONS = {
       <path d="M10 20a2 2 0 0 0 4 0" />
     </>
   ),
+  more: (
+    <>
+      <circle cx="5" cy="12" r="1.6" />
+      <circle cx="12" cy="12" r="1.6" />
+      <circle cx="19" cy="12" r="1.6" />
+    </>
+  ),
   ledger: (
     <>
       <path d="M7 4h11a1 1 0 0 1 1 1v15H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" />
@@ -103,6 +111,130 @@ function NavIcon({ name }) {
 // Kept as a named export: the flat list of visible destinations, which the
 // tests read. NAV_GROUPS is what this component actually renders.
 export const NAV_ITEMS = ROUTES.filter((route) => !route.hidden);
+
+// ---------------------------------------------------------------------
+// The phone's bottom bar. Thirteen destinations do not fit across a
+// phone, and a bar that scrolls sideways hides most of them behind its
+// edge. So the bar holds the four places people go most - the overview,
+// the assets, the analysis and the ledger - and "עוד", which opens every
+// page grouped as in the sidebar. "נכסים" opens just the asset pages.
+const PRIMARY_KEYS = ['home', 'analytics', 'transactions'];
+const ASSETS_GROUP = NAV_GROUPS.find((g) => g.label === 'נכסים');
+
+function NavSheet({ title, groups, activePage, badges, onNavigate, onClose }) {
+  const sheetRef = useRef(null);
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    if (sheetRef.current) sheetRef.current.focus();
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  // Rendered on <body>: the bottom bar has a backdrop-filter, which makes
+  // it the containing block of anything fixed inside it - the sheet would
+  // be positioned against the bar, not the screen.
+  return createPortal(
+    // The backdrop closes on a tap; Escape and the close button do the same.
+    // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
+    <div className="nav-sheet-backdrop" onClick={onClose}>
+      {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions */}
+      <div className="nav-sheet" role="dialog" aria-modal="true" aria-label={title} ref={sheetRef} tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+        <div className="nav-sheet-head">
+          <span className="nav-sheet-title">{title}</span>
+          <button type="button" className="nav-sheet-close" onClick={onClose} aria-label="סגירה">
+            ×
+          </button>
+        </div>
+        {groups.map((group) => (
+          <div className="nav-sheet-group" key={group.label}>
+            {groups.length > 1 && <div className="nav-sheet-group-label">{group.label}</div>}
+            <div className="nav-sheet-grid">
+              {group.keys.map((key) => {
+                const item = routeByKey(key);
+                const isActive = activePage === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    className={`nav-sheet-item ${isActive ? 'active' : ''}`}
+                    aria-current={isActive ? 'page' : undefined}
+                    onClick={() => {
+                      onClose();
+                      onNavigate(key);
+                    }}
+                  >
+                    <NavIcon name={item.icon} />
+                    <span className="nav-sheet-item-label">{item.label}</span>
+                    {badges[key] > 0 && <span className="side-nav-badge">{badges[key] > 99 ? '99+' : badges[key]}</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+function BottomNav({ activePage, onNavigate, badges, groups }) {
+  const [sheet, setSheet] = useState(null); // null | 'assets' | 'more'
+  const visibleKeys = new Set(groups.flatMap((g) => g.keys));
+  const primary = PRIMARY_KEYS.filter((k) => visibleKeys.has(k));
+  const assetKeys = ASSETS_GROUP ? ASSETS_GROUP.keys.filter((k) => visibleKeys.has(k)) : [];
+  const assetsGroup = groups.find((g) => ASSETS_GROUP && g.label === ASSETS_GROUP.label);
+  const onAsset = assetKeys.includes(activePage);
+  const onMore = !primary.includes(activePage) && !onAsset;
+  const moreBadge = Object.keys(badges)
+    .filter((k) => !primary.includes(k) && visibleKeys.has(k))
+    .reduce((n, k) => n + (badges[k] || 0), 0);
+  const close = useCallback(() => setSheet(null), []);
+
+  const item = (key) => {
+    const route = routeByKey(key);
+    const isActive = activePage === key;
+    return (
+      <li key={key}>
+        <button type="button" className={`bottom-nav-item ${isActive ? 'active' : ''}`} onClick={() => onNavigate(key)} aria-current={isActive ? 'page' : undefined}>
+          <NavIcon name={route.icon} />
+          <span>{route.label === 'ניתוח תיק' ? 'ניתוח' : route.label}</span>
+        </button>
+      </li>
+    );
+  };
+  const sheetButton = (kind, label, icon, isActive, badge) => (
+    <li key={kind}>
+      <button type="button" className={`bottom-nav-item ${isActive ? 'active' : ''}`} aria-haspopup="dialog" aria-expanded={sheet === kind} onClick={() => setSheet(kind)}>
+        <NavIcon name={icon} />
+        <span>{label}</span>
+        {badge > 0 && <span className="side-nav-badge" aria-label={`${badge} חדשות`}>{badge > 99 ? '99+' : badge}</span>}
+      </button>
+    </li>
+  );
+
+  return (
+    <>
+      <ul className="bottom-nav-list">
+        {primary.includes('home') && item('home')}
+        {assetKeys.length > 0 && sheetButton('assets', 'נכסים', 'wallet', onAsset, 0)}
+        {primary.filter((k) => k !== 'home').map(item)}
+        {sheetButton('more', 'עוד', 'more', onMore, moreBadge)}
+      </ul>
+      {sheet && (
+        <NavSheet
+          title={sheet === 'assets' ? 'נכסים' : 'כל הדפים'}
+          groups={sheet === 'assets' && assetsGroup ? [assetsGroup] : groups}
+          activePage={activePage}
+          badges={badges}
+          onNavigate={onNavigate}
+          onClose={close}
+        />
+      )}
+    </>
+  );
+}
 
 // The app's primary navigation.
 //
@@ -137,12 +269,21 @@ function SideNav({
   avatar = null,
   hiddenRoutes = [],
   showAccount = true,
-  isAdmin = false
+  isAdmin = false,
+  // The phone layout: the bottom bar with "עוד" (BottomNav above).
+  compact = false
 }) {
   const hidden = new Set(hiddenRoutes);
   const groups = NAV_GROUPS.map((group) => ({ ...group, keys: group.keys.filter((key) => !hidden.has(key)) })).filter(
     (group) => group.keys.length > 0
   );
+  if (compact) {
+    return (
+      <nav className="side-nav bottom-nav" aria-label="ניווט ראשי">
+        <BottomNav activePage={activePage} onNavigate={onNavigate} badges={badges} groups={groups} />
+      </nav>
+    );
+  }
   return (
     <nav className="side-nav" aria-label="ניווט ראשי">
       <div className="side-nav-brand">

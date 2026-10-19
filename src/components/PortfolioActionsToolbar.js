@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import PageToolbar, { ToolbarButton, ToolbarPrimaryButton, ToolbarStatus } from './PageToolbar';
+import PageToolbar, { ToolbarButton, ToolbarMoreMenu, ToolbarPrimaryButton, ToolbarStatus } from './PageToolbar';
+import { useCompactLayout } from '../hooks/useMediaQuery';
 import { loadStockSectors } from '../hooks/useStockSectors';
 
 // The controls that act on the portfolio itself - add, save, edit mode,
@@ -48,6 +49,9 @@ function PortfolioActionsToolbar({
   sticky = true
 }) {
   const [exportError, setExportError] = useState('');
+  // On a phone: one row - the primary action, a "⋯" menu with the rest,
+  // and save only while there is something to save.
+  const compact = useCompactLayout();
 
   // exportReport.js pulls in exceljs + jsPDF + the embedded Hebrew font -
   // several hundred KB gzipped (confirmed: it blew up the main bundle by
@@ -123,16 +127,20 @@ function PortfolioActionsToolbar({
 
   // Save is the primary action only while there is something to save;
   // otherwise it states that everything is saved and stays out of the way.
+  const showSave = !compact || hasUnsavedChanges || saveLoading;
   const primaryAction = (
     <>
       <ToolbarPrimaryButton onClick={handleAddInfo}>+ הוספת מידע</ToolbarPrimaryButton>
-      <ToolbarButton
-        onClick={savePortfolio}
-        disabled={!hasUnsavedChanges || saveLoading}
-        pressed={hasUnsavedChanges}
-      >
-        {saveLoading ? 'שומר…' : hasUnsavedChanges ? 'שמור שינויים' : 'נשמר'}
-      </ToolbarButton>
+      {showSave && (
+        <ToolbarButton
+          onClick={savePortfolio}
+          disabled={!hasUnsavedChanges || saveLoading}
+          pressed={hasUnsavedChanges}
+        >
+          {saveLoading ? 'שומר…' : hasUnsavedChanges ? 'שמור שינויים' : 'נשמר'}
+        </ToolbarButton>
+      )}
+      {compact && <ToolbarMoreMenu>{secondaryActions}</ToolbarMoreMenu>}
     </>
   );
 
@@ -150,10 +158,10 @@ function PortfolioActionsToolbar({
             : 'מוצגים מחירים אחרונים שנשמרו'}
         </span>
       )}
-      {lastSavedAt && (
+      {lastSavedAt && !compact && (
         <ToolbarStatus>נשמר לאחרונה: {lastSavedAt.toLocaleTimeString('he-IL')}</ToolbarStatus>
       )}
-      {lastSnapshotSavedAt && (
+      {lastSnapshotSavedAt && !compact && (
         <ToolbarStatus>מידע יומי נשמר: {lastSnapshotSavedAt.toLocaleTimeString('he-IL')}</ToolbarStatus>
       )}
       {saveError && <ToolbarStatus tone="negative">{saveError}</ToolbarStatus>}
@@ -168,7 +176,7 @@ function PortfolioActionsToolbar({
       title={title}
       subtitle={subtitle}
       primaryAction={primaryAction}
-      secondaryActions={secondaryActions}
+      secondaryActions={compact ? null : secondaryActions}
       status={status}
       sticky={sticky}
     />

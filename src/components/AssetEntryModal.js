@@ -254,7 +254,7 @@ function AssetEntryModal({
 
   return (
     <div
-      className="beta-modal-overlay"
+      className="beta-modal-overlay asset-entry-overlay"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget && onClose) onClose();
       }}
@@ -403,7 +403,7 @@ function AssetEntryModal({
                       </div>
                       <div className="form-group">
                         <label htmlFor="entry-rate">ריבית שנתית (%)</label>
-                        <input id="entry-rate" type="number" step="0.01" min="0" value={newAccount.interestRate} required onChange={(e) => setNewAccount({ interestRate: e.target.value })} />
+                        <input id="entry-rate" type="number" inputMode="decimal" step="0.01" min="0" value={newAccount.interestRate} required onChange={(e) => setNewAccount({ interestRate: e.target.value })} />
                       </div>
                       <div className="form-group form-group-checkbox">
                         <label htmlFor="entry-linked">
@@ -446,16 +446,16 @@ function AssetEntryModal({
             <>
               <div className="form-group">
                 <label htmlFor="entry-units">כמות</label>
-                <input id="entry-units" type="number" step="any" min="0" value={state.units} required onChange={(e) => set({ units: e.target.value })} />
+                <input id="entry-units" type="number" inputMode="decimal" step="any" min="0" value={state.units} required onChange={(e) => set({ units: e.target.value })} />
                 {state.action === 'SELL' && held > 0 && <small className="form-help">מוחזקות כרגע {held} יחידות</small>}
               </div>
               <div className="form-group">
                 <label htmlFor="entry-price">מחיר ליחידה ({currency})</label>
-                <input id="entry-price" type="number" step="any" min="0" value={state.price} required onChange={(e) => set({ price: e.target.value })} />
+                <input id="entry-price" type="number" inputMode="decimal" step="any" min="0" value={state.price} required onChange={(e) => set({ price: e.target.value })} />
               </div>
               <div className="form-group">
                 <label htmlFor="entry-fees">עמלות ({currency})</label>
-                <input id="entry-fees" type="number" step="any" min="0" value={state.fees} onChange={(e) => set({ fees: e.target.value })} />
+                <input id="entry-fees" type="number" inputMode="decimal" step="any" min="0" value={state.fees} onChange={(e) => set({ fees: e.target.value })} />
               </div>
             </>
           )}
@@ -477,11 +477,11 @@ function AssetEntryModal({
             <>
               <div className="form-group">
                 <label htmlFor="entry-amount">סכום ברוטו ({currency})</label>
-                <input id="entry-amount" type="number" step="any" min="0" value={state.amount} required onChange={(e) => set({ amount: e.target.value })} />
+                <input id="entry-amount" type="number" inputMode="decimal" step="any" min="0" value={state.amount} required onChange={(e) => set({ amount: e.target.value })} />
               </div>
               <div className="form-group">
                 <label htmlFor="entry-tax">מס שנוכה במקור ({currency})</label>
-                <input id="entry-tax" type="number" step="any" min="0" value={state.taxWithheld} onChange={(e) => set({ taxWithheld: e.target.value })} />
+                <input id="entry-tax" type="number" inputMode="decimal" step="any" min="0" value={state.taxWithheld} onChange={(e) => set({ taxWithheld: e.target.value })} />
               </div>
             </>
           )}
@@ -489,21 +489,21 @@ function AssetEntryModal({
           {(state.action === 'DEPOSIT' || state.action === 'WITHDRAWAL') && (
             <div className="form-group">
               <label htmlFor="entry-amount">סכום (₪)</label>
-              <input id="entry-amount" type="number" step="any" min="0" value={state.amount} required onChange={(e) => set({ amount: e.target.value })} />
+              <input id="entry-amount" type="number" inputMode="decimal" step="any" min="0" value={state.amount} required onChange={(e) => set({ amount: e.target.value })} />
             </div>
           )}
 
           {state.action === 'VALUE' && (
             <div className="form-group">
               <label htmlFor="entry-value">שווי לפי הדוח (₪)</label>
-              <input id="entry-value" type="number" step="any" value={state.value} required onChange={(e) => set({ value: e.target.value })} />
+              <input id="entry-value" type="number" inputMode="decimal" step="any" value={state.value} required onChange={(e) => set({ value: e.target.value })} />
             </div>
           )}
 
           {needsFx && (
             <div className="form-group">
               <label htmlFor="entry-fx">שער דולר ביום העסקה</label>
-              <input id="entry-fx" type="number" step="any" min="0" value={state.fxRate} required onChange={(e) => set({ fxRate: e.target.value })} />
+              <input id="entry-fx" type="number" inputMode="decimal" step="any" min="0" value={state.fxRate} required onChange={(e) => set({ fxRate: e.target.value })} />
               <small className="form-help">
                 {fxStatus === 'loading'
                   ? 'מושך את השער היציג…'

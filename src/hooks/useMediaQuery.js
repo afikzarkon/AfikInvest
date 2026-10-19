@@ -32,3 +32,12 @@ export function useMediaQuery(query) {
 
   return isMatch;
 }
+
+// The phone / narrow-tablet layout: below this width the sidebar becomes a
+// bottom bar (App.css, SHELL RESPONSIVENESS) and the pages switch to their
+// compact forms. One definition, so every component flips at the same width.
+export const COMPACT_QUERY = '(max-width: 960px)';
+
+export function useCompactLayout() {
+  return useMediaQuery(COMPACT_QUERY);
+}

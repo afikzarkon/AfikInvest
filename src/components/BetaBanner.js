@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { useCompactLayout } from '../hooks/useMediaQuery';
 
 // The standing "this system is in testing" strip, with the legal note that
 // fits the page it sits on.
@@ -41,8 +42,59 @@ const MESSAGES = {
   }
 };
 
+// On a phone the full strip repeated at the top of every page pushed each
+// page's figures down by a screen's worth of amber. There it is one line
+// that opens on a tap. The general and data notes - the same text on every
+// page, already accepted in the arrival notice - can be closed for good;
+// the tax, valuation and advice notes say something specific to the page
+// they sit on, so they collapse but never go away.
+const CLOSE_KEY = 'afikinvest_beta_strip_closed';
+const CLOSABLE = new Set(['general', 'data']);
+
+function readClosed() {
+  try {
+    return localStorage.getItem(CLOSE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function CompactBetaBanner({ tone, message }) {
+  const [open, setOpen] = useState(false);
+  const [closed, setClosed] = useState(readClosed);
+  const closable = CLOSABLE.has(tone);
+  if (closable && closed) return null;
+  const close = () => {
+    setClosed(true);
+    try {
+      localStorage.setItem(CLOSE_KEY, '1');
+    } catch {
+      /* closes for this visit only */
+    }
+  };
+  return (
+    <div className={`beta-banner beta-banner-${tone} is-compact ${open ? 'is-open' : ''}`} role="note">
+      <button type="button" className="beta-banner-toggle" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <span className="beta-banner-tag">BETA</span>
+        <strong className="beta-banner-title">{message.title}</strong>
+        <span className="beta-banner-more" aria-hidden="true">
+          {open ? '▴' : '▾'}
+        </span>
+      </button>
+      {open && <p className="beta-banner-body">{message.body}</p>}
+      {closable && (
+        <button type="button" className="beta-banner-close" onClick={close} aria-label="סגירת ההודעה">
+          ×
+        </button>
+      )}
+    </div>
+  );
+}
+
 function BetaBanner({ tone = 'general' }) {
   const message = MESSAGES[tone] || MESSAGES.general;
+  const compact = useCompactLayout();
+  if (compact) return <CompactBetaBanner tone={MESSAGES[tone] ? tone : 'general'} message={message} />;
   return (
     <div className={`beta-banner beta-banner-${tone}`} role="note">
       <span className="beta-banner-tag">BETA</span>

@@ -1,6 +1,7 @@
 import React from 'react';
 import PortfolioActionsToolbar from '../PortfolioActionsToolbar';
 import BetaBanner from '../BetaBanner';
+import { useCompactLayout } from '../../hooks/useMediaQuery';
 
 // The frame every asset page shares: the portfolio action toolbar, an
 // optional summary card for that asset class, and then the page's table.
@@ -19,6 +20,9 @@ function AssetPageLayout({
   children,
   ...toolbarProps
 }) {
+  // On a phone the subtitle only repeats the page's name in more words;
+  // the edit-mode hint, which says how to use the page, stays.
+  const compact = useCompactLayout();
   return (
     <div className="App">
       <div className="welcome-container">
@@ -29,6 +33,8 @@ function AssetPageLayout({
             subtitle={
               toolbarProps.isEditMode
                 ? 'מצב עריכה פעיל - לחצו על תא בטבלה כדי לערוך אותו'
+                : compact
+                ? null
                 : subtitle
             }
           />

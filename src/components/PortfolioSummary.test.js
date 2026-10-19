@@ -99,7 +99,9 @@ describe('BankSavingsCard', () => {
     const rows = rowsOf(container);
     expect(rows['סך הפקדות:']).toBe(`${formatPriceWithSign(summary.bankSavingsInitialInvestmentILS)} ₪`);
     expect(rows['סך שווי היום:']).toBe(`${formatPriceWithSign(summary.bankSavingsCurrentValueILS)} ₪`);
-    expect(rows['סה"כ רווח והפסד:']).toBe(`${formatPriceWithSign(summary.bankSavingsTotalProfitILS)} ₪`);
+    // The amount with its percent beside it, in one row.
+    expect(rows['סה"כ רווח והפסד:'].startsWith(`${formatPriceWithSign(summary.bankSavingsTotalProfitILS)} ₪`)).toBe(true);
+    expect(rows['סה"כ רווח והפסד:']).toMatch(/%$/);
     expect(rows['סה"כ מס שנשלם:']).toBe(`${formatPriceWithSign(-summary.bankSavingsTaxILS)} ₪`);
   });
 
@@ -110,7 +112,7 @@ describe('BankSavingsCard', () => {
     const { container } = render(
       <BankSavingsCard summary={empty} formatPriceWithSign={formatPriceWithSign} />
     );
-    expect(rowsOf(container)['רווח מצטבר אל מול הפקדות:']).toBe('—');
+    expect(rowsOf(container)['סה"כ רווח והפסד:']).not.toMatch(/%/);
   });
 });
 

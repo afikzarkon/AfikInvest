@@ -12,6 +12,61 @@ import {
 import PortfolioActionsToolbar from './PortfolioActionsToolbar';
 import KpiTile, { KpiRow } from './KpiTile';
 import BetaBanner from './BetaBanner';
+import { useCompactLayout } from '../hooks/useMediaQuery';
+
+const pctText = (v) => (v == null || !Number.isFinite(v) ? null : `${v > 0 ? '+' : ''}${v.toFixed(2)}%`);
+const toneClass = (v) => (v > 0 ? 'profit-positive' : v < 0 ? 'profit-negative' : '');
+
+// The phone's form of the four headline tiles: one card - the total, then
+// profit, daily change and tax as rows, each amount with its percent.
+function CompactKpis({ headlineValue, headlineSub, totalProfitPercent, summary, dailyChangeSub }) {
+  const row = (label, amount, pct, sub) => (
+    <div className="home-kpi-row">
+      <span className="home-kpi-label">
+        {label}
+        {sub ? <span className="home-kpi-sub">{sub}</span> : null}
+      </span>
+      <span className={`home-kpi-value ${toneClass(amount)}`}>
+        {formatPriceWithSign(amount)} ₪{pct ? <span className="summary-pct">{pct}</span> : null}
+      </span>
+    </div>
+  );
+  return (
+    <section className="home-kpis" aria-label="סיכום התיק">
+      <div className="home-kpi-head">
+        <span className="home-kpi-label">שווי תיק כולל</span>
+        <strong className="home-kpi-total">{headlineValue}</strong>
+        <span className="home-kpi-sub">{headlineSub}</span>
+      </div>
+      {row('רווח/הפסד כולל', summary.totalProfitILS, pctText(totalProfitPercent))}
+      {row('שינוי יומי', summary.dailyProfitILS, pctText(summary.weightedDailyChange), dailyChangeSub)}
+      <div className="home-kpi-row">
+        <span className="home-kpi-label">
+          מס צפוי<span className="home-kpi-sub">על הרווח הריאלי</span>
+        </span>
+        <span className="home-kpi-value">{formatPriceWithSign(summary.totalTaxILS)} ₪</span>
+      </div>
+    </section>
+  );
+}
+
+// The phone's summary cards: each one a single line - its name, what it is
+// worth and its return - that opens to the full card and the link to its
+// page. Six cards of eight rows each were most of a 3,500px page.
+function CompactSummaryItem({ title, value, pct, children }) {
+  return (
+    <details className="home-fold">
+      <summary className="home-fold-head">
+        <span className="home-fold-title">{title}</span>
+        <span className="home-fold-figures">
+          <span className="home-fold-value">{value}</span>
+          {pct ? <span className={`home-fold-pct ${pct.startsWith('-') ? 'profit-negative' : 'profit-positive'}`}>{pct}</span> : null}
+        </span>
+      </summary>
+      <div className="home-fold-body">{children}</div>
+    </details>
+  );
+}
 
 // The home dashboard: the portfolio's top-level valuation, and one summary
 // card per part of it.
@@ -56,6 +111,10 @@ function HomeView({
     summary.totalPurchaseILS > 0 ? (summary.totalProfitILS / summary.totalPurchaseILS) * 100 : null;
 
   const cardProps = { summary, formatPriceWithSign };
+  const compact = useCompactLayout();
+  const ils = (v) => `${formatPriceWithSign(v)} ₪`;
+  const savingsPct =
+    summary.bankSavingsInitialInvestmentILS > 0 ? (summary.bankSavingsTotalProfitILS / summary.bankSavingsInitialInvestmentILS) * 100 : null;
 
   // The headline total in the main currency (settings ← investments), when
   // that is not the shekel and its rate is known; the shekel value under it.
@@ -78,15 +137,46 @@ function HomeView({
   // The markets first - they are read against each other - then the
   // accounts that do not move with the market.
   const categoryCards = [
-    present.israeli && { key: 'israeli', to: 'israeli-stocks', card: <IsraeliMarketCard {...cardProps} /> },
-    present.american && { key: 'american', to: 'us-stocks', card: <AmericanMarketCard {...cardProps} /> },
-    present.pension && { key: 'pension', to: 'provident-funds', card: <ProvidentFundsCard {...cardProps} /> },
+    present.israeli && {
+      key: 'israeli',
+      to: 'israeli-stocks',
+      title: 'בורסה ישראלית',
+      value: ils(summary.israeliOnlyCurrentValueILS),
+      pct: pctText(summary.israeliOnlyProfitPercent),
+      card: <IsraeliMarketCard {...cardProps} />
+    },
+    present.american && {
+      key: 'american',
+      to: 'us-stocks',
+      title: 'בורסה אמריקאית',
+      value: `${formatPriceWithSign(summary.totalCurrentValueUSD)} $`,
+      pct: pctText(summary.americanOnlyProfitPercent),
+      card: <AmericanMarketCard {...cardProps} />
+    },
+    present.pension && {
+      key: 'pension',
+      to: 'provident-funds',
+      title: 'קופות גמל',
+      value: ils(summary.pensionCurrentValueILS),
+      pct: pctText(summary.pensionProfitPercent),
+      card: <ProvidentFundsCard {...cardProps} />
+    },
     (present.cash || present.bank) && {
       key: 'liquid',
       to: 'cash-and-checking',
+      title: 'כספית שקלית ועו"ש',
+      value: ils((summary.capitalCashFundsILS || 0) + (summary.capitalBankILS || 0)),
+      pct: null,
       card: <CashAndCheckingCard {...cardProps} showCash={present.cash} showBank={present.bank} />
     },
-    present.bankSavings && { key: 'bank-savings', to: 'bank-savings', card: <BankSavingsCard {...cardProps} /> }
+    present.bankSavings && {
+      key: 'bank-savings',
+      to: 'bank-savings',
+      title: 'קופת חיסכון בבנק',
+      value: ils(summary.bankSavingsCurrentValueILS),
+      pct: pctText(savingsPct),
+      card: <BankSavingsCard {...cardProps} />
+    }
   ].filter(Boolean);
   const categoryRows = [];
   for (let i = 0; i < categoryCards.length; i += 2) categoryRows.push(categoryCards.slice(i, i + 2));
@@ -133,7 +223,7 @@ function HomeView({
           <PortfolioActionsToolbar
             {...toolbarProps}
             title="תיק ההשקעות שלך"
-            subtitle="סיכום התיק - לפירוט המלא של כל אפיק בחרו בו בתפריט או בכרטיס המתאים"
+            subtitle={compact ? null : "סיכום התיק - לפירוט המלא של כל אפיק בחרו בו בתפריט או בכרטיס המתאים"}
             hasAnyData={hasAnyData}
             // The overview has no table to edit or to widen with extra
             // columns; those toggles belong on the asset pages.
@@ -156,7 +246,17 @@ function HomeView({
           {/* The figures the app is opened to see, lifted out of the cards
               below so they aren't buried among detail that is read
               occasionally rather than every time. */}
-          {hasAnyData && (
+          {hasAnyData && compact && (
+            <CompactKpis
+              headlineValue={headlineValue}
+              headlineSub={headlineSub}
+              totalProfitPercent={totalProfitPercent}
+              summary={summary}
+              dailyChangeSub={dailyChangeSub}
+            />
+          )}
+
+          {hasAnyData && !compact && (
             <KpiRow>
               {/* The figure the app is opened for, given the block of the
                   grid that says so. The three beside it qualify it. */}
@@ -207,7 +307,29 @@ function HomeView({
             </KpiRow>
           )}
 
-          {hasAnyData && (
+          {hasAnyData && compact && (
+            <div className="portfolio-summary home-folds">
+              <h2 className="portfolio-summary-title">סיכום התיק</h2>
+              <CompactSummaryItem title='סה"כ מצב ההון' value={ils(summary.capitalTotalILS)}>
+                <CapitalStateCard {...cardProps} present={present} />
+              </CompactSummaryItem>
+              <CompactSummaryItem title="סיכום השקעות נטו" value={ils(summary.totalProfitILS)} pct={pctText(totalProfitPercent)}>
+                <NetInvestmentCard {...cardProps} present={present} />
+              </CompactSummaryItem>
+              {categoryCards.map((c) => (
+                <CompactSummaryItem key={c.key} title={c.title} value={c.value} pct={c.pct}>
+                  {c.card}
+                  {onNavigate && (
+                    <button type="button" className="home-fold-link" onClick={() => onNavigate(c.to)}>
+                      לדף המלא ←
+                    </button>
+                  )}
+                </CompactSummaryItem>
+              ))}
+            </div>
+          )}
+
+          {hasAnyData && !compact && (
             <div className="portfolio-summary">
               <h2 className="portfolio-summary-title">סיכום התיק</h2>
               <div className="summary-grid-custom">

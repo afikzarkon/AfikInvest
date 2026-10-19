@@ -1,10 +1,7 @@
 import React from 'react';
 import SideNav from './SideNav';
 import AccountRail from './AccountRail';
-import { useMediaQuery } from '../hooks/useMediaQuery';
-
-// Matches the breakpoint in App.css where the sidebar becomes a bottom bar.
-export const COMPACT_SHELL_QUERY = '(max-width: 960px)';
+import { useCompactLayout } from '../hooks/useMediaQuery';
 
 // The application frame: navigation on one side, the page on the other.
 //
@@ -21,7 +18,7 @@ export const COMPACT_SHELL_QUERY = '(max-width: 960px)';
 // the bottom bar holds only the pages. One or the other is rendered, never
 // both, so each control exists once on the page.
 function AppShell({ activePage, onNavigate, user, onLogout, theme, onToggleTheme, badges, displayName, avatar, isAdmin = false, hiddenRoutes, children }) {
-  const compact = useMediaQuery(COMPACT_SHELL_QUERY);
+  const compact = useCompactLayout();
   return (
     <div className={`app-shell ${compact && user ? 'has-account-rail' : ''}`}>
       <SideNav
@@ -37,6 +34,7 @@ function AppShell({ activePage, onNavigate, user, onLogout, theme, onToggleTheme
         isAdmin={isAdmin}
         hiddenRoutes={hiddenRoutes}
         showAccount={!compact}
+        compact={compact}
       />
       {compact && (
         <AccountRail
