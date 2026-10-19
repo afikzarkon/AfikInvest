@@ -19,6 +19,7 @@ import { calculateStockRealGainTax, calculatePensionRealGainTax, calculateBankSa
 import { calculateAmericanStockMetrics } from './portfolioMath';
 import { normalizeIsraeliPrice } from './formatters';
 import { computeBankSavingsFundValue } from './bankSavingsFund';
+import { israeliStockDisplayName } from './israeliEtfClassifier';
 
 const buildIsraeliPosition = (stock, cpi) => {
   // currentPrice is always already in shekels by the time it reaches here
@@ -49,6 +50,9 @@ const buildIsraeliPosition = (stock, cpi) => {
   return {
     id: stock.id,
     name: stock.stockName,
+    // stockName is the TASE security number; this is what a person reads.
+    displayName: israeliStockDisplayName(stock),
+    groupKey: `israeli:${stock.stockName}`,
     category: 'israeli',
     categoryLabel: 'בורסה ישראלית',
     realGain,
@@ -61,6 +65,8 @@ const buildAmericanPosition = (stock) => {
   return {
     id: stock.id,
     name: stock.stockName,
+    displayName: stock.stockName,
+    groupKey: `american:${stock.stockName}`,
     category: 'american',
     categoryLabel: 'בורסה אמריקאית',
     realGain: metrics.realGainILS,
@@ -91,6 +97,8 @@ const buildPensionPosition = (fund, cpi) => {
   return {
     id: fund.id,
     name: fund.fundName,
+    displayName: fund.fundName,
+    groupKey: `pension:${fund.id}`,
     category: 'pension',
     categoryLabel: 'קופת גמל',
     realGain: gain,
@@ -115,11 +123,53 @@ const buildBankSavingsPosition = (fund, cpi) => {
   return {
     id: fund.id,
     name: fund.fundName,
+    displayName: fund.fundName,
+    groupKey: `bankSavings:${fund.id}`,
     category: 'bankSavings',
     categoryLabel: 'קופת חיסכון בבנק',
     realGain: result.gain,
     taxRate: fund.isLinkedToIndex && currentIndex ? 0.25 : 0.15
   };
+};
+
+// One row per holding rather than per purchase. Three lots of the same
+// share bought at different prices are one decision - whether to sell that
+// share - so listing them as three positions repeated the name and split
+// one figure into parts the reader had to add up.
+//
+// A row's loss is the sum of its losing lots: the same total as before,
+// just gathered. A holding whose other lots are in profit says so
+// (gainInSameHolding), because selling the whole holding realises those
+// gains too and they offset the loss before it can offset anything else.
+// Funds are one position each and simply carry over as their own row.
+const groupLossPositions = (positions) => {
+  const groups = new Map();
+  positions.forEach((p) => {
+    const g = groups.get(p.groupKey) || {
+      key: p.groupKey,
+      name: p.displayName || p.name,
+      category: p.category,
+      categoryLabel: p.categoryLabel,
+      lots: 0,
+      lossLots: 0,
+      harvestableLoss: 0,
+      taxValue: 0,
+      gainInSameHolding: 0
+    };
+    g.lots += 1;
+    if (p.realGain < 0) {
+      g.lossLots += 1;
+      g.harvestableLoss += -p.realGain;
+      g.taxValue += -p.realGain * p.taxRate;
+    } else if (p.realGain > 0) {
+      g.gainInSameHolding += p.realGain;
+    }
+    groups.set(p.groupKey, g);
+  });
+  return [...groups.values()]
+    .filter((g) => g.harvestableLoss > 0)
+    .map((g) => ({ ...g, netIfSoldAll: g.gainInSameHolding - g.harvestableLoss }))
+    .sort((a, b) => b.harvestableLoss - a.harvestableLoss);
 };
 
 export const computeTaxLossHarvestingOpportunities = (
@@ -146,6 +196,8 @@ export const computeTaxLossHarvestingOpportunities = (
     .map((p) => ({ ...p, taxValue: p.realGain * p.taxRate }))
     .sort((a, b) => b.realGain - a.realGain);
 
+  const lossGroups = groupLossPositions(positions);
+
   const totalHarvestableLoss = lossPositions.reduce((sum, p) => sum + p.harvestableLoss, 0);
   const totalPotentialTaxValue = lossPositions.reduce((sum, p) => sum + p.taxValue, 0);
   const totalCurrentGains = gainPositions.reduce((sum, p) => sum + p.realGain, 0);
@@ -153,6 +205,7 @@ export const computeTaxLossHarvestingOpportunities = (
 
   return {
     lossPositions,
+    lossGroups,
     gainPositions,
     totalHarvestableLoss,
     totalPotentialTaxValue,

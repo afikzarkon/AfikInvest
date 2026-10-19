@@ -80,7 +80,9 @@ function PortfolioActionsToolbar({
     }
   };
 
-  const handleExportPdf = async () => {
+  // reportMode: 'summary' (one row per stock) or 'detailed' (every
+  // purchase) - see exportReport.js's PDF_REPORT_MODES.
+  const handleExportPdf = async (reportMode) => {
     setExportError('');
     try {
       // The report's sector donut needs each US ticker's sector, which only
@@ -90,7 +92,7 @@ function PortfolioActionsToolbar({
         loadStockSectors((exportPortfolioData.americanStocks || []).map((s) => s.stockName)),
         report.loadReportLogo ? report.loadReportLogo() : null
       ]);
-      report.downloadPortfolioPdf({ ...exportPortfolioData, sectorBySymbol, pricesAsOf: pricesLastRefreshAt, logo });
+      report.downloadPortfolioPdf({ ...exportPortfolioData, sectorBySymbol, pricesAsOf: pricesLastRefreshAt, logo, reportMode });
     } catch {
       setExportError('שגיאה בייצוא ל-PDF, נסה שוב');
     }
@@ -124,9 +126,36 @@ function PortfolioActionsToolbar({
           <ToolbarButton onClick={handleExportExcel} title="ייצוא הטבלאות לאקסל">
             ייצוא Excel
           </ToolbarButton>
-          <ToolbarButton onClick={handleExportPdf} title="ייצוא הטבלאות ל-PDF">
-            ייצוא PDF
-          </ToolbarButton>
+          {/* Two reports. Inside the phone's "⋯" menu a menu cannot open
+              another, so there the two are plain items of it. */}
+          {compact ? (
+            <>
+              <ToolbarButton onClick={() => handleExportPdf('summary')} title="שורה אחת לכל מניה">
+                PDF מקוצר
+              </ToolbarButton>
+              <ToolbarButton onClick={() => handleExportPdf('detailed')} title="כל קנייה בשורה נפרדת">
+                PDF מפורט
+              </ToolbarButton>
+            </>
+          ) : (
+            <ToolbarMoreMenu
+              label="ייצוא הטבלאות ל-PDF"
+              trigger={
+                <>
+                  ייצוא PDF <span aria-hidden="true">▾</span>
+                </>
+              }
+            >
+              <button type="button" className="pdf-choice" onClick={() => handleExportPdf('summary')}>
+                <span className="pdf-choice-title">דוח מקוצר</span>
+                <span className="pdf-choice-desc">כל מניה בשורה אחת - כמות וסכום כולל</span>
+              </button>
+              <button type="button" className="pdf-choice" onClick={() => handleExportPdf('detailed')}>
+                <span className="pdf-choice-title">דוח מפורט</span>
+                <span className="pdf-choice-desc">כל קנייה בשורה נפרדת, עם תאריך ומחיר</span>
+              </button>
+            </ToolbarMoreMenu>
+          )}
         </>
       )}
       {showLegacyImportButton && (

@@ -249,13 +249,13 @@ const numericColumns = (rows, headers) =>
 //
 // logo: the light emblem as a PNG data URL (see loadReportLogo), drawn at
 // the band's left edge before the name; without it the name stands alone.
-function drawCoverHeader(doc, asOf, logo = null) {
+function drawCoverHeader(doc, asOf, logo = null, title = 'דוח תיק השקעות') {
   doc.setFillColor(...ACCENT);
   doc.rect(0, 0, PAGE_WIDTH, 36, 'F');
 
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(20);
-  doc.text(toPdfDisplayText('דוח תיק השקעות'), RIGHT, 14, { align: 'right' });
+  doc.text(toPdfDisplayText(title), RIGHT, 14, { align: 'right' });
 
   doc.setFontSize(11);
   doc.text(toPdfDisplayText(asOf.asOf), RIGHT, 22, { align: 'right' });
@@ -655,11 +655,23 @@ function drawDisclaimer(doc, flow) {
   flow.y += boxHeight + 4;
 }
 
-// data: same shape as buildPortfolioWorkbook. A full printed statement:
-// the headline figures, then one section per asset class - its own metrics
-// above the itemized rows that make them up - and the standing disclaimer
-// at the end.
+// The two reports the export offers. 'detailed' lists every purchase;
+// 'summary' prints each stock once, with its totals and average price
+// (exportData.js's buildPortfolioReportSections). Everything else - the
+// headline figures, the charts, the funds - is the same in both.
+export const PDF_REPORT_MODES = {
+  detailed: { title: 'דוח תיק השקעות - מפורט', fileSuffix: '' },
+  summary: { title: 'דוח תיק השקעות - מקוצר', fileSuffix: '-summary' }
+};
+
+const reportMode = (data) => (data && data.reportMode === 'summary' ? 'summary' : 'detailed');
+
+// data: same shape as buildPortfolioWorkbook, plus an optional reportMode.
+// A full printed statement: the headline figures, then one section per
+// asset class - its own metrics above the itemized rows that make them up
+// - and the standing disclaimer at the end.
 export function buildPortfolioPdfDoc(data) {
+  const mode = reportMode(data);
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   registerHebrewFont(doc);
   drawTextAsGiven(doc);
@@ -671,7 +683,8 @@ export function buildPortfolioPdfDoc(data) {
       pricesAsOf: data.pricesAsOf || null,
       pensionFunds: data.pensionFunds
     }),
-    data.logo || null
+    data.logo || null,
+    PDF_REPORT_MODES[mode].title
   );
 
   const flow = createFlow(doc);
@@ -691,7 +704,7 @@ export function buildPortfolioPdfDoc(data) {
     }
   ]);
 
-  buildPortfolioReportSections(data).forEach((section) => {
+  buildPortfolioReportSections(data, { mode }).forEach((section) => {
     // A SECTION IS ONE BLOCK, and the page break is decided once, here.
     //
     // Each piece used to check for itself whether it fit, which is not the
@@ -741,5 +754,5 @@ export async function loadReportLogo(url = `${process.env.PUBLIC_URL || ''}/bran
 
 export function downloadPortfolioPdf(data) {
   const doc = buildPortfolioPdfDoc(data);
-  doc.save(`afikinvest-portfolio-${todayFileStamp()}.pdf`);
+  doc.save(`afikinvest-portfolio${PDF_REPORT_MODES[reportMode(data)].fileSuffix}-${todayFileStamp()}.pdf`);
 }

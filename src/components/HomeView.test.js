@@ -233,7 +233,9 @@ test('shows export buttons for a populated portfolio and wires them to downloadP
   const { getByText } = render(<HomeView {...makeProps({ exportPortfolioData })} />);
 
   fireEvent.click(getByText('ייצוא Excel'));
+  // The PDF button opens a choice of two reports.
   fireEvent.click(getByText('ייצוא PDF'));
+  fireEvent.click(getByText('דוח מקוצר'));
 
   // Both handlers dynamically import('../utils/exportReport') now (code
   // splitting - see the comment in HomeView.js), which resolves on a later
@@ -243,11 +245,30 @@ test('shows export buttons for a populated portfolio and wires them to downloadP
   // time prices were last refreshed (for its "נכון ל-" line), and the logo.
   await waitFor(() => {
     // logo: the cover emblem, null here (no fetch in the test environment).
-    expect(pdfSpy).toHaveBeenCalledWith({ ...exportPortfolioData, sectorBySymbol: expect.any(Object), pricesAsOf: null, logo: null });
+    expect(pdfSpy).toHaveBeenCalledWith({
+      ...exportPortfolioData,
+      sectorBySymbol: expect.any(Object),
+      pricesAsOf: null,
+      logo: null,
+      reportMode: 'summary'
+    });
     expect(excelSpy).toHaveBeenCalledWith(exportPortfolioData);
   });
 
   excelSpy.mockRestore();
+  pdfSpy.mockRestore();
+});
+
+test('the PDF menu offers the short and the detailed report, and passes the choice on', async () => {
+  const pdfSpy = jest.spyOn(exportReport, 'downloadPortfolioPdf').mockImplementation(() => {});
+  const exportPortfolioData = { summary, israeliStocks, americanStocks: [], pensionFunds, cashFunds, bankBalances, bankSavingsFunds: [] };
+  const { getByText, queryByText } = render(<HomeView {...makeProps({ exportPortfolioData })} />);
+
+  expect(queryByText('דוח מפורט')).toBeNull(); // closed until asked
+  fireEvent.click(getByText('ייצוא PDF'));
+  fireEvent.click(getByText('דוח מפורט'));
+
+  await waitFor(() => expect(pdfSpy).toHaveBeenCalledWith(expect.objectContaining({ reportMode: 'detailed' })));
   pdfSpy.mockRestore();
 });
 
@@ -277,6 +298,7 @@ test('shows an error message if the PDF export throws', async () => {
 
   const { findByText } = render(<HomeView {...makeProps()} />);
   fireEvent.click(await findByText('ייצוא PDF'));
+  fireEvent.click(await findByText('דוח מפורט'));
 
   expect(await findByText('שגיאה בייצוא ל-PDF, נסה שוב')).toBeInTheDocument();
   pdfSpy.mockRestore();

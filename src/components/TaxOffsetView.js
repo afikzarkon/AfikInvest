@@ -52,7 +52,9 @@ function TaxOffsetView({
               <div className="distribution-value profit-negative">
                 {formatPriceWithSign(harvesting.totalHarvestableLoss)} ₪
               </div>
-              <div className="distribution-percentage">{harvesting.lossPositions.length} פוזיציות</div>
+              <div className="distribution-percentage">
+                {harvesting.lossGroups.length === 1 ? 'נייר אחד' : `${harvesting.lossGroups.length} ניירות`}
+              </div>
             </div>
             <div className="distribution-card">
               <h3>שווי מס פוטנציאלי</h3>
@@ -76,22 +78,35 @@ function TaxOffsetView({
             <p className="history-empty-note">אין כרגע פוזיציות בהפסד ריאלי בתיק.</p>
           ) : (
             <div className="stocks-table-container" style={{ marginTop: 16 }}>
+              {/* One row per holding, not per purchase (see
+                  taxLossHarvesting.js's groupLossPositions): several lots
+                  of one share are one decision. */}
               <table className="analysis-table">
                 <thead>
                   <tr>
-                    <th>פוזיציה</th>
+                    <th>נייר</th>
                     <th>קטגוריה</th>
+                    <th>קניות בהפסד</th>
                     <th>הפסד ריאלי</th>
                     <th>שווי מס פוטנציאלי</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {harvesting.lossPositions.map((position) => (
-                    <tr key={`${position.category}-${position.id}`}>
-                      <td>{position.name}</td>
-                      <td>{position.categoryLabel}</td>
-                      <td className="profit-negative">{formatPriceWithSign(position.harvestableLoss)} ₪</td>
-                      <td className="profit-positive">{formatPriceWithSign(position.taxValue)} ₪</td>
+                  {harvesting.lossGroups.map((group) => (
+                    <tr key={group.key}>
+                      <td>
+                        <div className="tlh-name">{group.name}</div>
+                        {group.gainInSameHolding > 0 && (
+                          <div className="tlh-note">
+                            יש בנייר גם קניות ברווח של {formatPriceWithSign(group.gainInSameHolding)} ₪ - מכירת כל
+                            ההחזקה תקזז קודם ביניהן
+                          </div>
+                        )}
+                      </td>
+                      <td>{group.categoryLabel}</td>
+                      <td>{group.lots > 1 ? `${group.lossLots} מתוך ${group.lots}` : '1'}</td>
+                      <td className="profit-negative">{formatPriceWithSign(group.harvestableLoss)} ₪</td>
+                      <td className="profit-positive">{formatPriceWithSign(group.taxValue)} ₪</td>
                     </tr>
                   ))}
                 </tbody>

@@ -42,6 +42,7 @@ import LegalPage, { LEGAL_PATHS } from './components/LegalPage';
 import { OnboardingModal, TermsGate, ProfilePrompt } from './components/OnboardingFlow';
 import { PrivacyContext } from './components/PrivacyToggle';
 import { useToast } from './components/ui/Toast';
+import LoadingScreen from './components/ui/LoadingScreen';
 import { profileCompletion } from './components/settings/ProfileSection';
 
 // ONE CHUNK PER PAGE, fetched when that page is first opened.
@@ -821,9 +822,7 @@ function App() {
   if (authLoading) {
     return (
       <div className="App">
-        <div className="auth-loading-wrap">
-          <p className="auth-loading-text">טוען…</p>
-        </div>
+        <LoadingScreen fullScreen />
       </div>
     );
   }
@@ -895,9 +894,7 @@ function App() {
   if (!portfolioReady) {
     return (
       <div className="App">
-        <div className="auth-loading-wrap">
-          <p className="auth-loading-text">טוען את תיק ההשקעות מהשרת…</p>
-        </div>
+        <LoadingScreen fullScreen message="טוען את תיק ההשקעות שלך…" />
       </div>
     );
   }
@@ -987,9 +984,7 @@ function App() {
   const renderPage = () => {
     if (awaitingFlags) {
       return (
-        <div className="page-loading-wrap">
-          <p className="auth-loading-text">טוען…</p>
-        </div>
+        <LoadingScreen />
       );
     }
     switch (activePage) {
@@ -1200,9 +1195,7 @@ function App() {
             initial bundle and renders straight through this. */}
         <Suspense
           fallback={
-            <div className="page-loading-wrap">
-              <p className="auth-loading-text">טוען…</p>
-            </div>
+            <LoadingScreen />
           }
         >
           {renderPage()}

@@ -18,7 +18,8 @@ const FAILURE_ALERT_THRESHOLD = 5;
 
 // Known sources, in the order the panel lists them, with a Hebrew label.
 const SOURCES = {
-  'yahoo-chart': 'Yahoo - מחירי מניות ארה"ב ושערי מט"ח',
+  finnhub: 'Finnhub - מחירי מניות ארה"ב (מקור ראשי, כשמוגדר מפתח)',
+  'yahoo-chart': 'Yahoo - מחירי מניות ארה"ב (גיבוי) ושערי מט"ח',
   'yahoo-summary': 'Yahoo - סקטורים, אנליסטים, דיבידנדים, הערכת שווי',
   'tase-api': 'הבורסה - מחיר חי (API)',
   'tase-eod': 'הבורסה - מחיר סוף יום (API)',

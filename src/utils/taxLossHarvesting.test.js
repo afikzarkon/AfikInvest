@@ -150,4 +150,56 @@ describe('computeTaxLossHarvestingOpportunities', () => {
     // amount, so it should not appear as a gain position needing tax either.
     expect(withCpi.gainPositions).toHaveLength(0);
   });
+
+  // One row per holding: several purchases of one share are one decision.
+  describe('lossGroups', () => {
+    const lot = (id, purchasePrice, extra = {}) => ({
+      id,
+      stockName: '629014',
+      officialName: 'טבע',
+      quantity: 10,
+      purchasePrice,
+      currentPrice: 100,
+      purchaseDate: '2023-01-15',
+      ...extra
+    });
+
+    test('gathers the losing lots of one share into a single row, named for a person', () => {
+      const result = computeTaxLossHarvestingOpportunities([lot(1, 120), lot(2, 110)], [], [], null);
+      expect(result.lossPositions).toHaveLength(2); // per-lot detail is still there
+      expect(result.lossGroups).toHaveLength(1);
+      const [group] = result.lossGroups;
+      expect(group.name).toBe('טבע');
+      expect(group.lots).toBe(2);
+      expect(group.lossLots).toBe(2);
+      expect(group.harvestableLoss).toBeCloseTo(300, 5); // 200 + 100
+      expect(group.taxValue).toBeCloseTo(75, 5);
+    });
+
+    test('says when the same holding also has lots in profit', () => {
+      const result = computeTaxLossHarvestingOpportunities([lot(1, 120), lot(2, 90)], [], [], null);
+      const [group] = result.lossGroups;
+      expect(group.lossLots).toBe(1);
+      expect(group.lots).toBe(2);
+      expect(group.harvestableLoss).toBeCloseTo(200, 5);
+      expect(group.gainInSameHolding).toBeCloseTo(100, 5);
+      expect(group.netIfSoldAll).toBeCloseTo(-100, 5);
+    });
+
+    test('keeps different shares, and the same ticker in different markets, apart', () => {
+      const result = computeTaxLossHarvestingOpportunities(
+        [lot(1, 120), lot(2, 120, { stockName: '1081124', officialName: 'אלביט' })],
+        [{ id: 3, stockName: '629014', quantity: 1, purchasePrice: 50, currentPrice: 40, exchangeRate: 3.5, currentExchangeRate: 3.5 }],
+        [],
+        null
+      );
+      expect(result.lossGroups.map((g) => g.key).sort()).toEqual(['american:629014', 'israeli:1081124', 'israeli:629014']);
+    });
+
+    test('totals are unchanged by grouping', () => {
+      const result = computeTaxLossHarvestingOpportunities([lot(1, 120), lot(2, 110), lot(3, 90)], [], [], null);
+      const groupSum = result.lossGroups.reduce((s, g) => s + g.harvestableLoss, 0);
+      expect(groupSum).toBeCloseTo(result.totalHarvestableLoss, 5);
+    });
+  });
 });

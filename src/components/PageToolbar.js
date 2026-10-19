@@ -79,7 +79,9 @@ export function ToolbarButton({ onClick, pressed, disabled, title, children }) {
 // the toolbar, where a row of five buttons wrapped into a 300px block above
 // the page's own content. The same buttons, in a menu; choosing one closes
 // it, as do a tap outside and Escape.
-export function ToolbarMoreMenu({ label = 'פעולות נוספות', children }) {
+// `trigger` replaces the "⋯" with a labelled button - the same menu
+// behaviour for a named action that has a choice inside it (ייצוא PDF).
+export function ToolbarMoreMenu({ label = 'פעולות נוספות', trigger = null, children }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
 
@@ -103,14 +105,14 @@ export function ToolbarMoreMenu({ label = 'פעולות נוספות', children 
     <div className="toolbar-more" ref={rootRef}>
       <button
         type="button"
-        className={`toolbar-btn toolbar-more-button ${open ? 'is-pressed' : ''}`}
+        className={`toolbar-btn ${trigger ? '' : 'toolbar-more-button'} ${open ? 'is-pressed' : ''}`}
         aria-haspopup="true"
         aria-expanded={open}
-        aria-label={label}
+        aria-label={trigger ? undefined : label}
         title={label}
         onClick={() => setOpen((o) => !o)}
       >
-        ⋯
+        {trigger || '⋯'}
       </button>
       {open && (
         // A click on any button inside runs that button and then closes.

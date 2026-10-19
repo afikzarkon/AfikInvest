@@ -106,6 +106,84 @@ export const buildAmericanStocksExportRows = (americanStocks) =>
     };
   });
 
+// THE SHORT REPORT: one row per holding instead of one per purchase.
+//
+// Lots are grouped by stockName (the TASE number, or the US ticker), in the
+// order each holding first appears. Totals are the sums of the same per-lot
+// figures the detailed rows print - so the two reports always add up to
+// the same money - and the purchase price is the quantity-weighted
+// average, which is what those totals imply.
+const groupBySymbol = (stocks) => {
+  const groups = new Map();
+  (stocks || []).forEach((stock) => {
+    const key = String(stock.stockName || '');
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(stock);
+  });
+  return [...groups.values()];
+};
+
+export const buildIsraeliStocksSummaryRows = (israeliStocks) =>
+  groupBySymbol(israeliStocks).map((lots) => {
+    const first = lots[0];
+    const currentPrice = normalizeIsraeliPrice(first.currentPrice);
+    let quantity = 0;
+    let totalPurchase = 0;
+    let totalCurrentValue = 0;
+    lots.forEach((stock) => {
+      const q = stock.quantity || 0;
+      quantity += q;
+      totalPurchase += (stock.purchasePrice || 0) * q;
+      totalCurrentValue += (normalizeIsraeliPrice(stock.currentPrice) || 0) * q;
+    });
+    const profit = totalCurrentValue - totalPurchase;
+    return {
+      'שם נייר': israeliStockDisplayName(first),
+      'מספר נייר': String(first.stockName || ''),
+      'מספר קניות': lots.length,
+      'כמות': quantity,
+      'מחיר קנייה ממוצע (₪)': round2(quantity > 0 ? totalPurchase / quantity : 0),
+      'מחיר נוכחי (₪)': round2(currentPrice),
+      'סה"כ רכישה (₪)': round2(totalPurchase),
+      'סה"כ שווי נוכחי (₪)': round2(totalCurrentValue),
+      'רווח/הפסד (₪)': round2(profit),
+      'רווח/הפסד (%)': percentOf(profit, totalPurchase)
+    };
+  });
+
+export const buildAmericanStocksSummaryRows = (americanStocks) =>
+  groupBySymbol(americanStocks).map((lots) => {
+    const first = lots[0];
+    let quantity = 0;
+    let totalPurchaseUSD = 0;
+    let totalCurrentValueUSD = 0;
+    let totalCurrentValueILS = 0;
+    let profitUSD = 0;
+    let profitILS = 0;
+    lots.forEach((stock) => {
+      const m = calculateAmericanStockMetrics(stock);
+      const q = stock.quantity || 0;
+      quantity += q;
+      totalPurchaseUSD += (stock.purchasePrice || 0) * q;
+      totalCurrentValueUSD += m.totalCurrentValueUSD || 0;
+      totalCurrentValueILS += m.totalCurrentValueILS || 0;
+      profitUSD += m.profitUSD || 0;
+      profitILS += m.profitILS || 0;
+    });
+    return {
+      'סימול': first.stockName || '',
+      'מספר קניות': lots.length,
+      'כמות': quantity,
+      'מחיר קנייה ממוצע ($)': round2(quantity > 0 ? totalPurchaseUSD / quantity : 0),
+      'מחיר נוכחי ($)': round2(first.currentPrice || 0),
+      'שער חליפין נוכחי': round2(first.currentExchangeRate || first.exchangeRate || 0),
+      'סה"כ שווי נוכחי ($)': round2(totalCurrentValueUSD),
+      'סה"כ שווי נוכחי (₪)': round2(totalCurrentValueILS),
+      'רווח/הפסד (₪)': round2(profitILS),
+      'רווח/הפסד (%)': percentOf(profitUSD, totalPurchaseUSD)
+    };
+  });
+
 export const buildPensionFundsExportRows = (pensionFunds) =>
   (pensionFunds || []).map((fund) => {
     const currentValue = fund.currentValue ?? fund.amount ?? 0;
@@ -308,6 +386,35 @@ const REPORT_COLUMNS = {
   ]
 };
 
+// The short report's columns: no purchase date (a holding bought several
+// times has none), the number of purchases instead, and the average price.
+const SUMMARY_REPORT_COLUMNS = {
+  'בורסה ישראלית': [
+    'שם נייר',
+    'מספר נייר',
+    'מספר קניות',
+    'כמות',
+    'מחיר קנייה ממוצע (₪)',
+    'מחיר נוכחי (₪)',
+    'סה"כ רכישה (₪)',
+    'סה"כ שווי נוכחי (₪)',
+    'רווח/הפסד (₪)',
+    'רווח/הפסד (%)'
+  ],
+  'בורסה אמריקאית': [
+    'סימול',
+    'מספר קניות',
+    'כמות',
+    'מחיר קנייה ממוצע ($)',
+    'מחיר נוכחי ($)',
+    'שער חליפין נוכחי',
+    'סה"כ שווי נוכחי ($)',
+    'סה"כ שווי נוכחי (₪)',
+    'רווח/הפסד (₪)',
+    'רווח/הפסד (%)'
+  ]
+};
+
 // A row narrowed to the named columns, keeping the order named here rather
 // than the row's own - the report decides its own reading order.
 const pickColumns = (rows, keys) => {
@@ -326,15 +433,20 @@ const pickColumns = (rows, keys) => {
 // A section with no holdings is still returned, with `isEmpty` set - the
 // report says "no holdings in this class" rather than silently omitting a
 // heading, so the reader can tell an empty account from a missing one.
-export const buildPortfolioReportSections = (data = {}) => {
+//
+// mode 'summary' prints each stock once (see buildIsraeliStocksSummaryRows);
+// 'detailed', the default, prints every purchase. Only the two stock
+// sections differ - the funds and accounts are one row each either way.
+export const buildPortfolioReportSections = (data = {}, { mode = 'detailed' } = {}) => {
   const summary = data.summary || {};
   const sections = [];
+  const short = mode === 'summary';
 
   const section = (title, metrics, rows, emptyNote) =>
     sections.push({
       title,
       metrics,
-      rows: pickColumns(rows || [], REPORT_COLUMNS[title]),
+      rows: pickColumns(rows || [], (short && SUMMARY_REPORT_COLUMNS[title]) || REPORT_COLUMNS[title]),
       isEmpty: !rows || rows.length === 0,
       emptyNote
     });
@@ -387,7 +499,7 @@ export const buildPortfolioReportSections = (data = {}) => {
       ['רווח נטו אחרי מס', round2(summary.israeliOnlyAfterTaxILS)],
       ['רווח/הפסד', round2(summary.israeliOnlyProfitILS), TOTAL]
     ],
-    buildIsraeliStocksExportRows(data.israeliStocks),
+    short ? buildIsraeliStocksSummaryRows(data.israeliStocks) : buildIsraeliStocksExportRows(data.israeliStocks),
     'אין ניירות ערך מהבורסה הישראלית בתיק.'
   );
 
@@ -402,7 +514,7 @@ export const buildPortfolioReportSections = (data = {}) => {
       ['מס צפוי (₪)', round2(summary.americanOnlyTaxILS)],
       ['שווי נוכחי (₪)', round2(summary.capitalAmericanILS), TOTAL]
     ],
-    buildAmericanStocksExportRows(data.americanStocks),
+    short ? buildAmericanStocksSummaryRows(data.americanStocks) : buildAmericanStocksExportRows(data.americanStocks),
     'אין מניות מהבורסה האמריקאית בתיק.'
   );
 

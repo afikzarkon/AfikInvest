@@ -64,6 +64,15 @@ test('lists the losing positions, and not the winning ones', () => {
   expect(within(table).queryByText('WIN')).toBeNull();
 });
 
+// Several purchases of one share are one decision, so one row.
+test('shows one row per holding, however many times it was bought', () => {
+  const secondLot = { ...losingStock, id: 3, purchasePrice: 45, purchaseDate: '2024-03-01' };
+  const { container } = render(<TaxOffsetView {...makeProps({ israeliStocks: [losingStock, secondLot, winningStock] })} />);
+  const table = container.querySelector('.analysis-table');
+  expect(within(table).getAllByText('LOSS')).toHaveLength(1);
+  expect(within(table).getByText('2 מתוך 2')).toBeInTheDocument();
+});
+
 // Nothing to harvest is a real answer, not an empty table to interpret.
 test('says plainly when there is nothing in loss, instead of an empty table', () => {
   const { container } = render(<TaxOffsetView {...makeProps({ israeliStocks: [winningStock] })} />);

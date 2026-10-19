@@ -521,3 +521,48 @@ describe('getYahooPayload fallback to the last good price', () => {
     await expect(fresh.getYahooPayload('NEVER')).rejects.toThrow('down');
   });
 });
+
+// Finnhub is the primary source for US quotes once a key is set; Yahoo is
+// the fallback for whatever Finnhub cannot answer.
+describe('getYahooPayload with Finnhub configured', () => {
+  let fresh;
+  const originalKey = process.env.FINNHUB_API_KEY;
+  const yahooChart = (price, prev) => ({ data: { chart: { result: [{ meta: { regularMarketPrice: price, previousClose: prev } }] } } });
+
+  beforeEach(() => {
+    jest.resetModules();
+    mockAxios.get.mockReset();
+    process.env.FINNHUB_API_KEY = 'test-key';
+    // eslint-disable-next-line global-require
+    fresh = require('./yahooQuotes');
+  });
+
+  afterAll(() => {
+    if (originalKey === undefined) delete process.env.FINNHUB_API_KEY;
+    else process.env.FINNHUB_API_KEY = originalKey;
+  });
+
+  test('a stock is priced by Finnhub, without asking Yahoo', async () => {
+    mockAxios.get.mockResolvedValueOnce({ data: { c: 200, pc: 196, t: 1792440000 } });
+    const payload = await fresh.getYahooPayload('NVDA');
+    expect(payload).toMatchObject({ currentPrice: 200, source: 'finnhub', tradeDate: '2026-10-19' });
+    expect(mockAxios.get).toHaveBeenCalledTimes(1);
+    expect(mockAxios.get.mock.calls[0][0]).toContain('finnhub.io');
+  });
+
+  test('falls back to Yahoo when Finnhub fails', async () => {
+    mockAxios.get
+      .mockRejectedValueOnce({ response: { status: 429 }, message: 'Request failed with status code 429' })
+      .mockResolvedValueOnce(yahooChart(150, 150));
+    const payload = await fresh.getYahooPayload('MSFT');
+    expect(payload).toMatchObject({ currentPrice: 150, source: 'yahoo' });
+    expect(mockAxios.get.mock.calls[1][0]).toContain('finance.yahoo.com');
+  });
+
+  test('an exchange rate never goes to Finnhub', async () => {
+    mockAxios.get.mockResolvedValueOnce(yahooChart(3.1, 3.05));
+    const payload = await fresh.getYahooPayload('USDILS=X');
+    expect(payload).toMatchObject({ currentPrice: 3.1, source: 'yahoo' });
+    expect(mockAxios.get.mock.calls[0][0]).toContain('finance.yahoo.com');
+  });
+});

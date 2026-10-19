@@ -8,6 +8,8 @@ import {
   buildSummaryExportRows,
   buildHeadlineMetrics,
   buildPortfolioReportSections,
+  buildIsraeliStocksSummaryRows,
+  buildAmericanStocksSummaryRows,
   buildReportAsOf,
   buildAllocationSlices,
   buildSectorSlices,
@@ -424,5 +426,54 @@ describe('buildPortfolioReportSections', () => {
   test('handles entirely missing data without throwing', () => {
     expect(() => buildPortfolioReportSections()).not.toThrow();
     expect(buildPortfolioReportSections({}).every((s) => s.isEmpty || s.rows.length === 0)).toBe(true);
+  });
+});
+
+// THE SHORT REPORT: each stock once, with its totals and average price.
+describe('the short (summary) report', () => {
+  const tevaLots = [
+    { stockName: '629014', officialName: 'טבע', quantity: 10, purchasePrice: 50, currentPrice: 60, purchaseDate: '2023-01-15' },
+    { stockName: '629014', officialName: 'טבע', quantity: 30, purchasePrice: 70, currentPrice: 60, purchaseDate: '2024-05-01' }
+  ];
+  const aaplLots = [
+    { stockName: 'AAPL', quantity: 2, purchasePrice: 100, currentPrice: 150, exchangeRate: 3.5, currentExchangeRate: 3.6 },
+    { stockName: 'AAPL', quantity: 2, purchasePrice: 200, currentPrice: 150, exchangeRate: 3.7, currentExchangeRate: 3.6 }
+  ];
+
+  test('an Israeli stock bought twice is one row: summed quantity and money, average price', () => {
+    const [row] = buildIsraeliStocksSummaryRows(tevaLots);
+    expect(row['שם נייר']).toBe('טבע');
+    expect(row['מספר קניות']).toBe(2);
+    expect(row['כמות']).toBe(40);
+    expect(row['סה"כ רכישה (₪)']).toBe(2600); // 500 + 2100
+    expect(row['מחיר קנייה ממוצע (₪)']).toBe(65);
+    expect(row['סה"כ שווי נוכחי (₪)']).toBe(2400);
+    expect(row['רווח/הפסד (₪)']).toBe(-200);
+  });
+
+  // The two reports must add up to the same money.
+  test('the totals equal the sum of the detailed rows', () => {
+    const detailed = buildAmericanStocksExportRows(aaplLots);
+    const [row] = buildAmericanStocksSummaryRows(aaplLots);
+    const sum = (key) => detailed.reduce((s, r) => s + r[key], 0);
+    expect(row['כמות']).toBe(4);
+    expect(row['סה"כ שווי נוכחי (₪)']).toBeCloseTo(sum('סה"כ שווי נוכחי (₪)'), 2);
+    expect(row['רווח/הפסד (₪)']).toBeCloseTo(sum('רווח/הפסד (₪)'), 2);
+    expect(row['מחיר קנייה ממוצע ($)']).toBe(150);
+  });
+
+  test('summary mode prints one row per stock, without purchase dates; the default prints every purchase', () => {
+    const data = { israeliStocks: tevaLots, americanStocks: aaplLots };
+    const bySection = (sections, title) => sections.find((s) => s.title === title);
+
+    const short = buildPortfolioReportSections(data, { mode: 'summary' });
+    expect(bySection(short, 'בורסה ישראלית').rows).toHaveLength(1);
+    expect(bySection(short, 'בורסה אמריקאית').rows).toHaveLength(1);
+    expect(Object.keys(bySection(short, 'בורסה ישראלית').rows[0])).not.toContain('תאריך קנייה');
+    expect(Object.keys(bySection(short, 'בורסה ישראלית').rows[0])).toContain('מספר קניות');
+
+    const full = buildPortfolioReportSections(data);
+    expect(bySection(full, 'בורסה ישראלית').rows).toHaveLength(2);
+    expect(Object.keys(bySection(full, 'בורסה ישראלית').rows[0])).toContain('תאריך קנייה');
   });
 });

@@ -1,13 +1,16 @@
-// Yahoo Finance quote fetching (used for both US stock prices and the
-// USD/ILS exchange rate). Extracted from server.js — behavior is
-// unchanged, only the location moved.
+// US market data: stock quotes (Finnhub first when configured, then Yahoo -
+// see fetchUsQuote), exchange rates, price and dividend history, and the
+// crumb-authenticated Yahoo endpoints (sectors, analysts, dividends).
 const axios = require('axios');
 const { getYahooCrumbAndCookie, invalidateYahooCrumb } = require('./yahooCrumb');
 const { tradeDateFromYahooMeta, lastSessionDate } = require('./marketCalendar');
 const { sourceHealth } = require('./sourceHealth');
 const { marketMemory } = require('./marketMemory');
+const { fetchFinnhubQuote, isFinnhubEnabled, isFinnhubSymbol } = require('./finnhubQuotes');
 
-const YAHOO_CACHE_TTL_MS = 15 * 1000;
+// 30s: the client polls every minute, and with Finnhub on, each symbol
+// refreshed costs a call from its 60-a-minute free budget.
+const YAHOO_CACHE_TTL_MS = 30 * 1000;
 const yahooChartCache = new Map();
 const yahooInFlight = new Map();
 // The last good quote per symbol, with no expiry - what a failed refresh
@@ -48,6 +51,75 @@ async function fetchYahooChartMeta(symbol) {
   return result[0].meta;
 }
 
+// The quote as Yahoo's chart endpoint reports it. Throws on any failure.
+async function fetchYahooQuote(symbol) {
+  const meta = await fetchYahooChartMeta(symbol);
+  const currentPrice = Number(meta.regularMarketPrice);
+  // Deliberately NOT reading meta.regularMarketChangePercent /
+  // changePercent / regularMarketChange / change here. Real Yahoo v8
+  // chart responses (verified against current sample data, not just
+  // assumed) very often omit these fields entirely - they properly
+  // belong to the older v7/finance/quote endpoint - and when one *is*
+  // present its meaning is ambiguous: regularMarketChange/change are
+  // absolute currency amounts (e.g. $2.34), not percentages, while
+  // *ChangePercent fields' scale (fraction like 0.0142 vs already a
+  // percent like 1.42) isn't consistent either. The previous code
+  // multiplied whichever field it found by 100 regardless, which - if
+  // it ever hit an absolute change field, or a field already in percent
+  // form - produced numbers with no real relationship to the actual
+  // daily % change (this matched a real production report of "wrong"
+  // change percentages).
+  //
+  // previousClose and regularMarketPrice are both unambiguous absolute
+  // prices in the same currency, so computing the % change directly
+  // from them has no unit-mismatch risk.
+  const previousClose = Number(meta.previousClose ?? meta.chartPreviousClose);
+
+  let finalChangePercent = 0;
+  if (Number.isFinite(currentPrice) && Number.isFinite(previousClose) && previousClose !== 0) {
+    finalChangePercent = ((currentPrice - previousClose) / previousClose) * 100;
+  }
+
+  return {
+    currentPrice: Number.isFinite(currentPrice) ? currentPrice : null,
+    changePercent: Number.isFinite(finalChangePercent) ? finalChangePercent : 0,
+    // The session regularMarketPrice belongs to. Before the US open it is
+    // still yesterday's - see marketCalendar.js for why that matters.
+    tradeDate: tradeDateFromYahooMeta(meta) || lastSessionDate('us')
+  };
+}
+
+// Finnhub first when it is configured and the symbol is a stock it can
+// price (finnhubQuotes.js), Yahoo otherwise - and Yahoo whenever Finnhub
+// fails, has no quote for the symbol, or its per-minute budget is spent.
+// `source` names which one answered, for the logs and for diagnosing a
+// price that looks wrong.
+async function fetchUsQuote(symbol) {
+  if (isFinnhubEnabled() && isFinnhubSymbol(symbol)) {
+    try {
+      const quote = await fetchFinnhubQuote(symbol);
+      sourceHealth.success('finnhub');
+      return { ...quote, tradeDate: quote.tradeDate || lastSessionDate('us'), source: 'finnhub' };
+    } catch (err) {
+      // Running out of the free plan's budget is the plan working, not
+      // Finnhub failing.
+      if (err.code !== 'FINNHUB_BUDGET') {
+        sourceHealth.failure('finnhub', err);
+        console.warn('[finnhub] quote failed, falling back to yahoo', {
+          symbol,
+          status: err && err.response && err.response.status,
+          error: err && err.message
+        });
+      }
+    }
+  }
+  const quote = await sourceHealth.track('yahoo-chart', () => fetchYahooQuote(symbol));
+  return { ...quote, source: 'yahoo' };
+}
+
+// A US stock or FX quote, cached briefly and deduplicated per symbol, with
+// the last good quote served (marked stale) when every source fails.
+// The name is historical: Finnhub answers first when it is configured.
 async function getYahooPayload(symbol) {
   const cached = readCachedYahoo(symbol);
   if (cached) return cached;
@@ -56,39 +128,9 @@ async function getYahooPayload(symbol) {
   if (inFlight) return inFlight;
 
   const requestPromise = (async () => {
-    const meta = await fetchYahooChartMeta(symbol);
-    const currentPrice = Number(meta.regularMarketPrice);
-    // Deliberately NOT reading meta.regularMarketChangePercent /
-    // changePercent / regularMarketChange / change here. Real Yahoo v8
-    // chart responses (verified against current sample data, not just
-    // assumed) very often omit these fields entirely - they properly
-    // belong to the older v7/finance/quote endpoint - and when one *is*
-    // present its meaning is ambiguous: regularMarketChange/change are
-    // absolute currency amounts (e.g. $2.34), not percentages, while
-    // *ChangePercent fields' scale (fraction like 0.0142 vs already a
-    // percent like 1.42) isn't consistent either. The previous code
-    // multiplied whichever field it found by 100 regardless, which - if
-    // it ever hit an absolute change field, or a field already in percent
-    // form - produced numbers with no real relationship to the actual
-    // daily % change (this matched a real production report of "wrong"
-    // change percentages).
-    //
-    // previousClose and regularMarketPrice are both unambiguous absolute
-    // prices in the same currency, so computing the % change directly
-    // from them has no unit-mismatch risk.
-    const previousClose = Number(meta.previousClose ?? meta.chartPreviousClose);
-
-    let finalChangePercent = 0;
-    if (Number.isFinite(currentPrice) && Number.isFinite(previousClose) && previousClose !== 0) {
-      finalChangePercent = ((currentPrice - previousClose) / previousClose) * 100;
-    }
-
+    const quote = await fetchUsQuote(symbol);
     const payload = {
-      currentPrice: Number.isFinite(currentPrice) ? currentPrice : null,
-      changePercent: Number.isFinite(finalChangePercent) ? finalChangePercent : 0,
-      // The session regularMarketPrice belongs to. Before the US open it is
-      // still yesterday's - see marketCalendar.js for why that matters.
-      tradeDate: tradeDateFromYahooMeta(meta) || lastSessionDate('us'),
+      ...quote,
       // When this price was fetched, so the client can say how old a price
       // served from the fallback below is.
       fetchedAt: new Date().toISOString()
@@ -103,11 +145,8 @@ async function getYahooPayload(symbol) {
 
   yahooInFlight.set(symbol, requestPromise);
   try {
-    const payload = await requestPromise;
-    sourceHealth.success('yahoo-chart');
-    return payload;
+    return await requestPromise;
   } catch (err) {
-    sourceHealth.failure('yahoo-chart', err);
     // These failures used to be swallowed by the routes without a trace,
     // which left no way to tell from the logs whether US prices were down.
     console.warn('[yahoo] quote failed', {
