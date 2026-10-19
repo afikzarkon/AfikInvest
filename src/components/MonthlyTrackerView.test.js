@@ -340,21 +340,30 @@ describe('"➕ הוספה ידנית" (manual backfill of a forgotten past month
   });
 });
 
-test('the comparison table defaults to category subtotals only - per-item rows are hidden until "פתח פירוט מלא" is clicked', () => {
+// One category of the selected month's panel, by its label.
+function categoryRow(label) {
+  return Array.from(document.body.querySelectorAll('.mt-cat')).find(
+    (el) => el.querySelector('.mt-cat-name').textContent === label
+  );
+}
+
+function timelineButton(monthLabel) {
+  return within(document.body.querySelector('.mt-timeline')).getByText(monthLabel).closest('button');
+}
+
+test('the selected month shows each category with its value, the value before and its change - per-item rows only after "פתח פירוט מלא"', () => {
   render(<MonthlyTrackerView {...makeProps({ monthlySnapshots: [july, august] })} />);
   const scope = monthlyScope();
 
-  expect(scope.getByText('השוואה בין חודשים')).toBeInTheDocument();
-  const israeliRow = scope.getByText('בורסה ישראלית', { selector: 'td' }).closest('tr');
-  expect(israeliRow.textContent).toContain('20000.00');
-  expect(israeliRow.textContent).toContain('22000.00');
-  expect(israeliRow.textContent).toContain('+10.0%');
+  const israeli = categoryRow('בורסה ישראלית');
+  expect(israeli.textContent).toContain('22000.00');
+  expect(israeli.textContent).toContain('קודם 20000.00');
+  expect(israeli.textContent).toContain('+10.0%');
 
-  const bankRow = scope.getByText('עו"ש', { selector: 'td' }).closest('tr');
-  expect(bankRow.textContent).toContain('+140.0%');
+  expect(categoryRow('עו"ש').textContent).toContain('+140.0%');
 
-  const totalRow = scope.getByText('סה"כ תיק').closest('tr');
-  expect(totalRow.textContent).toContain('+10.0%');
+  // The month as a whole, deposits netted out.
+  expect(document.body.querySelector('.mt-panel-change').textContent).toContain('+10.0%');
 
   // per-item detail not shown yet
   expect(scope.queryByText(/TEVA/)).toBeNull();
@@ -379,24 +388,20 @@ test('a mid-period stock purchase is netted out of the naive % change, with the 
       {...makeProps({ monthlySnapshots: [july, august], israeliStocks: israeliStocksWithMidPeriodPurchase })}
     />
   );
-  const scope = monthlyScope();
-  const israeliRow = scope.getByText('בורסה ישראלית', { selector: 'td' }).closest('tr');
-  expect(israeliRow.textContent).not.toContain('+10.0%');
-  expect(israeliRow.textContent).toContain('1000.00 ₪');
-  expect(israeliRow.textContent).toMatch(/הופקדו\/נרכשו בתקופה/);
+  const israeli = categoryRow('בורסה ישראלית');
+  expect(israeli.textContent).not.toContain('+10.0%');
+  expect(israeli.textContent).toContain('1000.00 ₪');
+  expect(israeli.textContent).toMatch(/הופקדו\/נרכשו בתקופה/);
 });
 
-test('"פתח פירוט מלא" reveals per-item rows in the comparison table (e.g. individual stocks), and toggles its own label', () => {
+test('"פתח פירוט מלא" reveals per-item rows (e.g. individual stocks) with their own change, and toggles its own label', () => {
   render(<MonthlyTrackerView {...makeProps({ monthlySnapshots: [july, august] })} />);
   const scope = monthlyScope();
 
   fireEvent.click(scope.getByText('פתח פירוט מלא'));
   expect(scope.getByText('קבץ לפי קטגוריות')).toBeInTheDocument();
 
-  // the toggle is shared with the history section below, so "TEVA" now
-  // shows up there too - scope to the comparison <table> specifically
-  const comparisonTable = scope.getByText('השוואה בין חודשים').parentElement.querySelector('table');
-  const tevaRow = within(comparisonTable).getByText(/TEVA/).closest('tr');
+  const tevaRow = within(categoryRow('בורסה ישראלית')).getByText('TEVA').closest('li');
   expect(tevaRow.textContent).toContain('20000.00');
   expect(tevaRow.textContent).toContain('22000.00');
   expect(tevaRow.textContent).toContain('+10.0%');
@@ -405,30 +410,50 @@ test('"פתח פירוט מלא" reveals per-item rows in the comparison table (
   expect(scope.queryByText(/TEVA/)).toBeNull();
 });
 
-test('the history section shows only one month at a time - defaulting to the most recently saved one - with category subtotals, and reveals items when detailed view is on', () => {
+// THE TIMELINE: every saved month as a pressable bar, with its change from
+// the month before.
+test('the timeline lists every saved month with its change, and selects the latest by default', () => {
   render(<MonthlyTrackerView {...makeProps({ monthlySnapshots: [july, august] })} />);
-  const scope = monthlyScope();
 
-  expect(scope.getByText('היסטוריית שמירות')).toBeInTheDocument();
+  expect(timelineButton('יולי 2026')).toHaveAttribute('aria-pressed', 'false');
+  expect(timelineButton('אוגוסט 2026')).toHaveAttribute('aria-pressed', 'true');
+  expect(timelineButton('יולי 2026').textContent).toContain('חודש ראשון');
+  expect(timelineButton('אוגוסט 2026').textContent).toContain('+10.0%');
+
+  // One panel, for the selected month.
   const cards = historyCards();
   expect(cards).toHaveLength(1);
-  expect(cards[0].textContent).toContain('אוגוסט 2026'); // most recent by default
-  expect(cards[0].textContent).not.toContain('יולי 2026');
-  expect(cards[0].textContent).toContain('בורסה ישראלית');
-  expect(cards[0].textContent).not.toContain('TEVA');
-
-  fireEvent.click(scope.getByText('פתח פירוט מלא'));
-  expect(cards[0].textContent).toContain('TEVA');
+  expect(within(cards[0]).getByText('אוגוסט 2026', { selector: '.mt-panel-title' })).toBeInTheDocument();
 });
 
-test('picking a different month from the history selector shows only that month - no other months are shown', () => {
+test('pressing a month in the timeline shows that month - the first one on its own, with nothing to compare it with', () => {
   render(<MonthlyTrackerView {...makeProps({ monthlySnapshots: [july, august] })} />);
-  fireEvent.change(screen.getByLabelText('בחר חודש להצגה'), { target: { value: '2026-07' } });
+  fireEvent.click(timelineButton('יולי 2026'));
 
+  expect(timelineButton('יולי 2026')).toHaveAttribute('aria-pressed', 'true');
   const cards = historyCards();
   expect(cards).toHaveLength(1);
-  expect(cards[0].textContent).toContain('יולי 2026');
-  expect(cards[0].textContent).not.toContain('אוגוסט 2026');
+  expect(within(cards[0]).getByText('יולי 2026', { selector: '.mt-panel-title' })).toBeInTheDocument();
+  expect(categoryRow('בורסה ישראלית').textContent).toContain('20000.00');
+  expect(document.body.querySelector('.mt-panel-change')).toBeNull();
+});
+
+// Comparing with a month other than the one right before it.
+test('"השוואה מול" defaults to the month before, and can be pointed at any other saved month', () => {
+  const september = {
+    ...august,
+    month: '2026-09',
+    totalValueILS: 120000,
+    breakdown: { ...august.breakdown, israeli: [{ key: 'TEVA', label: 'TEVA', value: 24000 }] }
+  };
+  render(<MonthlyTrackerView {...makeProps({ monthlySnapshots: [july, august, september] })} />);
+  const base = screen.getByLabelText('השוואה מול');
+  expect(base).toHaveValue('2026-08');
+  expect(categoryRow('בורסה ישראלית').textContent).toContain('קודם 22000.00');
+
+  fireEvent.change(base, { target: { value: '2026-07' } });
+  expect(categoryRow('בורסה ישראלית').textContent).toContain('קודם 20000.00');
+  expect(categoryRow('בורסה ישראלית').textContent).toContain('+20.0%');
 });
 
 test('without onUpdateMonthlySnapshot, the history card shows no "ערוך" button', () => {
@@ -859,7 +884,7 @@ test('shows the "מוחק…" loading state and deleteMonthlyError', () => {
   expect(screen.getByText('מחיקת השמירה החודשית נכשלה, נסה שוב')).toBeInTheDocument();
 });
 
-test('a month saved before itemized detail existed (a flat category number) shows a friendly "no detail" note instead of a fake single item, in both the comparison table and the history card', () => {
+test('a month saved before itemized detail existed (a flat category number) shows a friendly "no detail" note instead of a fake single item, both compared and on its own', () => {
   // both months legacy (flat numbers, no per-item detail) - the case
   // from the screenshot this was reported from. A legacy-vs-itemized
   // mix is a separate, intentionally different case (see
@@ -882,7 +907,7 @@ test('a month saved before itemized detail existed (a flat category number) show
   const note = 'אין פירוט פריטים זמין להשוואה זו (אחד החודשים נשמר לפני שנוסף פירוט מלא)';
   expect(scope.getAllByText(note).length).toBeGreaterThan(0);
 
-  fireEvent.change(screen.getByLabelText('בחר חודש להצגה'), { target: { value: '2026-07' } });
+  fireEvent.click(within(document.body.querySelector('.mt-timeline')).getByText('יולי 2026').closest('button'));
   expect(
     within(historyCards()[0]).getAllByText('אין פירוט פריטים לשמירה זו (נשמרה לפני שנוסף פירוט מלא)').length
   ).toBeGreaterThan(0);
