@@ -16,8 +16,14 @@ const BROWSER_HEADERS = {
 };
 
 const CRUMB_TTL_MS = 55 * 60 * 1000; // refresh a bit before a typical 1h session expiry
+// A failed attempt is remembered this long and rethrown without a request.
+// Without it every queued quoteSummary call made its own two-request
+// attempt at a session while Yahoo was refusing them all, which only
+// added to the traffic that got the server refused in the first place.
+const FAILURE_BACKOFF_MS = 60 * 1000;
 let cached = null; // { crumb, cookie, ts }
 let inFlightRequest = null;
+let lastFailure = null; // { err, ts }
 
 function extractCookieHeader(setCookieHeaders) {
   if (!setCookieHeaders) return '';
@@ -71,14 +77,21 @@ async function getYahooCrumbAndCookie(forceRefresh = false) {
     return cached;
   }
   if (inFlightRequest) return inFlightRequest;
+  if (lastFailure && Date.now() - lastFailure.ts < FAILURE_BACKOFF_MS) throw lastFailure.err;
 
   inFlightRequest = (async () => {
-    const cookie = await fetchSessionCookie();
-    if (!cookie) throw new Error('could not obtain a yahoo session cookie');
-    const crumb = await fetchCrumb(cookie);
-    const result = { crumb, cookie, ts: Date.now() };
-    cached = result;
-    return result;
+    try {
+      const cookie = await fetchSessionCookie();
+      if (!cookie) throw new Error('could not obtain a yahoo session cookie');
+      const crumb = await fetchCrumb(cookie);
+      const result = { crumb, cookie, ts: Date.now() };
+      cached = result;
+      lastFailure = null;
+      return result;
+    } catch (err) {
+      lastFailure = { err, ts: Date.now() };
+      throw err;
+    }
   })();
 
   try {
@@ -95,4 +108,11 @@ function invalidateYahooCrumb() {
   cached = null;
 }
 
-module.exports = { getYahooCrumbAndCookie, invalidateYahooCrumb };
+// Test seam.
+function resetYahooCrumb() {
+  cached = null;
+  inFlightRequest = null;
+  lastFailure = null;
+}
+
+module.exports = { getYahooCrumbAndCookie, invalidateYahooCrumb, resetYahooCrumb };

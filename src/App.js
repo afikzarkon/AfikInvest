@@ -309,7 +309,8 @@ function App() {
   const {
     refreshing: pricesRefreshing,
     lastRefreshAt: pricesLastRefreshAt,
-    hasLoadedLivePrices
+    hasLoadedLivePrices,
+    stalePrices
   } = usePriceRefresh({
     israeliStocks,
     americanStocks,
@@ -977,7 +978,8 @@ function App() {
     handleAddInfo,
     pricesRefreshing,
     pricesLastRefreshAt,
-    hasLoadedLivePrices
+    hasLoadedLivePrices,
+    stalePrices
   };
 
   // One page per route. The shell is rendered once, around whichever page

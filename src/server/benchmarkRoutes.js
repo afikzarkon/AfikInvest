@@ -5,6 +5,7 @@
 // — a historical close from yesterday doesn't change.
 const { fetchYahooHistoricalCloses } = require('./yahooQuotes');
 const { fetchTaseIndexHistoricalCloses, TASE_INDEX_IDS } = require('./taseIndexHistoryApi');
+const { sourceHealth } = require('./sourceHealth');
 
 // Deliberately whitelisted rather than accepting an arbitrary symbol from
 // the query string — this endpoint has no auth, so an open "fetch any
@@ -58,12 +59,29 @@ async function getCachedBenchmarkHistory(benchmark, fromDateStr) {
   if (existingInFlight) return existingInFlight;
 
   const requestPromise = (async () => {
-    const points =
-      source === 'tase'
-        ? await fetchTaseIndexHistoricalCloses(symbol, fromDateStr)
-        : await fetchYahooHistoricalCloses(symbol, fromDateStr);
-    cache.set(cacheKey, { data: points, ts: Date.now() });
-    return points;
+    try {
+      const points =
+        source === 'tase'
+          ? await sourceHealth.track('tase-index', () => fetchTaseIndexHistoricalCloses(symbol, fromDateStr))
+          : await fetchYahooHistoricalCloses(symbol, fromDateStr);
+      cache.set(cacheKey, { data: points, ts: Date.now() });
+      return points;
+    } catch (err) {
+      // An expired series is still a good answer: past closes do not
+      // change, the only thing missing is the last few hours. Serving it
+      // beats the error the chart used to show whenever the 6h cache had
+      // run out at a moment the source was down. Its clock is not reset,
+      // so the next request tries the source again.
+      if (cached) {
+        console.warn('[benchmark] refresh failed, serving the expired series', {
+          source,
+          symbol,
+          error: err && err.message
+        });
+        return cached.data;
+      }
+      throw err;
+    }
   })();
 
   inFlight.set(cacheKey, requestPromise);

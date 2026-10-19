@@ -7,6 +7,7 @@
 // startPeriod/endPeriod כ-mm-yyyy), ומבנה התגובה בפונקציה parseCbsResponse
 // כולם מאומתים מול תגובה אמיתית מ-api.cbs.gov.il.
 const axios = require('axios');
+const { sourceHealth } = require('./sourceHealth');
 
 const CBS_BASE_URL = 'https://api.cbs.gov.il/index/data/price';
 // קוד הסדרה של "מדד המחירים לצרכן - כללי" (יש לוודא מול תיעוד הלמ"ס)
@@ -66,11 +67,13 @@ async function fetchCbsSeries({ startPeriod, endPeriod, last } = {}) {
   if (endPeriod) params.endPeriod = endPeriod;
   if (last) params.last = last;
 
-  const response = await axios.get(CBS_BASE_URL, {
-    params,
-    headers: { 'User-Agent': 'afikinvest-app/1.0' }, // חובה ע"פ תיעוד הלמ"ס
-    timeout: 10000
-  });
+  const response = await sourceHealth.track('cbs', () =>
+    axios.get(CBS_BASE_URL, {
+      params,
+      headers: { 'User-Agent': 'afikinvest-app/1.0' }, // חובה ע"פ תיעוד הלמ"ס
+      timeout: 10000
+    })
+  );
   const rows = parseCbsResponse(response.data);
   if (rows.length === 0) {
     // עוזר לאבחון: אם החזרנו 0 שורות, זה כמעט תמיד או שמבנה התגובה שונה

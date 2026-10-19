@@ -4,21 +4,12 @@
 // time (a company's sector classification essentially never changes
 // day-to-day) and batched: the frontend asks for many symbols at once
 // instead of one request per holding.
-const { fetchYahooAssetProfile } = require('./yahooQuotes');
-const { createSymbolCache } = require('./symbolCache');
+// Served from the per-symbol profile shared with the analyst and dividend
+// routes (symbolProfile.js): one Yahoo request per symbol for all three,
+// and a stale value is worth far more than a null - see symbolCache.js.
+const { getSymbolSector } = require('./symbolProfile');
 
-// 24h: a company's sector classification essentially never changes day
-// to day, which is also why a stale one is worth far more than a null -
-// see symbolCache.js.
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_SYMBOLS_PER_REQUEST = 30; // matches realistic portfolio sizes; guards against abuse
-
-const sectorCache = createSymbolCache({
-  name: 'sectors',
-  ttlMs: CACHE_TTL_MS,
-  fetchOne: fetchYahooAssetProfile,
-  fallback: () => ({ sector: null, industry: null })
-});
 
 function mountSectorRoutes(app) {
   // POST (not GET) because the symbol list can be longer than is
@@ -37,7 +28,7 @@ function mountSectorRoutes(app) {
     }
 
     try {
-      const results = await Promise.all(cleaned.map((symbol) => sectorCache.get(symbol)));
+      const results = await Promise.all(cleaned.map((symbol) => getSymbolSector(symbol)));
       const sectors = {};
       cleaned.forEach((symbol, i) => {
         sectors[symbol] = results[i];
@@ -50,4 +41,4 @@ function mountSectorRoutes(app) {
   });
 }
 
-module.exports = { mountSectorRoutes, sectorCache };
+module.exports = { mountSectorRoutes };

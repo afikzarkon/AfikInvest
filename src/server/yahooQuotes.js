@@ -4,10 +4,16 @@
 const axios = require('axios');
 const { getYahooCrumbAndCookie, invalidateYahooCrumb } = require('./yahooCrumb');
 const { tradeDateFromYahooMeta, lastSessionDate } = require('./marketCalendar');
+const { sourceHealth } = require('./sourceHealth');
+const { marketMemory } = require('./marketMemory');
 
 const YAHOO_CACHE_TTL_MS = 15 * 1000;
 const yahooChartCache = new Map();
 const yahooInFlight = new Map();
+// The last good quote per symbol, with no expiry - what a failed refresh
+// serves instead of nothing (see getYahooPayload). The database copy in
+// marketMemory covers the time after a restart, when this map is empty.
+const yahooLastGood = new Map();
 
 const YAHOO_HEADERS = {
   'User-Agent':
@@ -82,15 +88,41 @@ async function getYahooPayload(symbol) {
       changePercent: Number.isFinite(finalChangePercent) ? finalChangePercent : 0,
       // The session regularMarketPrice belongs to. Before the US open it is
       // still yesterday's - see marketCalendar.js for why that matters.
-      tradeDate: tradeDateFromYahooMeta(meta) || lastSessionDate('us')
+      tradeDate: tradeDateFromYahooMeta(meta) || lastSessionDate('us'),
+      // When this price was fetched, so the client can say how old a price
+      // served from the fallback below is.
+      fetchedAt: new Date().toISOString()
     };
     writeCachedYahoo(symbol, payload);
+    if (payload.currentPrice !== null) {
+      yahooLastGood.set(symbol, payload);
+      marketMemory.set(`quote:us:${symbol}`, payload);
+    }
     return payload;
   })();
 
   yahooInFlight.set(symbol, requestPromise);
   try {
-    return await requestPromise;
+    const payload = await requestPromise;
+    sourceHealth.success('yahoo-chart');
+    return payload;
+  } catch (err) {
+    sourceHealth.failure('yahoo-chart', err);
+    // These failures used to be swallowed by the routes without a trace,
+    // which left no way to tell from the logs whether US prices were down.
+    console.warn('[yahoo] quote failed', {
+      symbol,
+      status: err && err.response && err.response.status,
+      error: err && err.message
+    });
+    // The last good price, marked stale, beats no price: the client shows
+    // its age instead of silently keeping an unlabelled old number.
+    const lastGood = yahooLastGood.get(symbol) || ((await marketMemory.get(`quote:us:${symbol}`)) || {}).value;
+    if (lastGood) {
+      yahooLastGood.set(symbol, lastGood);
+      return { ...lastGood, stale: true };
+    }
+    throw err;
   } finally {
     yahooInFlight.delete(symbol);
   }
@@ -225,6 +257,58 @@ const QUOTE_SUMMARY_MIN_SPACING_MS = 350;
 const QUOTE_SUMMARY_429_BACKOFF_MS = [1200, 3000];
 let quoteSummaryQueueTail = Promise.resolve();
 
+// A shared cooldown for every crumb-authenticated call.
+//
+// The retries above are for a burst limit, which clears in seconds. When
+// a request has used up all of them and is still refused, it is not a
+// burst any more: Yahoo is refusing this server's address. Production logs
+// showed exactly that - every symbol, across sectors, analysts, dividends
+// and valuation, failing with 429 one after another - and each of those
+// symbols went on to make its own three attempts, plus a fresh crumb
+// request each time, which is more traffic at the moment Yahoo is asking
+// for less and keeps the block in place for longer.
+//
+// So once one request has exhausted its retries on a 429, every
+// crumb-authenticated call fails at once, without a request, until the
+// cooldown ends. Callers already handle a failure by serving the last
+// known value (symbolCache.js), so the user sees no difference beyond
+// figures that are a little older. A cooldown that is tripped again soon
+// after it ends lasts longer (COOLDOWN_STEPS_MS); a success resets it.
+const COOLDOWN_STEPS_MS = [5 * 60 * 1000, 15 * 60 * 1000, 30 * 60 * 1000];
+let cooldownUntil = 0;
+let cooldownLevel = 0;
+
+function cooldownError() {
+  const err = new Error(`yahoo rate limit cooldown until ${new Date(cooldownUntil).toISOString()}`);
+  err.code = 'YAHOO_COOLDOWN';
+  return err;
+}
+
+function inCooldown() {
+  return Date.now() < cooldownUntil;
+}
+
+function openCooldown() {
+  if (inCooldown()) return;
+  const ms = COOLDOWN_STEPS_MS[Math.min(cooldownLevel, COOLDOWN_STEPS_MS.length - 1)];
+  cooldownLevel += 1;
+  cooldownUntil = Date.now() + ms;
+  console.warn('[yahoo] rate limited after all retries - pausing crumb-authenticated requests', {
+    minutes: ms / 60000,
+    until: new Date(cooldownUntil).toISOString()
+  });
+}
+
+// For the admin panel (adminRoutes.js) and tests.
+function yahooCooldownState() {
+  return { cooldownUntil: inCooldown() ? new Date(cooldownUntil).toISOString() : null };
+}
+
+function resetYahooCooldown() {
+  cooldownUntil = 0;
+  cooldownLevel = 0;
+}
+
 function scheduleOnQuoteSummaryQueue(task) {
   // .finally() (not .then()) so the spacing delay applies whether the
   // request succeeded OR failed - a burst of failures (e.g. repeated
@@ -266,6 +350,9 @@ async function fetchYahooWithCrumbRetry(url, extraParams) {
   };
 
   const attemptWithCrumbRetry = async () => {
+    // Checked again here, not only on entry: a request that was queued
+    // before another one tripped the cooldown must not go out after it.
+    if (inCooldown()) throw cooldownError();
     try {
       return await doRequest(false);
     } catch (err) {
@@ -281,15 +368,27 @@ async function fetchYahooWithCrumbRetry(url, extraParams) {
   // Each retry goes back through the queue rather than jumping it, so a
   // symbol that is being retried still keeps its spacing from whatever
   // else is in flight.
+  if (inCooldown()) throw cooldownError();
+
   let lastError;
   for (let attempt = 0; attempt <= QUOTE_SUMMARY_429_BACKOFF_MS.length; attempt += 1) {
     try {
-      return await scheduleOnQuoteSummaryQueue(attemptWithCrumbRetry);
+      const response = await scheduleOnQuoteSummaryQueue(attemptWithCrumbRetry);
+      cooldownLevel = 0;
+      sourceHealth.success('yahoo-summary');
+      return response;
     } catch (err) {
       lastError = err;
+      // A cooldown refusal made no request, so it says nothing new about
+      // Yahoo's health and is not counted as a failure.
+      if (err.code === 'YAHOO_COOLDOWN') throw err;
       const status = err.response && err.response.status;
       const waitMs = QUOTE_SUMMARY_429_BACKOFF_MS[attempt];
-      if (status !== 429 || waitMs === undefined) throw err;
+      if (status !== 429 || waitMs === undefined) {
+        if (status === 429) openCooldown();
+        sourceHealth.failure('yahoo-summary', err);
+        throw err;
+      }
       // Up to 40% jitter. Without it every symbol in a rate-limited
       // batch waits the identical interval and hits Yahoo together
       // again, which is the burst that caused the 429 in the first place.
@@ -325,16 +424,20 @@ function unwrapYahooNumber(value) {
   return null;
 }
 
-async function fetchYahooAssetProfile(symbol) {
-  const quoteSummary = await fetchYahooQuoteSummary(symbol, 'assetProfile');
-  const profile = quoteSummary?.assetProfile;
-  if (!profile) {
-    throw new Error('missing yahoo assetProfile data');
-  }
+function parseAssetProfile(quoteSummary) {
+  const profile = quoteSummary?.assetProfile || {};
   return {
     sector: profile.sector || null,
     industry: profile.industry || null
   };
+}
+
+async function fetchYahooAssetProfile(symbol) {
+  const quoteSummary = await fetchYahooQuoteSummary(symbol, 'assetProfile');
+  if (!quoteSummary?.assetProfile) {
+    throw new Error('missing yahoo assetProfile data');
+  }
+  return parseAssetProfile(quoteSummary);
 }
 
 // Analyst coverage for a US stock: consensus rating, price targets, and
@@ -345,7 +448,10 @@ async function fetchYahooAnalystData(symbol) {
     symbol,
     'financialData,recommendationTrend,upgradeDowngradeHistory'
   );
+  return parseAnalystData(quoteSummary);
+}
 
+function parseAnalystData(quoteSummary) {
   const financialData = quoteSummary?.financialData || {};
   const recommendationTrend = quoteSummary?.recommendationTrend?.trend || [];
   const upgradeHistoryRaw = quoteSummary?.upgradeDowngradeHistory?.history || [];
@@ -406,6 +512,10 @@ async function fetchYahooAnalystData(symbol) {
 // already comes back as a percent number).
 async function fetchYahooDividendSummary(symbol) {
   const quoteSummary = await fetchYahooQuoteSummary(symbol, 'summaryDetail,calendarEvents');
+  return parseDividendSummary(quoteSummary);
+}
+
+function parseDividendSummary(quoteSummary) {
   const summaryDetail = quoteSummary?.summaryDetail || {};
   const calendarEvents = quoteSummary?.calendarEvents || {};
   const yieldFraction = unwrapYahooNumber(summaryDetail.dividendYield);
@@ -417,6 +527,32 @@ async function fetchYahooDividendSummary(symbol) {
     exDividendDateEpoch:
       unwrapYahooNumber(summaryDetail.exDividendDate) ?? unwrapYahooNumber(calendarEvents.exDividendDate),
     nextDividendDateEpoch: unwrapYahooNumber(calendarEvents.dividendDate)
+  };
+}
+
+// Sectors, analyst coverage and the dividend summary for one symbol, in a
+// single quoteSummary request.
+//
+// The three used to be three requests per symbol (one per feature, each
+// with its own cache), so a portfolio of 11 US stocks cost 33 crumb-
+// authenticated calls on one page load - and all 33 were refused together
+// when Yahoo rate-limited the server. The endpoint takes a list of
+// modules, and the three features' modules fit in one call: a third of
+// the traffic, and one cached answer that all three routes read
+// (symbolProfile.js).
+//
+// A module Yahoo has nothing for is simply absent from the answer (an ETF
+// has no assetProfile sector), so each part parses to nulls rather than
+// failing the other two.
+const SYMBOL_PROFILE_MODULES =
+  'assetProfile,financialData,recommendationTrend,upgradeDowngradeHistory,summaryDetail,calendarEvents';
+
+async function fetchYahooSymbolProfile(symbol) {
+  const quoteSummary = await fetchYahooQuoteSummary(symbol, SYMBOL_PROFILE_MODULES);
+  return {
+    sector: parseAssetProfile(quoteSummary),
+    analyst: parseAnalystData(quoteSummary),
+    dividendSummary: parseDividendSummary(quoteSummary)
   };
 }
 
@@ -499,8 +635,11 @@ module.exports = {
   fetchYahooAssetProfile,
   fetchYahooAnalystData,
   fetchYahooDividendSummary,
+  fetchYahooSymbolProfile,
   fetchYahooDividendHistory,
   fetchYahooQuoteSummary,
   fetchYahooWithCrumbRetry,
+  yahooCooldownState,
+  resetYahooCooldown,
   unwrapYahooNumber
 };

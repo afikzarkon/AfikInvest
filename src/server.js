@@ -36,6 +36,7 @@ const { createSystemGate } = require('./server/systemRoutes');
 const { installErrorCapture } = require('./server/errorLog');
 const { createValuationService, createDefaultSources } = require('./server/valuationService');
 const { createDcfSnapshotService, createReferenceMemory } = require('./server/dcfSnapshot');
+const { marketMemory } = require('./server/marketMemory');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -50,6 +51,14 @@ app.use(crossSiteRequestGuard());
 // sessions against once bootstrap finishes.
 const sessionGuard = createSessionGuard();
 app.use(sessionGuard.middleware);
+// For an uptime pinger (.github/workflows/keep-alive.yml, or an external
+// monitor): answers before the maintenance gate and touches nothing - no
+// database, no outside source - so pinging it every few minutes costs
+// nothing beyond keeping the host from going to sleep.
+app.get('/api/health', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({ ok: true, uptimeSeconds: Math.round(process.uptime()) });
+});
 // The banner and maintenance mode (systemRoutes.js): ahead of every route,
 // so maintenance answers 503 for all but admins and what they need to sign in.
 const systemGate = createSystemGate();
@@ -93,6 +102,8 @@ bootstrapServices()
       if (r.skipped.length) console.warn(`ADMIN_EMAILS: no verified account for ${r.skipped.join(', ')} - sign up and verify, then restart`);
     }
     referenceMemory.attach(store.sql);
+    // Last good quotes and Yahoo profiles, kept through restarts.
+    marketMemory.attach(store.sql);
     const mailer = createEmailService();
     const auth = mountAuthRoutes(app, store, { sessionGuard, accounts, mailer });
     mountAccountRoutes(app, { store, accounts, features, mailer, auth });

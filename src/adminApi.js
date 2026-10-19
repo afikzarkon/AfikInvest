@@ -58,7 +58,8 @@ export const saveMaintenance = (m) => call('/api/admin/settings/maintenance', { 
 export const getStats = () => call('/api/admin/stats');
 export const listErrors = () => call('/api/admin/errors?limit=200').then((d) => d.errors);
 export const clearErrors = () => call('/api/admin/errors', { method: 'DELETE' });
-export const listJobs = (status = '') => call(`/api/admin/jobs${status ? `?status=${enc(status)}` : ''}`).then((d) => d.jobs);
+export const listSources = () => call('/api/admin/sources').then((d) => d.sources);
+export const listJobs =(status = '') => call(`/api/admin/jobs${status ? `?status=${enc(status)}` : ''}`).then((d) => d.jobs);
 export const listAudit = (limit = 100) => call(`/api/admin/audit?limit=${limit}`).then((d) => d.entries);
 
 // Downloads one of the CSV exports (users.csv, audit.csv) as a file.

@@ -1,5 +1,5 @@
 import { act, renderHook } from '@testing-library/react';
-import { usePriceRefresh, refreshIsraeliStocks, refreshAmericanStocks } from './usePriceRefresh';
+import { usePriceRefresh, refreshIsraeliStocks, refreshAmericanStocks, findStalePrices, STALE_PRICE_MS } from './usePriceRefresh';
 import { fetchAmericanStockPrices, fetchIsraeliStockPrices } from '../api/stockPrices';
 
 jest.mock('../api/stockPrices', () => ({
@@ -330,5 +330,33 @@ describe('usePriceRefresh', () => {
     });
     await flush();
     expect(fetchIsraeliStockPrices).toHaveBeenCalledTimes(2);
+  });
+});
+
+// Which prices the toolbar reports as not current - the fix for "prices
+// updated at 14:32" being shown over a price that was hours old because
+// its source had been failing.
+describe('findStalePrices', () => {
+  const NOW = Date.parse('2026-10-19T12:00:00.000Z');
+  const iso = (msAgo) => new Date(NOW - msAgo).toISOString();
+
+  test('a price fetched within the window is current', () => {
+    expect(findStalePrices([{ stockName: 'AAPL', priceFetchedAt: iso(60_000) }], NOW)).toEqual([]);
+  });
+
+  test('an old price is reported with the time it is from', () => {
+    const fetchedAt = iso(STALE_PRICE_MS + 1);
+    expect(findStalePrices([{ stockName: '629014', officialName: 'טבע', priceFetchedAt: fetchedAt }], NOW)).toEqual([
+      { symbol: '629014', name: 'טבע', fetchedAt }
+    ]);
+  });
+
+  test('a price never fetched this session is reported without a time', () => {
+    expect(findStalePrices([{ stockName: 'MSFT' }], NOW)).toEqual([{ symbol: 'MSFT', name: 'MSFT', fetchedAt: null }]);
+  });
+
+  test('several lots of one symbol count once', () => {
+    const lots = [{ stockName: 'MSFT' }, { stockName: 'MSFT' }, { stockName: 'NVDA', priceFetchedAt: iso(1000) }];
+    expect(findStalePrices(lots, NOW)).toHaveLength(1);
   });
 });

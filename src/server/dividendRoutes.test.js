@@ -1,8 +1,11 @@
 /**
  * @jest-environment node
  */
+// The forward-looking summary comes from the per-symbol profile shared
+// with the sector and analyst routes (symbolProfile.js) - one Yahoo
+// request for all three.
 jest.mock('./yahooQuotes', () => ({
-  fetchYahooDividendSummary: jest.fn(),
+  fetchYahooSymbolProfile: jest.fn(),
   fetchYahooDividendHistory: jest.fn()
 }));
 
@@ -10,6 +13,8 @@ const http = require('http');
 const express = require('express');
 const { mountDividendRoutes } = require('./dividendRoutes');
 const yahooQuotes = require('./yahooQuotes');
+
+const mockDividendSummary = (summary) => yahooQuotes.fetchYahooSymbolProfile.mockResolvedValue({ dividendSummary: summary });
 
 // Jest's node test environment doesn't expose global fetch, so use Node's
 // built-in http module for these requests instead of adding a dependency.
@@ -63,7 +68,7 @@ describe('dividendRoutes', () => {
   });
 
   beforeEach(() => {
-    yahooQuotes.fetchYahooDividendSummary.mockReset();
+    yahooQuotes.fetchYahooSymbolProfile.mockReset();
     yahooQuotes.fetchYahooDividendHistory.mockReset();
   });
 
@@ -71,12 +76,12 @@ describe('dividendRoutes', () => {
     const res = await post(`${baseUrl}/api/dividend-data`, { symbols: [] });
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ dividends: {} });
-    expect(yahooQuotes.fetchYahooDividendSummary).not.toHaveBeenCalled();
+    expect(yahooQuotes.fetchYahooSymbolProfile).not.toHaveBeenCalled();
     expect(yahooQuotes.fetchYahooDividendHistory).not.toHaveBeenCalled();
   });
 
   test('POST /api/dividend-data combines summary and history for each symbol', async () => {
-    yahooQuotes.fetchYahooDividendSummary.mockResolvedValue({
+    mockDividendSummary({
       dividendRate: 2.12,
       dividendYieldPercent: 2.36,
       payoutRatio: 0.62,
@@ -98,7 +103,7 @@ describe('dividendRoutes', () => {
   });
 
   test('POST /api/dividend-data falls back to nulls/empty history when both fetches fail, without erroring the batch', async () => {
-    yahooQuotes.fetchYahooDividendSummary.mockRejectedValue(new Error('quoteSummary down'));
+    yahooQuotes.fetchYahooSymbolProfile.mockRejectedValue(new Error('quoteSummary down'));
     yahooQuotes.fetchYahooDividendHistory.mockRejectedValue(new Error('chart down'));
 
     const res = await post(`${baseUrl}/api/dividend-data`, { symbols: ['BADTICKER'] });
@@ -114,7 +119,7 @@ describe('dividendRoutes', () => {
   });
 
   test('POST /api/dividend-data dedupes/uppercases symbols and caches per symbol', async () => {
-    yahooQuotes.fetchYahooDividendSummary.mockResolvedValue({
+    mockDividendSummary({
       dividendRate: 1,
       dividendYieldPercent: 1,
       payoutRatio: 1,
@@ -126,12 +131,12 @@ describe('dividendRoutes', () => {
     await post(`${baseUrl}/api/dividend-data`, { symbols: ['nvda', 'NVDA'] });
     await post(`${baseUrl}/api/dividend-data`, { symbols: ['NVDA'] });
 
-    expect(yahooQuotes.fetchYahooDividendSummary).toHaveBeenCalledTimes(1);
+    expect(yahooQuotes.fetchYahooSymbolProfile).toHaveBeenCalledTimes(1);
     expect(yahooQuotes.fetchYahooDividendHistory).toHaveBeenCalledTimes(1);
   });
 
   test('POST /api/dividend-data passes a valid "from" date through, but ignores an invalid one', async () => {
-    yahooQuotes.fetchYahooDividendSummary.mockResolvedValue({});
+    mockDividendSummary({});
     yahooQuotes.fetchYahooDividendHistory.mockResolvedValue([]);
 
     await post(`${baseUrl}/api/dividend-data`, { symbols: ['GOOG'], from: '2023-05-01' });
@@ -142,7 +147,7 @@ describe('dividendRoutes', () => {
   });
 
   test('POST /api/dividend-data caps the batch at 30 symbols', async () => {
-    yahooQuotes.fetchYahooDividendSummary.mockResolvedValue({});
+    mockDividendSummary({});
     yahooQuotes.fetchYahooDividendHistory.mockResolvedValue([]);
     const symbols = Array.from({ length: 40 }, (_, i) => `SYM${i}`);
 

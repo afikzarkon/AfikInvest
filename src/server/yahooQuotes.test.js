@@ -397,3 +397,127 @@ describe('fetchYahooHistoricalRateForDate', () => {
     expect(params.period2).toBeCloseTo(target + 24 * 60 * 60, -1);
   });
 });
+
+// The shared cooldown. Production logs showed every symbol across four
+// features failing with 429 one after another, each making its own three
+// attempts plus a crumb request - more traffic exactly when Yahoo wanted
+// less. Once one request has used up its retries on a 429, the others now
+// fail without a request until the cooldown ends.
+describe('crumb-authenticated cooldown after a sustained 429', () => {
+  let fresh;
+
+  beforeEach(() => {
+    jest.resetModules();
+    mockAxios.get.mockReset();
+    // eslint-disable-next-line global-require
+    fresh = require('./yahooQuotes');
+  });
+
+  test('after one request exhausts its retries, the next fails at once without a request', async () => {
+    mockAxios.get.mockRejectedValue({ response: { status: 429 } });
+
+    await expect(fresh.fetchYahooAssetProfile('NVDA')).rejects.toBeTruthy();
+    expect(mockAxios.get).toHaveBeenCalledTimes(3);
+    expect(fresh.yahooCooldownState().cooldownUntil).toEqual(expect.any(String));
+
+    await expect(fresh.fetchYahooAssetProfile('PLTR')).rejects.toMatchObject({ code: 'YAHOO_COOLDOWN' });
+    expect(mockAxios.get).toHaveBeenCalledTimes(3); // nothing more went out
+
+    fresh.resetYahooCooldown();
+    mockAxios.get.mockResolvedValueOnce({
+      data: { quoteSummary: { result: [{ assetProfile: { sector: 'Technology', industry: 'Software' } }] } }
+    });
+    await expect(fresh.fetchYahooAssetProfile('PLTR')).resolves.toEqual({ sector: 'Technology', industry: 'Software' });
+  }, 20000);
+
+  test('a non-429 failure does not start a cooldown', async () => {
+    mockAxios.get.mockRejectedValue({ response: { status: 500 } });
+    await expect(fresh.fetchYahooAssetProfile('NVDA')).rejects.toBeTruthy();
+    expect(fresh.yahooCooldownState().cooldownUntil).toBeNull();
+  });
+});
+
+// Sectors, analyst coverage and the dividend summary in one request - a
+// third of the traffic the three separate calls made.
+describe('fetchYahooSymbolProfile', () => {
+  let fresh;
+
+  beforeEach(() => {
+    jest.resetModules();
+    mockAxios.get.mockReset();
+    // eslint-disable-next-line global-require
+    fresh = require('./yahooQuotes');
+  });
+
+  test('asks for every module in ONE request and parses each part', async () => {
+    mockAxios.get.mockResolvedValueOnce({
+      data: {
+        quoteSummary: {
+          result: [
+            {
+              assetProfile: { sector: 'Technology', industry: 'Semiconductors' },
+              financialData: { recommendationKey: 'buy', targetMeanPrice: 200, numberOfAnalystOpinions: 40 },
+              recommendationTrend: { trend: [{ period: '0m', strongBuy: 10, buy: 20, hold: 5, sell: 1, strongSell: 0 }] },
+              summaryDetail: { dividendRate: 0.04, dividendYield: 0.0002 },
+              calendarEvents: {}
+            }
+          ]
+        }
+      }
+    });
+
+    const profile = await fresh.fetchYahooSymbolProfile('NVDA');
+
+    expect(mockAxios.get).toHaveBeenCalledTimes(1);
+    const modules = mockAxios.get.mock.calls[0][1].params.modules.split(',');
+    expect(modules).toEqual(
+      expect.arrayContaining(['assetProfile', 'financialData', 'recommendationTrend', 'upgradeDowngradeHistory', 'summaryDetail', 'calendarEvents'])
+    );
+    expect(profile.sector).toEqual({ sector: 'Technology', industry: 'Semiconductors' });
+    expect(profile.analyst).toMatchObject({ recommendationKey: 'buy', targetMeanPrice: 200, numberOfAnalystOpinions: 40 });
+    expect(profile.analyst.currentTrend).toMatchObject({ strongBuy: 10, buy: 20 });
+    expect(profile.dividendSummary.dividendRate).toBe(0.04);
+    expect(profile.dividendSummary.dividendYieldPercent).toBeCloseTo(0.02, 6);
+  });
+
+  // An ETF has no sector; that must not cost it its dividend data.
+  test('a missing module parses to nulls rather than failing the others', async () => {
+    mockAxios.get.mockResolvedValueOnce({ data: { quoteSummary: { result: [{ summaryDetail: { dividendRate: 1.5 } }] } } });
+    const profile = await fresh.fetchYahooSymbolProfile('IBIT');
+    expect(profile.sector).toEqual({ sector: null, industry: null });
+    expect(profile.analyst.recommendationKey).toBeNull();
+    expect(profile.dividendSummary.dividendRate).toBe(1.5);
+  });
+});
+
+// A failed US quote used to come back as null and was swallowed without a
+// log line. It now falls back to the last good price, marked stale.
+describe('getYahooPayload fallback to the last good price', () => {
+  let fresh;
+
+  beforeEach(() => {
+    jest.resetModules();
+    mockAxios.get.mockReset();
+    // eslint-disable-next-line global-require
+    fresh = require('./yahooQuotes');
+  });
+
+  test('serves the last good quote, marked stale, when a refresh fails', async () => {
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    mockAxios.get.mockResolvedValueOnce({ data: { chart: { result: [{ meta: { regularMarketPrice: 100, previousClose: 99 } }] } } });
+    const good = await fresh.getYahooPayload('MSFT');
+    expect(good.fetchedAt).toEqual(expect.any(String));
+
+    nowSpy.mockReturnValue(1_000_000 + 60_000); // past the 15s cache
+    mockAxios.get.mockRejectedValueOnce({ response: { status: 429 }, message: 'Request failed with status code 429' });
+    const fallback = await fresh.getYahooPayload('MSFT');
+    nowSpy.mockRestore();
+
+    expect(fallback).toEqual({ ...good, stale: true });
+  });
+
+  test('still throws when there has never been a good quote', async () => {
+    mockAxios.get.mockRejectedValueOnce(new Error('down'));
+    await expect(fresh.getYahooPayload('NEVER')).rejects.toThrow('down');
+  });
+});

@@ -40,6 +40,15 @@ const taseScraper = require('./taseScraper');
 const taseQuoteApi = require('./taseQuoteApi');
 const taseHistoryApi = require('./taseHistoryApi');
 const yahooQuotes = require('./yahooQuotes');
+const { marketMemory } = require('./marketMemory');
+
+// A stand-in for the market_reference table: rows keyed like the real one.
+function fakeSql(rows = {}) {
+  return {
+    get: jest.fn(async (text, [key]) => (rows[key] ? { value: JSON.stringify(rows[key].value), updated_at: rows[key].updatedAt } : null)),
+    run: jest.fn(async () => ({ changes: 1, rows: [] }))
+  };
+}
 const bizportalSearch = require('./bizportalSearch');
 const taseSecurityLookup = require('./taseSecurityLookup');
 
@@ -137,6 +146,7 @@ describe('quotesRoutes', () => {
     // than called.
     resetPuppeteerBreaker();
     resetSecurityMetaCache();
+    marketMemory._reset();
   });
 
   test('GET /api/israeli-stock/:id rejects a non-numeric id with 400', async () => {
@@ -189,6 +199,40 @@ describe('quotesRoutes', () => {
     expect(res.body).toEqual({ currentPrice: 3500, changePercent: 1.1 });
   });
 
+  // After a restart the in-memory cache is empty. A quote saved to the
+  // database before it is served at once, exactly like an expired
+  // in-memory one, instead of the first visitor waiting on the whole chain.
+  test('GET /api/israeli-stock/:id serves the quote saved before a restart, and refreshes behind it', async () => {
+    const saved = { currentPrice: 3500, changePercent: 1.1, fetchedAt: '2026-10-19T08:00:00.000Z' };
+    marketMemory.attach(fakeSql({ 'quote:tase:4321': { value: saved, updatedAt: '2026-10-19T08:00:00.000Z' } }));
+    taseQuoteApi.fetchTaseQuoteFromApi.mockResolvedValue({ currentPrice: 3600, changePercent: 1.4 });
+
+    const res = await get(`${baseUrl}/api/israeli-stock/4321`);
+
+    expect(res.body).toEqual(saved);
+    // Seeded into the memory cache with its saved time, so it counts as stale.
+    expect(taseScraper.writeCachedTaseQuote).toHaveBeenCalledWith('4321', saved, Date.parse('2026-10-19T08:00:00.000Z'));
+    expect(taseQuoteApi.fetchTaseQuoteFromApi).toHaveBeenCalledWith('4321');
+  });
+
+  test('GET /api/israeli-stock/:id with nothing cached anywhere and every source down returns nulls', async () => {
+    marketMemory.attach(fakeSql());
+    const res = await get(`${baseUrl}/api/israeli-stock/4322`);
+    expect(res.body).toEqual({ currentPrice: null, changePercent: null });
+  });
+
+  test('a successful quote is saved to the database for the next restart', async () => {
+    const sql = fakeSql();
+    marketMemory.attach(sql);
+    taseQuoteApi.fetchTaseQuoteFromApi.mockResolvedValue({ currentPrice: 3600, changePercent: 1.4, tradeDate: '2026-10-19' });
+
+    await get(`${baseUrl}/api/israeli-stock/4323`);
+
+    const [, params] = sql.run.mock.calls[0];
+    expect(params[0]).toBe('quote:tase:4323');
+    expect(JSON.parse(params[1])).toMatchObject({ currentPrice: 3600, changePercent: 1.4 });
+  });
+
   test('GET /api/israeli-stock/:id returns a cached quote immediately without calling the scraper', async () => {
     taseScraper.readCachedTaseQuote.mockReturnValue({ currentPrice: 4000, changePercent: 0.5 });
     const res = await get(`${baseUrl}/api/israeli-stock/9999`);
@@ -205,7 +249,7 @@ describe('quotesRoutes', () => {
     const res = await get(`${baseUrl}/api/israeli-stock/629014`);
     expect(res.status).toBe(200);
     // The exchange's own session date is passed through untouched.
-    expect(res.body).toEqual({ currentPrice: 11960, changePercent: 1.36, tradeDate: '2026-09-17' });
+    expect(res.body).toEqual({ currentPrice: 11960, changePercent: 1.36, tradeDate: '2026-09-17', fetchedAt: expect.any(String) });
     expect(taseHistoryApi.fetchTaseQuoteFromEod).not.toHaveBeenCalled();
     expect(taseScraper.scrapeTaseQuote).not.toHaveBeenCalled();
   });
@@ -217,7 +261,7 @@ describe('quotesRoutes', () => {
     taseHistoryApi.fetchTaseQuoteFromEod.mockResolvedValue({ currentPrice: 7811, changePercent: -1.72 });
     const res = await get(`${baseUrl}/api/israeli-stock/604611`);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ currentPrice: 7811, changePercent: -1.72, tradeDate: ANY_ISO_DATE });
+    expect(res.body).toEqual({ currentPrice: 7811, changePercent: -1.72, tradeDate: ANY_ISO_DATE, fetchedAt: expect.any(String) });
     expect(taseQuoteApi.fetchTaseQuoteFromApi).toHaveBeenCalledTimes(1);
     expect(taseScraper.scrapeTaseQuote).not.toHaveBeenCalled();
   });
@@ -230,14 +274,14 @@ describe('quotesRoutes', () => {
     taseHistoryApi.fetchTaseQuoteFromEod.mockResolvedValue({ currentPrice: 6000, changePercent: 1.1 });
     const res = await get(`${baseUrl}/api/israeli-stock/1111`);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ currentPrice: 6000, changePercent: 1.1, tradeDate: ANY_ISO_DATE });
+    expect(res.body).toEqual({ currentPrice: 6000, changePercent: 1.1, tradeDate: ANY_ISO_DATE, fetchedAt: expect.any(String) });
   });
 
   test('GET /api/israeli-stock/:id reaches the scraper only after both APIs fail', async () => {
     taseScraper.scrapeTaseQuote.mockResolvedValue({ currentPrice: 5000, changePercent: 2.3 });
     const res = await get(`${baseUrl}/api/israeli-stock/1111`);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ currentPrice: 5000, changePercent: 2.3, tradeDate: ANY_ISO_DATE });
+    expect(res.body).toEqual({ currentPrice: 5000, changePercent: 2.3, tradeDate: ANY_ISO_DATE, fetchedAt: expect.any(String) });
     expect(taseQuoteApi.fetchTaseQuoteFromApi).toHaveBeenCalled();
     expect(taseHistoryApi.fetchTaseQuoteFromEod).toHaveBeenCalled();
   });
@@ -248,7 +292,7 @@ describe('quotesRoutes', () => {
       .mockResolvedValueOnce({ currentPrice: 5000, changePercent: 2.3 });
     const res = await get(`${baseUrl}/api/israeli-stock/1111`);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ currentPrice: 5000, changePercent: 2.3, tradeDate: ANY_ISO_DATE });
+    expect(res.body).toEqual({ currentPrice: 5000, changePercent: 2.3, tradeDate: ANY_ISO_DATE, fetchedAt: expect.any(String) });
     expect(taseScraper.scrapeTaseQuote).toHaveBeenCalledTimes(2);
   });
 

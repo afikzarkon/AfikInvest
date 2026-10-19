@@ -4550,6 +4550,16 @@ h3 {
   display: inline-block;
 }
 
+/* Some prices are the last known ones, not current (the tooltip lists
+   which, and from when). */
+.price-refresh-status.is-stale {
+  cursor: help;
+}
+
+.price-refresh-status.is-stale .price-refresh-dot {
+  background: var(--sw-amber);
+}
+
 .price-refresh-status.is-refreshing .price-refresh-dot {
   background: var(--sw-amber);
   animation: price-refresh-pulse 1.2s ease-in-out infinite;

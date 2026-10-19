@@ -3,29 +3,13 @@
 // endpoint already used for sector data (sectorRoutes.js), so it shares
 // the same crumb/cookie auth (yahooCrumb.js) and the same batched-POST +
 // per-symbol-cache shape. Public data, no user auth needed.
-const { fetchYahooAnalystData } = require('./yahooQuotes');
-const { createSymbolCache } = require('./symbolCache');
+// Served from the per-symbol profile shared with the sector and dividend
+// routes (symbolProfile.js): one Yahoo request per symbol for all three.
+// A few-hours-old target price is a far better answer than a null - see
+// symbolCache.js.
+const { getSymbolAnalyst } = require('./symbolProfile');
 
-// 6h for resolved data: analyst consensus doesn't move minute to minute,
-// so a few-hours-old target price is a far better answer than a null -
-// see symbolCache.js.
-const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const MAX_SYMBOLS_PER_REQUEST = 30;
-
-const analystCache = createSymbolCache({
-  name: 'analyst',
-  ttlMs: CACHE_TTL_MS,
-  fetchOne: fetchYahooAnalystData,
-  fallback: () => ({
-    recommendationKey: null,
-    numberOfAnalystOpinions: null,
-    targetMeanPrice: null,
-    targetHighPrice: null,
-    targetLowPrice: null,
-    currentTrend: null,
-    upgradeHistory: []
-  })
-});
 
 function mountAnalystRoutes(app) {
   app.post('/api/analyst-recommendations', async (req, res) => {
@@ -41,7 +25,7 @@ function mountAnalystRoutes(app) {
     }
 
     try {
-      const results = await Promise.all(cleaned.map((symbol) => analystCache.get(symbol)));
+      const results = await Promise.all(cleaned.map((symbol) => getSymbolAnalyst(symbol)));
       const recommendations = {};
       cleaned.forEach((symbol, i) => {
         recommendations[symbol] = results[i];
@@ -54,4 +38,4 @@ function mountAnalystRoutes(app) {
   });
 }
 
-module.exports = { mountAnalystRoutes, analystCache };
+module.exports = { mountAnalystRoutes };

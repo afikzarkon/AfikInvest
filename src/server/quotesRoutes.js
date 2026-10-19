@@ -14,6 +14,11 @@ const { getYahooPayload, fetchYahooHistoricalRateForDate } = require('./yahooQuo
 const { searchIsraeliSecuritiesByName } = require('./bizportalSearch');
 const { lastSessionDate } = require('./marketCalendar');
 const { fetchTaseSecurityMeta, isSecurityIdQuery } = require('./taseSecurityLookup');
+const { sourceHealth } = require('./sourceHealth');
+const { marketMemory } = require('./marketMemory');
+
+// The database key for a security's last good quote (marketMemory.js).
+const taseMemoryKey = (stockId) => `quote:tase:${stockId}`;
 
 const taseInFlight = new Map();
 
@@ -123,7 +128,10 @@ async function attemptTaseSource(source, stockId) {
     changePercent: result.changePercent,
     // Which session the change belongs to. The page scrape reports no date,
     // so it is judged by the weekday calendar instead (see marketCalendar.js).
-    tradeDate: result.tradeDate || lastSessionDate('tase')
+    tradeDate: result.tradeDate || lastSessionDate('tase'),
+    // When this quote was fetched - the client shows it next to a price
+    // that has not been refreshed for a while.
+    fetchedAt: new Date().toISOString()
   };
   if (!isUsableTasePayload(payload)) {
     const err = new Error(`${source.name} returned unusable payload`);
@@ -170,10 +178,13 @@ async function fetchTaseQuote(stockId, req) {
         priceMatch: result._debugPriceMatch
       });
       if (source.expensive) recordPuppeteerOutcome(true);
+      sourceHealth.success(source.name);
       writeCachedTaseQuote(stockId, payload);
+      marketMemory.set(taseMemoryKey(stockId), payload);
       return payload;
     } catch (err) {
       if (source.expensive) recordPuppeteerOutcome(false);
+      sourceHealth.failure(source.name, err);
       errors[source.name] = errMessage(err);
       console.warn(`[tase] ${source.name} failed`, {
         stockId,
@@ -186,10 +197,13 @@ async function fetchTaseQuote(stockId, req) {
   }
 
   console.error('[tase] all sources failed', { stockId, errors });
-  const stale = readStaleTaseQuote(stockId);
+  // The last good quote: this process's copy, or after a restart the
+  // database's (marketMemory.js).
+  const saved = await marketMemory.get(taseMemoryKey(stockId));
+  const stale = readStaleTaseQuote(stockId) || (saved && saved.value);
   if (stale) {
-    console.warn('[tase] serving stale cached quote after failures', { stockId });
-    return stale;
+    console.warn('[tase] serving stale cached quote after failures', { stockId, fetchedAt: stale.fetchedAt });
+    return { ...stale, stale: true };
   }
   if (req.query && (req.query.debug === '1' || req.query.debug === 'true')) {
     return {
@@ -236,7 +250,19 @@ async function getTaseQuoteSwr(stockId, req) {
   const fresh = readCachedTaseQuote(stockId);
   if (fresh) return fresh;
 
-  const stale = readStaleTaseQuote(stockId);
+  let stale = readStaleTaseQuote(stockId);
+  // Nothing in memory - the first request for this security since the
+  // process started. A quote saved before the restart is served the same
+  // way as an expired in-memory one: immediately, refreshed behind it.
+  // Without this, the first visitor after the host wakes up waits on the
+  // whole source chain, and gets nothing if the sources are down.
+  if (!stale) {
+    const saved = await marketMemory.get(taseMemoryKey(stockId));
+    if (saved && saved.value) {
+      writeCachedTaseQuote(stockId, saved.value, saved.savedAt);
+      stale = saved.value;
+    }
+  }
   if (stale) {
     refreshTaseQuote(stockId, req).catch(() => {});
     return stale;
@@ -302,7 +328,7 @@ async function searchIsraeliSecurities(query) {
   if (!trimmed) return [];
 
   const byIdPromise = isSecurityIdQuery(trimmed) ? getSecurityMeta(trimmed) : Promise.resolve(null);
-  const byNamePromise = searchIsraeliSecuritiesByName(trimmed).catch((err) => {
+  const byNamePromise = sourceHealth.track('bizportal', () => searchIsraeliSecuritiesByName(trimmed)).catch((err) => {
     console.warn('[israeli-stock-search] name search failed', { query: trimmed, error: errMessage(err) });
     return [];
   });

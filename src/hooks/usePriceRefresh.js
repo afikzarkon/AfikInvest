@@ -32,6 +32,38 @@ import { fetchAmericanStockPrices, fetchIsraeliStockPrices } from '../api/stockP
 // re-reading the same cached value six times per cache generation.
 const POLLING_INTERVAL_MS = 60000;
 
+// A price fetched longer ago than this is reported as not current. The
+// server refreshes every minute and serves its last known price when a
+// source fails, with the time that price was fetched (fetchedAt) - so a
+// price this old means the source has been failing for a while, and the
+// user should see when the number on screen is from rather than take it
+// for live.
+export const STALE_PRICE_MS = 15 * 60 * 1000;
+
+// The holdings whose price is not current: fetched more than
+// STALE_PRICE_MS ago, or never fetched in this session (the price on
+// screen is the one saved with the portfolio). One entry per symbol,
+// { symbol, name, fetchedAt } - fetchedAt null when unknown.
+export function findStalePrices(stocks, now = Date.now()) {
+  const bySymbol = new Map();
+  stocks.forEach((stock) => {
+    if (!stock || !stock.stockName || bySymbol.has(stock.stockName)) return;
+    const fetchedAt = stock.priceFetchedAt ? Date.parse(stock.priceFetchedAt) : NaN;
+    const fresh = Number.isFinite(fetchedAt) && now - fetchedAt < STALE_PRICE_MS;
+    bySymbol.set(
+      stock.stockName,
+      fresh
+        ? null
+        : {
+            symbol: stock.stockName,
+            name: String(stock.officialName || '').trim() || stock.stockName,
+            fetchedAt: Number.isFinite(fetchedAt) ? stock.priceFetchedAt : null
+          }
+    );
+  });
+  return [...bySymbol.values()].filter(Boolean);
+}
+
 // Collects the distinct symbols to request, so each unique symbol is only
 // asked for once no matter how many purchase lots reference it.
 function uniqueSymbols(stocks) {
@@ -60,7 +92,9 @@ export async function refreshIsraeliStocks(israeliStocks, setIsraeliStocks) {
         currentPrice: quote.currentPrice / 100,
         dailyChangePercent: quote.changePercent,
         // Which session that change is from - see utils/marketSession.js.
-        dailyChangeTradeDate: quote.tradeDate || null
+        dailyChangeTradeDate: quote.tradeDate || null,
+        // When the server fetched it - see findStalePrices.
+        priceFetchedAt: quote.fetchedAt
       };
     })
   );
@@ -89,6 +123,7 @@ export async function refreshAmericanStocks(americanStocks, setAmericanStocks) {
         currentPrice: quote.currentPrice,
         dailyChangePercent: quote.changePercent,
         dailyChangeTradeDate: quote.tradeDate || null,
+        priceFetchedAt: quote.fetchedAt,
         currentExchangeRate
       };
     })
@@ -168,5 +203,9 @@ export function usePriceRefresh({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [holdingsKey, runRefreshCycle]);
 
-  return { refreshing, lastRefreshAt, hasLoadedLivePrices, refreshNow: runRefreshCycle };
+  // Only meaningful once a cycle has run: before that every price is the
+  // saved one by definition, and the toolbar already says so.
+  const stalePrices = hasLoadedLivePrices ? findStalePrices([...israeliStocks, ...americanStocks]) : [];
+
+  return { refreshing, lastRefreshAt, hasLoadedLivePrices, stalePrices, refreshNow: runRefreshCycle };
 }

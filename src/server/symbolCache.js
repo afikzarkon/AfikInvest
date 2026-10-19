@@ -36,16 +36,31 @@
 // in the meantime, so retrying soon costs little and gains the real value.
 const FAILURE_RETRY_MS = 60 * 1000;
 
-function createSymbolCache({ name, ttlMs, fetchOne, fallback }) {
+//
+// PERSISTENCE (optional `memory`, see marketMemory.js): every good value
+// is also written to the database, and a symbol this process has never
+// seen is first looked up there. After a restart - which on the hosting
+// plan this runs on happens whenever the server has been idle - the cache
+// starts from the database instead of from nothing: a value saved within
+// its TTL is served without asking upstream at all, and an older one is
+// still there as the last known value if the refresh fails.
+function createSymbolCache({ name, ttlMs, fetchOne, fallback, memory = null, memoryKey = (s) => `${name}:${s}` }) {
   const cache = new Map();
   const inFlight = new Map();
 
   const isFresh = (entry) => entry && entry.ok && Date.now() - entry.ts < ttlMs;
 
+  const loadSaved = async (symbol) => {
+    if (!memory || cache.has(symbol)) return;
+    const saved = await memory.get(memoryKey(symbol));
+    if (saved && !cache.has(symbol)) cache.set(symbol, { data: saved.value, ts: saved.savedAt, ok: true });
+  };
+
   const resolve = async (symbol) => {
     try {
       const data = await fetchOne(symbol);
       cache.set(symbol, { data, ts: Date.now(), ok: true });
+      if (memory) memory.set(memoryKey(symbol), data);
       return data;
     } catch (err) {
       const previous = cache.get(symbol);
@@ -68,6 +83,9 @@ function createSymbolCache({ name, ttlMs, fetchOne, fallback }) {
   };
 
   const get = async (symbol) => {
+    // Only awaited when there is a database to ask: without one, a symbol's
+    // first request stays synchronous up to fetchOne, as it always was.
+    if (memory) await loadSaved(symbol);
     const entry = cache.get(symbol);
     if (isFresh(entry)) return entry.data;
     // A failed symbol is not retried until its short retry window passes.

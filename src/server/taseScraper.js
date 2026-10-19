@@ -61,8 +61,11 @@ function readStaleTaseQuote(stockId) {
   return cached ? cached.data : null;
 }
 
-function writeCachedTaseQuote(stockId, data) {
-  taseQuoteCache.set(stockId, { data, ts: Date.now() });
+// `ts` is when the quote was fetched: now, or for a quote restored from
+// the database after a restart, when it was saved - so it is treated as
+// stale and refreshed rather than as a minute-fresh answer.
+function writeCachedTaseQuote(stockId, data, ts = Date.now()) {
+  taseQuoteCache.set(stockId, { data, ts });
 }
 
 // Mirrors the parsePriceToken() closure inside scrapeTaseWithPuppeteer -

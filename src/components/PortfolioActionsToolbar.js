@@ -13,6 +13,15 @@ import { loadStockSectors } from '../hooks/useStockSectors';
 //
 // `title` and `subtitle` are per page. Everything else is the shared
 // portfolio state passed straight through from App.js.
+// "14:32" for a price from today, "18.10 14:32" for an older one.
+function formatStaleTime(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const time = d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+  if (d.toDateString() === new Date().toDateString()) return time;
+  return `${d.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' })} ${time}`;
+}
+
 function PortfolioActionsToolbar({
   title,
   subtitle,
@@ -41,6 +50,9 @@ function PortfolioActionsToolbar({
   pricesRefreshing = false,
   pricesLastRefreshAt = null,
   hasLoadedLivePrices = false,
+  // Holdings whose price is not current (usePriceRefresh.js's
+  // findStalePrices): [{ symbol, name, fetchedAt }].
+  stalePrices = [],
   // Pages with no editable table (the overview) hide the edit-mode and
   // extra-columns toggles - there is nothing on them for either to act on.
   showTableControls = true,
@@ -144,15 +156,31 @@ function PortfolioActionsToolbar({
     </>
   );
 
+  // "Prices updated at 14:32" used to be shown after every cycle, even one
+  // in which a source had failed and nothing was updated - so an old price
+  // looked live. When some prices are not current, the status says how
+  // many, and its tooltip names each one with the time it is from.
+  const staleCount = stalePrices.length;
+  const staleTitle = staleCount
+    ? stalePrices
+        .map((p) => `${p.name}: ${p.fetchedAt ? `מחיר מ-${formatStaleTime(p.fetchedAt)}` : 'מחיר אחרון שנשמר'}`)
+        .join('\n')
+    : undefined;
+
   const status = (
     <>
       {hasAnyData && (
-        <span className={`price-refresh-status ${pricesRefreshing ? 'is-refreshing' : ''}`}>
+        <span
+          className={`price-refresh-status ${pricesRefreshing ? 'is-refreshing' : ''} ${!pricesRefreshing && staleCount ? 'is-stale' : ''}`}
+          title={!pricesRefreshing ? staleTitle : undefined}
+        >
           <span className="price-refresh-dot" />
           {pricesRefreshing
             ? hasLoadedLivePrices
               ? 'מעדכן מחירים…'
               : 'טוען מחירים עדכניים…'
+            : staleCount
+            ? `${staleCount === 1 ? 'מחיר אחד לא התעדכן' : `${staleCount} מחירים לא התעדכנו`} - מוצג המחיר האחרון הידוע`
             : pricesLastRefreshAt
             ? `מחירים עודכנו ב-${pricesLastRefreshAt.toLocaleTimeString('he-IL')}`
             : 'מוצגים מחירים אחרונים שנשמרו'}

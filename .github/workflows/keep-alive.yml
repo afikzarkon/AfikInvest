@@ -1,0 +1,50 @@
+name: Keep API awake
+
+# The API host (Render free plan) goes to sleep after ~15 minutes without
+# traffic. Waking it takes 30-60 seconds, and every in-memory cache starts
+# empty - which is when visitors used to see prices fail to load. This
+# pings /api/health often enough that it never falls asleep during the
+# hours people use the site.
+#
+# OFF until enabled: set the repository variable KEEPALIVE to 1
+# (Settings -> Secrets and variables -> Actions -> Variables). Until then
+# every run is skipped at the job level, which uses no Actions minutes.
+#
+# Before enabling, two costs to weigh:
+#   - Actions minutes: on a private repository each run bills at least one
+#     minute. Every 10 minutes for 17 hours a day is ~3,000 a month, more
+#     than the free plan's 2,000. Free on a public repository.
+#   - Render hours: the free plan includes 750 instance hours a month, which
+#     one always-on service fits into, but not two.
+# GitHub may also delay scheduled runs at busy times, so this keeps the
+# host awake most of the time, not all of it. An external monitor (e.g.
+# UptimeRobot every 5 minutes on $AFIKINVEST_API_URL/api/health) costs no
+# minutes and is more punctual; a paid Render plan removes the sleep
+# altogether.
+#
+# Uses the AFIKINVEST_API_URL secret that scheduled-jobs.yml already reads.
+
+on:
+  schedule:
+    # Every 10 minutes, 05:00-21:59 UTC (morning in Israel to after the US
+    # close), every day.
+    - cron: '*/10 5-21 * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    if: vars.KEEPALIVE == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ping the API
+        env:
+          API_URL: ${{ secrets.AFIKINVEST_API_URL }}
+        run: |
+          API_URL="${API_URL%/}"
+          if [ -z "$API_URL" ]; then
+            echo "AFIKINVEST_API_URL not configured - skipping."
+            exit 0
+          fi
+          # A sleeping host can take a minute to answer the first request.
+          curl -sS --max-time 90 --retry 2 --retry-delay 10 "$API_URL/api/health" || true

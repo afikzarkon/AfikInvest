@@ -15,6 +15,7 @@
 //   admins    GET|POST /api/admin/admins {email} · DELETE /api/admin/admins/:id
 //   settings  GET /api/admin/settings · PUT /api/admin/settings/banner · PUT /api/admin/settings/maintenance
 //   insight   GET /api/admin/stats · GET|DELETE /api/admin/errors · GET /api/admin/jobs?status
+//             GET /api/admin/sources (third-party data sources, sourceHealth.js)
 //   export    GET /api/admin/export/users.csv · GET /api/admin/export/audit.csv
 //   log       GET /api/admin/audit?limit&before
 //
@@ -31,6 +32,8 @@ const { readAuthUserFromRequest, getJwtSecret, normalizeEmail } = require('./aut
 const { requestContext } = require('./authHelpers');
 const { createRateLimiter } = require('./rateLimit');
 const { scrub } = require('./errorLog');
+const { sourceHealth } = require('./sourceHealth');
+const { yahooCooldownState } = require('./yahooQuotes');
 const { FLAG_DEFINITIONS, FLAG_KEY_PATTERN, isFlagState, flagVisibleTo, defaultFlagStates } = require('../shared/featureFlags');
 
 const MAX_DESCRIPTION = 300;
@@ -401,6 +404,14 @@ function mountAdminRoutes(app, { admin, store, accounts, auth, features }) {
     } catch (err) {
       return fail(res, 'admin errors', err);
     }
+  });
+
+  // How each outside data source is doing in this process - when it last
+  // answered, when it last failed and why. Yahoo's shared cooldown is
+  // shown on its row, since while it is on no request is made at all.
+  app.get('/api/admin/sources', (req, res) => {
+    const { cooldownUntil } = yahooCooldownState();
+    return res.json({ sources: sourceHealth.snapshot({ 'yahoo-summary': { cooldownUntil } }) });
   });
 
   app.delete('/api/admin/errors', writeLimiter, async (req, res) => {

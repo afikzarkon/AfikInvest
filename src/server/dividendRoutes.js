@@ -4,57 +4,21 @@
 // benchmarkRoutes.js). The two need different underlying data - a forward
 // estimate vs. an actual payment ledger - so they're fetched and cached
 // independently, and only combined here at the route layer.
-const { fetchYahooDividendSummary, fetchYahooDividendHistory } = require('./yahooQuotes');
+const { fetchYahooDividendHistory } = require('./yahooQuotes');
+// The forward-looking summary comes from the per-symbol profile shared
+// with the sector and analyst routes - one Yahoo request for all three
+// (symbolProfile.js), with its last known value kept through failures
+// and restarts.
+const { getSymbolDividendSummary } = require('./symbolProfile');
 
-const SUMMARY_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6h, matches analystRoutes.js
 const HISTORY_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24h: past dividend payments never change
-const FAILURE_CACHE_TTL_MS = 5 * 60 * 1000; // 5min for a failed lookup - see sectorRoutes.js for why
 const MAX_SYMBOLS_PER_REQUEST = 30;
 
-const summaryCache = new Map();
-const summaryInFlight = new Map();
 const historyCache = new Map();
 const historyInFlight = new Map();
 
 function isValidDateString(s) {
   return typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
-}
-
-async function getCachedDividendSummary(symbol) {
-  const cached = summaryCache.get(symbol);
-  if (cached) {
-    const ttl = cached.isFailure ? FAILURE_CACHE_TTL_MS : SUMMARY_CACHE_TTL_MS;
-    if (Date.now() - cached.ts < ttl) return cached.data;
-  }
-
-  const existingInFlight = summaryInFlight.get(symbol);
-  if (existingInFlight) return existingInFlight;
-
-  const requestPromise = (async () => {
-    try {
-      const data = await fetchYahooDividendSummary(symbol);
-      summaryCache.set(symbol, { data, ts: Date.now(), isFailure: false });
-      return data;
-    } catch (err) {
-      console.warn('[dividends] failed to resolve summary', { symbol, error: err && err.message });
-      const fallback = {
-        dividendRate: null,
-        dividendYieldPercent: null,
-        payoutRatio: null,
-        exDividendDateEpoch: null,
-        nextDividendDateEpoch: null
-      };
-      summaryCache.set(symbol, { data: fallback, ts: Date.now(), isFailure: true });
-      return fallback;
-    }
-  })();
-
-  summaryInFlight.set(symbol, requestPromise);
-  try {
-    return await requestPromise;
-  } finally {
-    summaryInFlight.delete(symbol);
-  }
 }
 
 async function getCachedDividendHistory(symbol, fromDateStr) {
@@ -104,7 +68,7 @@ function mountDividendRoutes(app) {
     const results = await Promise.all(
       cleaned.map(async (symbol) => {
         const [summary, history] = await Promise.all([
-          getCachedDividendSummary(symbol),
+          getSymbolDividendSummary(symbol),
           getCachedDividendHistory(symbol, from)
         ]);
         return { ...summary, history };

@@ -110,4 +110,49 @@ describe('createSymbolCache', () => {
     expect(await cache.get('BAD')).toEqual(NULLS);
     expect(await cache.get('NVDA')).toEqual({ sector: 'Tech', industry: 'NVDA' });
   });
+
+  // Persistence: after a restart the cache starts from the database, so a
+  // value saved within its TTL costs no upstream request at all.
+  describe('with a database (memory)', () => {
+    const memoryWith = (saved) => {
+      const store = new Map(Object.entries(saved));
+      return {
+        get: jest.fn(async (key) => store.get(key) || null),
+        set: jest.fn(async (key, value) => {
+          store.set(key, { value, savedAt: Date.now() });
+        })
+      };
+    };
+    const makePersisted = (fetchOne, memory, ttlMs = 60_000) =>
+      createSymbolCache({ name: 'test', ttlMs, fetchOne, fallback: () => ({ ...NULLS }), memory, memoryKey: (s) => `p:${s}` });
+
+    test('a value saved within its TTL is served without asking upstream', async () => {
+      const memory = memoryWith({ 'p:NVDA': { value: { sector: 'Technology', industry: 'Semis' }, savedAt: Date.now() - 1000 } });
+      const fetchOne = jest.fn();
+      const cache = makePersisted(fetchOne, memory);
+
+      expect(await cache.get('NVDA')).toEqual({ sector: 'Technology', industry: 'Semis' });
+      expect(fetchOne).not.toHaveBeenCalled();
+    });
+
+    test('an older saved value is the fallback when the refresh fails', async () => {
+      const memory = memoryWith({ 'p:NVDA': { value: { sector: 'Technology', industry: 'Semis' }, savedAt: Date.now() - 10 * 60_000 } });
+      const fetchOne = jest.fn().mockRejectedValue(new Error('429'));
+      const cache = makePersisted(fetchOne, memory);
+
+      expect(await cache.get('NVDA')).toEqual({ sector: 'Technology', industry: 'Semis' });
+      expect(fetchOne).toHaveBeenCalledTimes(1);
+    });
+
+    test('good values are saved, placeholders are not', async () => {
+      const memory = memoryWith({});
+      const fetchOne = jest.fn((s) => (s === 'BAD' ? Promise.reject(new Error('down')) : Promise.resolve({ sector: 'Tech', industry: s })));
+      const cache = makePersisted(fetchOne, memory);
+
+      await cache.get('NVDA');
+      await cache.get('BAD');
+      expect(memory.set).toHaveBeenCalledTimes(1);
+      expect(memory.set).toHaveBeenCalledWith('p:NVDA', { sector: 'Tech', industry: 'NVDA' });
+    });
+  });
 });

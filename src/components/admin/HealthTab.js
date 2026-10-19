@@ -1,9 +1,67 @@
 import React, { useEffect, useState } from 'react';
-import { clearErrors, listErrors, listJobs } from '../../adminApi';
+import { clearErrors, listErrors, listJobs, listSources } from '../../adminApi';
 import { ErrorNote, Loading, formatWhen, useAction, useLoad } from './shared';
 
-// Server errors (captured from the server's log, addresses and tokens
-// scrubbed) and the background job queue.
+// The outside data sources, server errors (captured from the server's
+// log, addresses and tokens scrubbed) and the background job queue.
+
+const SOURCE_STATUS = {
+  ok: { label: 'תקין', tone: 'good' },
+  degraded: { label: 'כשלים אחרונים', tone: 'warning' },
+  down: { label: 'לא זמין', tone: 'danger' },
+  unknown: { label: 'אין נתונים עדיין', tone: 'neutral' }
+};
+
+// One row per outside source (Yahoo, the exchange, Bizportal, the CBS):
+// whether it is answering, and if not since when and why. Counted since
+// the server last started, which on a sleeping host may be recently.
+function SourcesSection() {
+  const sources = useLoad(listSources);
+
+  return (
+    <section className="analysis-section">
+      <h3 className="section-title">מקורות נתונים חיצוניים</h3>
+      <p className="section-subtitle">
+        מצב כל מקור מאז שהשרת עלה. מקור שנכשל 5 פעמים ברצף מסומן כלא זמין, ונרשם גם ברשימת השגיאות למטה.
+      </p>
+      <div className="admin-actions">
+        <button type="button" className="benchmark-toggle-button" onClick={sources.reload} disabled={sources.loading}>
+          רענון
+        </button>
+      </div>
+      <ErrorNote>{sources.error}</ErrorNote>
+      {!sources.data ? (
+        <Loading />
+      ) : (
+        <ul className="admin-log-list">
+          {sources.data.map((s) => {
+            const status = SOURCE_STATUS[s.status] || SOURCE_STATUS.unknown;
+            return (
+              <li key={s.name} className="admin-log-entry admin-job">
+                <div className="admin-job-head">
+                  <span>{s.label}</span>
+                  <span className={`admin-badge is-${status.tone}`}>{status.label}</span>
+                  {s.cooldownUntil ? <span className="admin-badge is-warning">מושהה עד {formatWhen(s.cooldownUntil)}</span> : null}
+                </div>
+                <p className="admin-flag-meta">
+                  {s.lastSuccessAt ? `הצלחה אחרונה ${formatWhen(s.lastSuccessAt)}` : 'עוד לא הצליח'}
+                  {s.lastFailureAt ? ` · כישלון אחרון ${formatWhen(s.lastFailureAt)}` : ''}
+                  {` · ${s.successes} הצלחות, ${s.failures} כישלונות`}
+                  {s.consecutiveFailures ? ` · ${s.consecutiveFailures} ברצף` : ''}
+                </p>
+                {s.lastError && s.status !== 'ok' ? (
+                  <pre className="admin-log-detail" dir="ltr">
+                    {s.lastError}
+                  </pre>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
 
 const JOB_STATUS = { queued: 'בתור', running: 'רץ', done: 'הושלם', failed: 'נכשל', cancelled: 'בוטל' };
 const JOB_FILTERS = ['', 'failed', 'queued', 'running', 'done'];
@@ -119,6 +177,7 @@ function JobsSection() {
 function HealthTab() {
   return (
     <>
+      <SourcesSection />
       <ErrorsSection />
       <JobsSection />
     </>
