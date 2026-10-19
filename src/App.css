@@ -12955,3 +12955,43 @@ select.auth-input[dir='ltr'] {
     transform: none;
   }
 }
+
+/* The three largest holdings, under the concentration figure. */
+.snap-top {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 0.8rem;
+}
+
+.snap-top li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.snap-top-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--sw-text);
+  font-weight: 600;
+}
+
+.snap-top-kind {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  color: var(--sw-text-muted);
+}
+
+.snap-top-pct {
+  flex-shrink: 0;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--sw-text-secondary);
+}

@@ -128,6 +128,25 @@ describe('calculatePortfolioAnalysis', () => {
     expect(m.weightedDailyChangePercent).toBeCloseTo(m.dailyChangeStocksPercent / 3, 6);
   });
 
+  // The three largest holdings are ranked across everything held: with most
+  // of the money in provident funds, ranking only the stocks left the
+  // largest holdings out of "the largest holdings".
+  test('concentration ranks every holding - funds and accounts as well as stocks', () => {
+    const israeliStocks = [{ stockName: 'A', officialName: 'אלפא', quantity: 10, purchasePrice: 10, currentPrice: 100, purchaseDate: '2023-01-01' }];
+    const pensionFunds = [
+      { fundName: 'גמל גדולה', currentValue: 5000, updateDate: '2023-01-01' },
+      { fundName: 'גמל קטנה', currentValue: 3000, updateDate: '2023-01-01' }
+    ];
+    const bankBalances = [{ amount: 1000, updateDate: '2023-01-01' }];
+    // Total 1,000 (stock) + 8,000 (funds) + 1,000 (bank) = 10,000.
+    const analysis = calculatePortfolioAnalysis(israeliStocks, [], pensionFunds, [], bankBalances);
+    const m = analysis.summaryMetrics;
+
+    expect(m.topHoldings.map((h) => h.name)).toEqual(['גמל גדולה', 'גמל קטנה', expect.any(String)]);
+    expect(m.topHoldings[0]).toMatchObject({ kind: 'pension', percentage: 50 });
+    expect(m.concentrationTop3Percent).toBeCloseTo(90, 6);
+  });
+
   test('summaryMetrics.positionsCount includes every category', () => {
     const israeliStocks = [{ stockName: 'A', quantity: 1, purchasePrice: 1, currentPrice: 100, purchaseDate: '2023-01-01' }];
     const americanStocks = [{ stockName: 'B', quantity: 1, purchasePrice: 1, currentPrice: 1, exchangeRate: 3.5, purchaseDate: '2023-01-01' }];

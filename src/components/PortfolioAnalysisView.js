@@ -118,6 +118,16 @@ function volatilityLevel(percent) {
   return { label: 'תנודתי', tone: 'bad' };
 }
 
+// What each kind of holding is, for the concentration tile's list.
+const HOLDING_KIND_LABELS = {
+  israeli: 'מניה ישראלית',
+  american: 'מניה אמריקאית',
+  pension: 'קופת גמל',
+  cashFund: 'קרן כספית',
+  bank: 'עו"ש',
+  bankSavings: 'חיסכון בבנק'
+};
+
 const NAV_GROUPS = [
   {
     label: 'ביצועים',
@@ -1085,9 +1095,21 @@ function PortfolioAnalysisView({
                       <div className="snap-meter" role="presentation">
                         <span className={`snap-meter-fill is-${level.tone}`} style={{ width: `${Math.min(100, top3)}%` }} />
                       </div>
+                      {/* Which three, since they can be funds as well as
+                          shares - and a provident fund is itself spread
+                          over many assets, which a bare percentage hides. */}
+                      <ul className="snap-top">
+                        {(m.topHoldings || []).map((h) => (
+                          <li key={`${h.kind}-${h.name}`}>
+                            <span className="snap-top-name">{h.name}</span>
+                            <span className="snap-top-kind">{HOLDING_KIND_LABELS[h.kind] || ''}</span>
+                            <span className="snap-top-pct">{h.percentage.toFixed(1)}%</span>
+                          </li>
+                        ))}
+                      </ul>
                       <p className="snap-note">
-                        <span className={`snap-verdict is-${level.tone}`}>{level.label}</span> ככל שהאחוז נמוך יותר,
-                        נפילה של מניה אחת פוגעת פחות בתיק
+                        <span className={`snap-verdict is-${level.tone}`}>{level.label}</span> כמה מכל התיק יושב בשלוש
+                        ההחזקות הגדולות. קופת גמל או קרן מחקה מפוזרות בעצמן, כך שריכוז בהן מסוכן פחות מריכוז במניה אחת
                       </p>
                     </div>
                   </>

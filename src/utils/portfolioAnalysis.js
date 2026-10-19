@@ -293,11 +293,35 @@ export const calculatePortfolioAnalysis = (
     ? stockList.reduce((sum, stock) => sum + ((stock.annualizedReturn || 0) * stock.totalPurchaseValue), 0) /
       totalPurchaseILS * 100
     : 0;
-  const concentrationTop3Percent = stockList
-    .slice()
+  // CONCENTRATION ACROSS EVERYTHING HELD, not the stocks alone.
+  //
+  // It used to rank only the stocks, then divide by the whole portfolio -
+  // so with most of the money in provident funds, "the three largest
+  // holdings" left out the largest holdings, and reported a low figure
+  // for a portfolio that sat mostly in a few funds. Every holding now
+  // competes: each share (all its lots together), each provident fund,
+  // money-market fund, current account and bank savings fund - valued
+  // exactly as the totals above value them.
+  const allHoldings = [
+    ...stockList.map((stock) => ({ name: stock.displayName || stock.name, kind: stock.exchange === 'american' ? 'american' : 'israeli', value: stock.value })),
+    ...pensionFunds.map((item) => ({
+      name: item.fundName || 'קופת גמל',
+      kind: 'pension',
+      value: toNum(item.currentValue != null ? item.currentValue : item.amount)
+    })),
+    ...cashFunds.map((item) => ({ name: item.fundName || 'קרן כספית', kind: 'cashFund', value: liquidBalanceOn(item, today) })),
+    ...bankBalances.map((item, index) => ({
+      name: bankBalances.length > 1 ? `עו"ש #${index + 1}` : 'עו"ש',
+      kind: 'bank',
+      value: liquidBalanceOn(item, today)
+    })),
+    ...bankSavingsFunds.map((fund) => ({ name: fund.fundName || 'קופת חיסכון בבנק', kind: 'bankSavings', value: toNum(computeBankSavingsFundValue(fund)) }))
+  ].filter((h) => h.value > 0);
+  const topHoldings = allHoldings
     .sort((a, b) => b.value - a.value)
     .slice(0, 3)
-    .reduce((sum, stock) => sum + stock.percentage, 0);
+    .map((h) => ({ ...h, percentage: totalValueILS > 0 ? (h.value / totalValueILS) * 100 : 0 }));
+  const concentrationTop3Percent = topHoldings.reduce((sum, h) => sum + h.percentage, 0);
   const averageHoldingDays = stockList.length
     ? Math.round(stockList.reduce((sum, stock) => sum + stock.daysHeld, 0) / stockList.length)
     : 0;
@@ -375,6 +399,7 @@ export const calculatePortfolioAnalysis = (
       stocksValueILS,
       weightedAnnualizedReturnPercent,
       concentrationTop3Percent,
+      topHoldings,
       averageHoldingDays,
       americanFxImpactILS,
       pensionTotalValueILS,
