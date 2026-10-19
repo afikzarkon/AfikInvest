@@ -23,7 +23,9 @@
 //   final link of the chain.
 const { sourceHealth } = require('./sourceHealth');
 
-const NO_REQUEST_CODES = new Set(['FINNHUB_BUDGET', 'FMP_BUDGET', 'TIINGO_BUDGET', 'YAHOO_COOLDOWN']);
+// Refusals that made no request: a spent free-plan budget, Yahoo's
+// cooldown, an FMP endpoint already known to be outside the key's plan.
+const NO_REQUEST_CODES = new Set(['FINNHUB_BUDGET', 'FMP_BUDGET', 'FMP_PLAN', 'TIINGO_BUDGET', 'YAHOO_COOLDOWN']);
 
 function reasonOf(err) {
   if (!err) return 'unknown error';

@@ -17,6 +17,7 @@
 // against recorded fixtures.
 const axios = require('axios');
 const { fetchYahooQuoteSummary, fetchYahooWithCrumbRetry, unwrapYahooNumber } = require('./yahooQuotes');
+const { fmpRefusedUntil, noteFmpError } = require('./fmpClient');
 
 const YAHOO_HEADERS = {
   'User-Agent':
@@ -184,13 +185,18 @@ async function fetchFmpStatements(symbol, apiKey, { get = axios.get } = {}) {
 // so a refused key costs the longer history, not the statements. FMP
 // without quarterly rows borrows Yahoo's, which the trailing twelve months
 // are computed from.
+//
+// A key whose plan does not include the statements (HTTP 402) is not asked
+// again for a day (fmpClient.js's noteFmpError) - straight to Yahoo.
 async function fetchStatements(symbol, { fmpApiKey = '', fmp = fetchFmpStatements, yahoo = fetchYahooStatements, logger = console } = {}) {
-  if (!fmpApiKey) return yahoo(symbol);
+  if (!fmpApiKey || fmpRefusedUntil('statements')) return yahoo(symbol);
   let fromFmp = null;
   try {
     fromFmp = await fmp(symbol, fmpApiKey);
   } catch (err) {
-    logger.warn && logger.warn(`[valuation] ${symbol} fmp statements failed, using yahoo: ${err && err.message}`);
+    if (!noteFmpError('statements', err)) {
+      logger.warn && logger.warn(`[valuation] ${symbol} fmp statements failed, using yahoo: ${err && err.message}`);
+    }
   }
   if (!fromFmp || !fromFmp.annual.length) return yahoo(symbol);
   if (fromFmp.quarterly.length) return fromFmp;

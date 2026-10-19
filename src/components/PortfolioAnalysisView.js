@@ -1031,7 +1031,12 @@ function PortfolioAnalysisView({
                   ['עו"ש', m.bankPositions]
                 ].filter(([, count]) => count > 0);
                 const holding = holdingPeriodText(m.averageHoldingDays);
-                const daily = m.weightedDailyChangePercent;
+                // The stocks' change, as on the home page; the whole
+                // portfolio's (diluted by balances with no daily price) is
+                // said underneath - see portfolioAnalysis.js.
+                const daily = m.dailyChangeStocksPercent;
+                const dailyWhole = m.weightedDailyChangePercent;
+                const hasNonStock = m.nonStockTotalValueILS > 0;
                 const top3 = m.concentrationTop3Percent;
                 const level = concentrationLevel(top3);
                 return (
@@ -1057,9 +1062,17 @@ function PortfolioAnalysisView({
                       <h3 className="snap-label">השינוי היום</h3>
                       <div className={`snap-value ${daily >= 0 ? 'profit-positive' : 'profit-negative'}`}>
                         {signedPercent(daily, 2)}
+                        <span className="snap-value-unit">
+                          {' '}
+                          {LRM}
+                          {m.dailyChangeILS >= 0 ? '+' : '-'}
+                          {formatPriceWithSign(Math.abs(m.dailyChangeILS))} ₪
+                        </span>
                       </div>
                       <p className="snap-note">
-                        {daily >= 0 ? 'התיק עלה היום' : 'התיק ירד היום'} - ממוצע של כל ההחזקות לפי המשקל שלהן בתיק
+                        {daily >= 0 ? 'המניות עלו היום' : 'המניות ירדו היום'} - ישראל וארה"ב, לפי המשקל של כל מניה
+                        {hasNonStock &&
+                          `. ביחס לכל התיק, כולל גמל, קרנות כספיות ועו"ש שלא זזים מיום ליום: ${signedPercent(dailyWhole, 2)}`}
                       </p>
                     </div>
 

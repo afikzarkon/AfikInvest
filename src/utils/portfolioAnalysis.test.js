@@ -107,6 +107,27 @@ describe('calculatePortfolioAnalysis', () => {
     expect(analysis.reports.largestPositions[0].name).toBe('BIG');
   });
 
+  // THE REPORTED MISMATCH: home said +0.88% and the analysis page +0.32%
+  // for the same day. Same shekels, divided by the stocks on one page and
+  // by the whole portfolio (provident funds included) on the other.
+  test("today's change on the stocks' own base matches the home page, and the whole-portfolio figure is the diluted one", () => {
+    const { calculatePortfolioSummary } = require('./portfolioSummary');
+    const today = new Date().toISOString().slice(0, 10);
+    const israeliStocks = [
+      { stockName: 'A', quantity: 10, purchasePrice: 10, currentPrice: 100, dailyChangePercent: 2, dailyChangeTradeDate: today, purchaseDate: '2023-01-01' }
+    ];
+    // 1,000 in stocks, 2,000 more in a provident fund with no daily price.
+    const pensionFunds = [{ currentValue: 2000, updateDate: '2023-01-01' }];
+
+    const analysis = calculatePortfolioAnalysis(israeliStocks, [], pensionFunds, [], []);
+    const summary = calculatePortfolioSummary(israeliStocks, [], pensionFunds, [], []);
+    const m = analysis.summaryMetrics;
+
+    expect(m.dailyChangeILS).toBeCloseTo(20, 6);
+    expect(m.dailyChangeStocksPercent).toBeCloseTo(summary.weightedDailyChange, 6);
+    expect(m.weightedDailyChangePercent).toBeCloseTo(m.dailyChangeStocksPercent / 3, 6);
+  });
+
   test('summaryMetrics.positionsCount includes every category', () => {
     const israeliStocks = [{ stockName: 'A', quantity: 1, purchasePrice: 1, currentPrice: 100, purchaseDate: '2023-01-01' }];
     const americanStocks = [{ stockName: 'B', quantity: 1, purchasePrice: 1, currentPrice: 1, exchangeRate: 3.5, purchaseDate: '2023-01-01' }];

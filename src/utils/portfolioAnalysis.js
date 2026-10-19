@@ -273,9 +273,22 @@ export const calculatePortfolioAnalysis = (
 
   const totalPurchaseILS = stockList.reduce((sum, stock) => sum + stock.totalPurchaseValue, 0);
   const totalProfitILS = stockList.reduce((sum, stock) => sum + stock.profit, 0);
-  const weightedDailyChangePercent = totalValueILS > 0
-    ? stockList.reduce((sum, stock) => sum + (stock.dailyChange * stock.value), 0) / totalValueILS
-    : 0;
+  // TODAY'S CHANGE, ON TWO BASES - and they are not the same number.
+  //
+  // The shekels are the stocks' alone: provident funds, money-market funds
+  // and current accounts have no daily price. As a percentage, the home
+  // page divides them by the stocks' value (dailyChangeStocksPercent, the
+  // same figure as portfolioSummary.js's weightedDailyChange), while
+  // weightedDailyChangePercent divides them by the whole portfolio, so
+  // those still balances dilute it. With most of a portfolio in provident
+  // funds the two differ by a factor of three (+0.88% vs +0.32%), and
+  // shown under the same caption they read as a contradiction. The
+  // analysis page now leads with the stocks' figure, matching home, and
+  // states the whole-portfolio one as what it is.
+  const dailyChangeILS = stockList.reduce((sum, stock) => sum + (stock.dailyChange / 100) * stock.value, 0);
+  const stocksValueILS = stockList.reduce((sum, stock) => sum + stock.value, 0);
+  const dailyChangeStocksPercent = stocksValueILS > 0 ? (dailyChangeILS / stocksValueILS) * 100 : 0;
+  const weightedDailyChangePercent = totalValueILS > 0 ? (dailyChangeILS / totalValueILS) * 100 : 0;
   const weightedAnnualizedReturnPercent = totalPurchaseILS > 0
     ? stockList.reduce((sum, stock) => sum + ((stock.annualizedReturn || 0) * stock.totalPurchaseValue), 0) /
       totalPurchaseILS * 100
@@ -357,6 +370,9 @@ export const calculatePortfolioAnalysis = (
       totalPurchaseILS,
       totalProfitILS,
       weightedDailyChangePercent,
+      dailyChangeStocksPercent,
+      dailyChangeILS,
+      stocksValueILS,
       weightedAnnualizedReturnPercent,
       concentrationTop3Percent,
       averageHoldingDays,

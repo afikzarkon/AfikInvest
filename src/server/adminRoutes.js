@@ -34,6 +34,7 @@ const { createRateLimiter } = require('./rateLimit');
 const { scrub } = require('./errorLog');
 const { sourceHealth } = require('./sourceHealth');
 const { yahooCooldownState } = require('./yahooQuotes');
+const { fmpPlanState } = require('./fmpClient');
 const { FLAG_DEFINITIONS, FLAG_KEY_PATTERN, isFlagState, flagVisibleTo, defaultFlagStates } = require('../shared/featureFlags');
 
 const MAX_DESCRIPTION = 300;
@@ -411,7 +412,13 @@ function mountAdminRoutes(app, { admin, store, accounts, auth, features }) {
   // shown on its row, since while it is on no request is made at all.
   app.get('/api/admin/sources', (req, res) => {
     const { cooldownUntil } = yahooCooldownState();
-    return res.json({ sources: sourceHealth.snapshot({ 'yahoo-summary': { cooldownUntil } }) });
+    const fmp = fmpPlanState();
+    return res.json({
+      sources: sourceHealth.snapshot({
+        'yahoo-summary': { cooldownUntil },
+        fmp: { cooldownUntil: fmp.cooldownUntil, note: fmp.refusedEndpoints.length ? `לא בתוכנית של המפתח: ${fmp.refusedEndpoints.join(', ')}` : null }
+      })
+    });
   });
 
   app.delete('/api/admin/errors', writeLimiter, async (req, res) => {

@@ -49,6 +49,7 @@ function SourcesSection() {
                   {` · ${s.successes} הצלחות, ${s.failures} כישלונות`}
                   {s.consecutiveFailures ? ` · ${s.consecutiveFailures} ברצף` : ''}
                 </p>
+                {s.note ? <p className="admin-flag-meta">{s.note}</p> : null}
                 {s.lastError && s.status !== 'ok' ? (
                   <pre className="admin-log-detail" dir="ltr">
                     {s.lastError}

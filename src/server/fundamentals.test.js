@@ -171,6 +171,23 @@ describe('fetchStatements', () => {
     const out = await fetchStatements('X', { fmpApiKey: 'k', fmp, yahoo: async () => yahooRows, logger: quiet });
     expect(out).toEqual({ annual: [{ periodEnd: '2015-12-31' }, { periodEnd: '2024-12-31' }], quarterly: yahooRows.quarterly, source: 'fmp' });
   });
+
+  // A key whose plan leaves the statements out (402) is asked once, then
+  // not again for a day: every later valuation goes straight to Yahoo.
+  test('a plan refusal (402) sends later requests straight to Yahoo, without asking FMP', async () => {
+    const { resetFmpBudget } = require('./fmpClient');
+    resetFmpBudget();
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const yahoo = jest.fn(async () => yahooRows);
+    const refused = jest.fn(async () => {
+      throw Object.assign(new Error('Request failed with status code 402'), { response: { status: 402 } });
+    });
+    expect(await fetchStatements('X', { fmpApiKey: 'k', fmp: refused, yahoo, logger: quiet })).toBe(yahooRows);
+    expect(await fetchStatements('Y', { fmpApiKey: 'k', fmp: refused, yahoo, logger: quiet })).toBe(yahooRows);
+    expect(refused).toHaveBeenCalledTimes(1);
+    resetFmpBudget();
+    warn.mockRestore();
+  });
 });
 
 test('the peer list is retried through the crumb session when a plain request is refused', async () => {
