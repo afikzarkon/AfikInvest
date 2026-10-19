@@ -166,7 +166,7 @@ function FigureCells({ f, pending, showAdditionalData, formatPrice, buyPrice, is
       <td>
         <Merged
           main={<PendingPriceValue value={f.currentPrice} pending={pending} format={priceText(formatPrice)} />}
-          sub={<>{isGroup ? 'קנייה ממוצע ' : 'קנייה '}{buyPrice}</>}
+          sub={<>{isGroup ? 'ממוצע ' : 'קנייה '}{buyPrice}</>}
         />
       </td>
       <td>
@@ -236,8 +236,23 @@ function IsraeliStocksTable({
   const field = (stock, name, extra) => (
     <EditableCell id={stock.id} exchange="israeli" field={name} value={stock[name]} {...editProps} {...extra} />
   );
-  const nameField = (stock, as, style) =>
-    field(stock, 'stockName', { displayValue: <IsraeliAssetCell stock={stock} />, label: COL.name.title, as, style });
+  // In the table the name sits in a fixed column beside the expand slot,
+  // so names line up whether or not the row has one; a lot's row marks its
+  // indent. In a card the name stands alone.
+  const nameField = (stock, as, { lot = false } = {}) =>
+    field(stock, 'stockName', {
+      displayValue:
+        as === 'span' ? (
+          <IsraeliAssetCell stock={stock} />
+        ) : (
+          <span className={`name-cell ${lot ? 'is-lot' : ''}`}>
+            <span className="expand-slot" aria-hidden="true" />
+            <IsraeliAssetCell stock={stock} />
+          </span>
+        ),
+      label: COL.name.title,
+      as
+    });
   const dateField = (stock, as) =>
     field(stock, 'purchaseDate', { type: 'date', displayValue: formatDate(stock.purchaseDate), label: COL.date.title, as });
   const priceField = (stock, as = 'span') =>
@@ -398,7 +413,7 @@ function IsraeliStocksTable({
                     onClick={() => handleCellClick(stocks[0].id, 'stockName', 'israeli')}
                     className={isEditMode ? 'editable-cell' : ''}
                   >
-                    <span className="group-name-cell">
+                    <span className="name-cell">
                       <button
                         type="button"
                         onClick={() => toggleGroup(stockName, 'israeli')}
@@ -410,7 +425,7 @@ function IsraeliStocksTable({
                       </button>
                       <span>
                         <IsraeliAssetCell stock={stocks[0]} />
-                        <span className="lots-badge">{stocks.length} קניות</span>
+                        <span className="lots-count">{stocks.length} קניות</span>
                       </span>
                     </span>
                   </td>
@@ -427,7 +442,7 @@ function IsraeliStocksTable({
                 {isExpanded &&
                   stocks.map((stock, i) => (
                     <tr key={stock.id} className={`${isEditMode ? 'editable-row' : ''} detail-row`}>
-                      {nameField(stock, 'td', { paddingInlineStart: '28px' })}
+                      {nameField(stock, 'td', { lot: true })}
                       {dateField(stock)}
                       {quantityField(stock)}
                       {showAdditionalData && (

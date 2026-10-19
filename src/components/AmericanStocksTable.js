@@ -118,8 +118,8 @@ function FigureCells({ f, pending, showAdditionalData, formatPrice, buyPrice, ra
     <>
       <td>
         <Merged
-          main={<span className="mv-num"><PendingPriceValue value={f.currentPrice} pending={pending} format={usd} /></span>}
-          sub={<>{isGroup ? 'קנייה ממוצע ' : 'קנייה '}{buyPrice}</>}
+          main={<span className="mv-num"><PendingPriceValue value={f.currentPrice} pending={pending} format={formatPrice} /></span>}
+          sub={<>{isGroup ? 'ממוצע ' : 'קנייה '}{buyPrice}</>}
         />
       </td>
       <td title={isGroup ? PER_LOT_TITLE : undefined}>
@@ -194,14 +194,32 @@ function AmericanStocksTable({
   const field = (stock, name, extra) => (
     <EditableCell id={stock.id} exchange="american" field={name} value={stock[name]} {...editProps} {...extra} />
   );
-  const nameField = (stock, as, style) => field(stock, 'stockName', { displayValue: <AssetCell name={stock.stockName} />, label: COL.name.title, as, style });
+  // In the table the name sits in a fixed column beside the expand slot,
+  // so names line up whether or not the row has one; a lot's row marks its
+  // indent. In a card the name stands alone.
+  const nameField = (stock, as, { lot = false } = {}) =>
+    field(stock, 'stockName', {
+      displayValue:
+        as === 'span' ? (
+          <AssetCell name={stock.stockName} />
+        ) : (
+          <span className={`name-cell ${lot ? 'is-lot' : ''}`}>
+            <span className="expand-slot" aria-hidden="true" />
+            <AssetCell name={stock.stockName} />
+          </span>
+        ),
+      label: COL.name.title,
+      as
+    });
   const dateField = (stock, as) => field(stock, 'purchaseDate', { type: 'date', displayValue: formatDate(stock.purchaseDate), label: COL.date.title, as });
-  const priceField = (stock, as = 'span') =>
+  // In the table the column's header carries the "$"; in a card the
+  // figure stands alone, so it carries its own.
+  const priceField = (stock, as = 'span', withCurrency = true) =>
     field(stock, 'purchasePrice', {
       type: 'number',
       step: '0.01',
       parse: (raw) => parseFloat(raw),
-      displayValue: `${formatPriceWithSign(stock.purchasePrice)} $`,
+      displayValue: withCurrency ? `${formatPriceWithSign(stock.purchasePrice)} $` : formatPrice(stock.purchasePrice),
       label: 'מחיר קנייה',
       as
     });
@@ -349,7 +367,7 @@ function AmericanStocksTable({
                   {nameField(stock)}
                   {dateField(stock)}
                   {quantityField(stock)}
-                  <FigureCells f={total} buyPrice={priceField(stock)} rateAtBuy={rateField(stock)} {...cellProps} />
+                  <FigureCells f={total} buyPrice={priceField(stock, 'span', false)} rateAtBuy={rateField(stock)} {...cellProps} />
                   {isEditMode && <td>{deleteButton(stock)}</td>}
                 </tr>
               );
@@ -359,7 +377,7 @@ function AmericanStocksTable({
               <React.Fragment key={stockName}>
                 <tr className={`${isEditMode ? 'editable-row' : ''} ${isExpanded ? 'summary-row-expanded' : ''}`}>
                   <td onClick={() => handleCellClick(stocks[0].id, 'stockName', 'american')} className={isEditMode ? 'editable-cell' : ''}>
-                    <span className="group-name-cell">
+                    <span className="name-cell">
                       <button
                         type="button"
                         onClick={() => toggleGroup(stockName, 'american')}
@@ -371,22 +389,22 @@ function AmericanStocksTable({
                       </button>
                       <span>
                         <AssetCell name={stockName} />
-                        <span className="lots-badge">{stocks.length} קניות</span>
+                        <span className="lots-count">{stocks.length} קניות</span>
                       </span>
                     </span>
                   </td>
                   <td title={PER_LOT_TITLE}>{PER_LOT}</td>
                   <td>{total.quantity}</td>
-                  <FigureCells f={total} buyPrice={usd(total.purchasePrice)} rateAtBuy={PER_LOT} isGroup {...cellProps} />
+                  <FigureCells f={total} buyPrice={formatPrice(total.purchasePrice)} rateAtBuy={PER_LOT} isGroup {...cellProps} />
                   {isEditMode && <td></td>}
                 </tr>
                 {isExpanded &&
                   stocks.map((stock, i) => (
                     <tr key={stock.id} className={`${isEditMode ? 'editable-row' : ''} detail-row`}>
-                      {nameField(stock, 'td', { paddingInlineStart: '28px' })}
+                      {nameField(stock, 'td', { lot: true })}
                       {dateField(stock)}
                       {quantityField(stock)}
-                      <FigureCells f={lots[i]} buyPrice={priceField(stock)} rateAtBuy={rateField(stock)} {...cellProps} />
+                      <FigureCells f={lots[i]} buyPrice={priceField(stock, 'span', false)} rateAtBuy={rateField(stock)} {...cellProps} />
                       {isEditMode && <td>{deleteButton(stock)}</td>}
                     </tr>
                   ))}

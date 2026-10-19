@@ -10974,12 +10974,37 @@ select.auth-input[dir='ltr'] {
   display: inline;
 }
 
-/* A grouped holding's name cell: the expand control, the name, and how
-   many purchases it holds. */
-.group-name-cell {
-  display: inline-flex;
+/* The name column: a fixed slot for the expand control at the start (the
+   right), then the name - so every name begins at the same edge whether or
+   not its row can expand. Direction is set here because the table's
+   scroller is left-to-right, and a grid inherits that. A lot's row shows
+   its indent with a rule beside the name; a group shows how many purchases
+   it holds, quietly, under its identifier. */
+.name-cell {
+  direction: rtl;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
   align-items: center;
-  gap: 8px;
+  column-gap: 10px;
+  text-align: right;
+}
+
+.expand-slot {
+  width: 28px;
+  height: 28px;
+}
+
+.name-cell.is-lot .asset-cell {
+  padding-inline-start: 10px;
+  border-inline-start: 2px solid var(--sw-border-strong);
+}
+
+.lots-count {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--sw-text-muted);
 }
 
 .expand-button {
