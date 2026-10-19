@@ -25,7 +25,7 @@ function defaultEnabled() {
 }
 
 export function useFeatureFlags(user, authHeader) {
-  const [state, setState] = useState(() => ({ flags: defaultEnabled(), isAdmin: false, loaded: false }));
+  const [state, setState] = useState(() => ({ flags: defaultEnabled(), isAdmin: false, adminActive: false, needs2fa: false, loaded: false }));
   const headerRef = useRef(authHeader);
   headerRef.current = authHeader;
   const userId = user ? user.id : null;
@@ -38,7 +38,15 @@ export function useFeatureFlags(user, authHeader) {
       });
       if (!r.ok) throw new Error(String(r.status));
       const d = await r.json();
-      setState({ flags: Array.isArray(d.flags) ? d.flags : [], isAdmin: Boolean(d.isAdmin), loaded: true });
+      // isAdmin: holds the role. adminActive: may use it (2FA on) - what
+      // the server enforces. needs2fa: the role without 2FA yet.
+      setState({
+        flags: Array.isArray(d.flags) ? d.flags : [],
+        isAdmin: Boolean(d.isAdmin),
+        adminActive: Boolean(d.adminActive),
+        needs2fa: Boolean(d.needs2fa),
+        loaded: true
+      });
     } catch {
       // Unreachable: keep what we have, but stop waiting for it - the
       // pages held back for the first answer render on the defaults.
@@ -48,7 +56,7 @@ export function useFeatureFlags(user, authHeader) {
 
   useEffect(() => {
     if (!userId) {
-      setState({ flags: defaultEnabled(), isAdmin: false, loaded: false });
+      setState({ flags: defaultEnabled(), isAdmin: false, adminActive: false, needs2fa: false, loaded: false });
       return undefined;
     }
     refresh();

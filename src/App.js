@@ -22,6 +22,8 @@ import { monthKeyFromDate } from './utils/cpiTax';
 import { useRoute } from './hooks/useRoute';
 import { usePageViews } from './hooks/usePageViews';
 import { useFeatureFlags } from './hooks/useFeatureFlags';
+import { useSystemStatus } from './hooks/useSystemStatus';
+import { SystemBanner, MaintenanceScreen } from './components/SystemNotices';
 import { trackEvent } from './utils/analytics';
 import { routeByKey } from './router/routes';
 import HomeView from './components/HomeView';
@@ -229,6 +231,27 @@ function App() {
   // Until the flags have loaded, those pages wait rather than appear and
   // vanish. The server enforces the same on its APIs.
   const featureFlags = useFeatureFlags(user, authHeader);
+  // The admin's banner and maintenance mode (hooks/useSystemStatus.js).
+  // While maintenance is on, everyone but an active admin gets the
+  // maintenance screen (the server answers them 503 anyway); the sign-in
+  // screen says so too, so an admin can still get in.
+  const system = useSystemStatus();
+  const inMaintenance = system.maintenance.enabled;
+  const maintenanceText = system.maintenance.message || 'האתר בתחזוקה. נחזור בקרוב.';
+  const screenBanner = inMaintenance ? { text: maintenanceText, level: 'critical', id: 'maintenance' } : system.banner;
+  const appBanner = inMaintenance
+    ? { text: `מצב תחזוקה פעיל - רק אדמינים רואים את האתר. ${system.maintenance.message || ''}`.trim(), level: 'critical', id: 'maintenance' }
+    : system.banner;
+  const showMaintenance = Boolean(user) && inMaintenance && featureFlags.loaded && !featureFlags.adminActive;
+  // Requests that failed with 503 during maintenance are not retried one by
+  // one: when it ends, the page starts over.
+  const sawMaintenance = React.useRef(false);
+  useEffect(() => {
+    if (showMaintenance) sawMaintenance.current = true;
+    else if (sawMaintenance.current && !inMaintenance) window.location.reload();
+  }, [showMaintenance, inMaintenance]);
+  // The panel stays reachable for the role without 2FA, to say what is
+  // missing; everything in it is refused by the server until then.
   const hiddenRoutes = featureFlags.isAdmin ? featureFlags.hiddenRoutes : [...featureFlags.hiddenRoutes, 'admin'];
   const routeHidden = featureFlags.loaded && hiddenRoutes.includes(routePage);
   const activePage = routeHidden ? 'home' : routePage;
@@ -818,6 +841,7 @@ function App() {
         <div className="auth-theme-toggle-wrap">
           <ThemeToggleButton theme={theme} onToggleTheme={toggleTheme} />
         </div>
+        <SystemBanner banner={screenBanner} />
         <ResetPasswordView token={resetToken} onDone={finishReset} />
       </div>
     );
@@ -831,6 +855,7 @@ function App() {
         <div className="auth-theme-toggle-wrap">
           <ThemeToggleButton theme={theme} onToggleTheme={toggleTheme} />
         </div>
+        <SystemBanner banner={screenBanner} />
         <AccountLinkView
           link={accountLink}
           onAuthenticated={(u, token, meta) => {
@@ -856,9 +881,14 @@ function App() {
         <div className="auth-theme-toggle-wrap">
           <ThemeToggleButton theme={theme} onToggleTheme={toggleTheme} />
         </div>
+        <SystemBanner banner={screenBanner} />
         <AuthView key={authNotice} onAuthenticated={handleAuthenticated} initialMode={initialMode} initialNotice={authNotice} />
       </div>
     );
+  }
+
+  if (showMaintenance) {
+    return <MaintenanceScreen message={system.maintenance.message} onLogout={handleLogout} theme={theme} onToggleTheme={toggleTheme} />;
   }
 
   if (!portfolioReady) {
@@ -962,7 +992,16 @@ function App() {
     }
     switch (activePage) {
       case 'admin':
-        return <AdminView onFlagsChanged={featureFlags.refresh} />;
+        return (
+          <AdminView
+            needs2fa={featureFlags.needs2fa}
+            currentUserId={user.id}
+            theme={theme}
+            onFlagsChanged={featureFlags.refresh}
+            onSystemChanged={system.refresh}
+            onNavigate={navigate}
+          />
+        );
 
       case 'israeli-stocks':
         return <IsraeliStocksPage {...tableProps} {...toolbarProps} />;
@@ -1153,6 +1192,7 @@ function App() {
         isAdmin={featureFlags.isAdmin}
         hiddenRoutes={hiddenRoutes}
       >
+        <SystemBanner banner={appBanner} />
         {showProfilePrompt ? <ProfilePrompt completion={completion} onComplete={() => navigate('settings')} onDismiss={dismissProfilePrompt} /> : null}
         {/* Only the lazily-loaded pages ever suspend; the dashboard is in the
             initial bundle and renders straight through this. */}
