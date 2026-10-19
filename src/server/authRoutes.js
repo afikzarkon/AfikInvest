@@ -15,7 +15,7 @@ const { ipKeyGenerator } = require('express-rate-limit');
 const { PG_UNIQUE_VIOLATION } = require('./dataStore');
 const { createEmailService, getAppUrl } = require('./emailService');
 const { createTotpEnrollment, encryptSecret } = require('./totp');
-const { COOKIE_NAME, clearCookieAttrs } = require('./authSession');
+const { COOKIE_NAME, clearCookieAttrs, BLOCKED_MESSAGE, isBlockedError } = require('./authSession');
 const {
   createAuthCore,
   publicUser,
@@ -118,6 +118,8 @@ function dummyHash() {
 }
 
 const serverError = (res, label, err) => {
+  // A sign-in reaching a blocked account (authSession.js) - not a fault.
+  if (isBlockedError(err)) return res.status(403).json({ error: BLOCKED_MESSAGE, blocked: true });
   console.error(label, err && err.stack ? err.stack : err);
   return res.status(500).json({ error: SERVER_ERROR });
 };
@@ -485,25 +487,31 @@ function mountAuthRoutes(app, store, options = {}) {
   // ----- forgotten password -----
 
   // Always the same reply, whether or not the address has an account.
+  // Emails the user a password-reset link. False when no link can be built
+  // (APP_URL unset). Shared by "forgot password" and the admin panel - in
+  // both, the link goes only to the account's own address.
+  async function sendPasswordReset(user) {
+    const appUrl = getAppUrl();
+    if (!appUrl) {
+      console.error('auth/forgot-password: APP_URL is not set - cannot build a reset link');
+      return false;
+    }
+    const token = crypto.randomBytes(32).toString('base64url');
+    const expiresAt = Date.now() + RESET_TOKEN_MINUTES * 60 * 1000;
+    // Only the hash is stored: a database leak yields no usable link.
+    await store.createPasswordReset(user.id, hashToken(token), expiresAt);
+    const link = `${appUrl}/reset-password?token=${encodeURIComponent(token)}`;
+    sendInBackground('reset', () => mailer.sendPasswordResetEmail(user.email, link, RESET_TOKEN_MINUTES));
+    return true;
+  }
+
   app.post('/api/auth/forgot-password', forgotIpLimiter, emailInboxLimiter, async (req, res) => {
     const parsedEmail = validate(emailSchema, bodyString(req, 'email'));
     if (!parsedEmail.ok) return res.status(400).json({ error: 'כתובת אימייל לא תקינה' });
     const email = parsedEmail.data;
     try {
       const user = await store.findUserForLogin(email);
-      if (user) {
-        const appUrl = getAppUrl();
-        if (!appUrl) {
-          console.error('auth/forgot-password: APP_URL is not set - cannot build a reset link');
-        } else {
-          const token = crypto.randomBytes(32).toString('base64url');
-          const expiresAt = Date.now() + RESET_TOKEN_MINUTES * 60 * 1000;
-          // Only the hash is stored: a database leak yields no usable link.
-          await store.createPasswordReset(user.id, hashToken(token), expiresAt);
-          const link = `${appUrl}/reset-password?token=${encodeURIComponent(token)}`;
-          sendInBackground('reset', () => mailer.sendPasswordResetEmail(user.email, link, RESET_TOKEN_MINUTES));
-        }
-      }
+      if (user) await sendPasswordReset(user);
       return res.json({ ok: true, message: GENERIC_FORGOT_REPLY });
     } catch (err) {
       return serverError(res, 'auth/forgot-password', err);
@@ -626,7 +634,7 @@ function mountAuthRoutes(app, store, options = {}) {
     }
   });
 
-  return { core, requireSessionUser };
+  return { core, requireSessionUser, sendPasswordReset };
 }
 
 module.exports = {

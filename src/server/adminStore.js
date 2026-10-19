@@ -41,8 +41,45 @@ const SCHEMA = [
     ip_prefix TEXT,
     created_at TEXT NOT NULL
   )`,
-  'CREATE INDEX IF NOT EXISTS admin_audit_log_created_idx ON admin_audit_log (created_at)'
+  'CREATE INDEX IF NOT EXISTS admin_audit_log_created_idx ON admin_audit_log (created_at)',
+  // Site-wide settings an admin changes live: the banner, maintenance mode.
+  // One JSON document per key.
+  `CREATE TABLE IF NOT EXISTS system_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    updated_by_email TEXT
+  )`,
+  // Server errors captured from console.error (errorLog.js), scrubbed of
+  // addresses and tokens before they are written.
+  `CREATE TABLE IF NOT EXISTS server_errors (
+    id TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    label TEXT NOT NULL,
+    detail TEXT NOT NULL
+  )`,
+  'CREATE INDEX IF NOT EXISTS server_errors_created_idx ON server_errors (created_at)'
 ];
+
+// Admin powers need the role AND two-factor sign-in on the account.
+// ADMIN_REQUIRE_2FA=0 lifts the second part, outside production only - for
+// local development.
+function defaultRequire2fa() {
+  return process.env.NODE_ENV === 'production' || process.env.ADMIN_REQUIRE_2FA !== '0';
+}
+
+const truthy = (v) => v === true || Number(v) === 1;
+
+// A users.created_at as YYYY-MM-DD: TEXT on SQLite, a Date from Postgres.
+const dayOf = (v) => (v instanceof Date ? v.toISOString() : String(v || '')).slice(0, 10);
+const isoOf = (v) => (v instanceof Date ? v.toISOString() : v ? String(v).replace(' ', 'T') : null);
+
+const SETTING_DEFAULTS = {
+  banner: { active: false, text: '', level: 'info', expiresAt: null },
+  maintenance: { enabled: false, message: '' }
+};
+const SETTINGS_CACHE_MS = 5 * 1000;
+const ERROR_RETENTION_DAYS = 30;
 
 const ADMIN_ROLE = 'admin';
 // How long the flag states are reused before the database is read again.
@@ -107,7 +144,7 @@ async function insertAudit(sql, actor, action, target, before, after) {
   );
 }
 
-async function initAdminStore(store) {
+async function initAdminStore(store, { require2fa = defaultRequire2fa() } = {}) {
   const { sql } = store;
   for (const statement of SCHEMA) await sql.exec(statement);
 
@@ -125,21 +162,67 @@ async function initAdminStore(store) {
   const invalidate = () => {
     flagCache = null;
   };
+  const settingsCache = new Map(); // key -> { value, at }
 
   const api = {
+    require2fa,
+
     // ----- roles -----
+    // Holds the role (whatever its 2FA) - what the client is told, so the
+    // panel can say what is missing.
     async isAdmin(userId) {
       if (!userId) return false;
       const row = await sql.get('SELECT role FROM user_roles WHERE user_id = ?', [Number(userId)]);
       return Boolean(row && row.role === ADMIN_ROLE);
     },
+    // May use admin powers now: the role, a live account, and two-factor
+    // sign-in turned on (unless require2fa is off). Every server-side admin
+    // check goes through this.
+    async isActiveAdmin(userId) {
+      return (await api.adminStatus(userId)).active;
+    },
+    // { isAdmin, active, needs2fa }
+    async adminStatus(userId) {
+      if (!userId) return { isAdmin: false, active: false, needs2fa: false };
+      const row = await sql.get(
+        `SELECT r.role, u.totp_enabled, u.deleted_at FROM user_roles r JOIN users u ON u.id = r.user_id WHERE r.user_id = ?`,
+        [Number(userId)]
+      );
+      const isAdmin = Boolean(row && row.role === ADMIN_ROLE && !row.deleted_at);
+      const has2fa = Boolean(row && truthy(row.totp_enabled));
+      const active = isAdmin && (has2fa || !require2fa);
+      return { isAdmin, active, needs2fa: isAdmin && !active };
+    },
+    // Returns true when the role was removed. Refuses (throws) to remove
+    // the last admin, so the panel can never be left without one.
+    async revokeAdmin(userId, actor) {
+      return sql.transaction(async (tx) => {
+        const row = await tx.get('SELECT role FROM user_roles WHERE user_id = ?', [Number(userId)]);
+        if (!row) return false;
+        const count = await tx.get('SELECT COUNT(*) AS n FROM user_roles WHERE role = ?', [ADMIN_ROLE]);
+        if (Number(count.n) <= 1) {
+          const err = new Error('last admin');
+          err.code = 'LAST_ADMIN';
+          throw err;
+        }
+        await tx.run('DELETE FROM user_roles WHERE user_id = ?', [Number(userId)]);
+        await insertAudit(tx, actor, 'admin.revoke', `user:${Number(userId)}`, { role: row.role }, null);
+        return true;
+      });
+    },
     async listAdmins() {
       const rows = await sql.all(
-        `SELECT r.user_id, u.email, r.granted_at, r.granted_by FROM user_roles r
+        `SELECT r.user_id, u.email, u.totp_enabled, r.granted_at, r.granted_by FROM user_roles r
          JOIN users u ON u.id = r.user_id WHERE r.role = ? ORDER BY r.granted_at ASC`,
         [ADMIN_ROLE]
       );
-      return rows.map((r) => ({ userId: Number(r.user_id), email: r.email, grantedAt: r.granted_at, grantedBy: r.granted_by }));
+      return rows.map((r) => ({
+        userId: Number(r.user_id),
+        email: r.email,
+        has2fa: truthy(r.totp_enabled),
+        grantedAt: r.granted_at,
+        grantedBy: r.granted_by
+      }));
     },
     // grantedBy: who granted it, as text ('bootstrap:ADMIN_EMAILS', 'script',
     // or an admin's email). Returns true when the role was newly granted.
@@ -245,6 +328,147 @@ async function initAdminStore(store) {
       });
       invalidate();
       return deleted;
+    },
+
+    // ----- system settings (banner, maintenance) -----
+    async getSetting(key) {
+      const hit = settingsCache.get(key);
+      if (hit && Date.now() - hit.at < SETTINGS_CACHE_MS) return hit.value;
+      const row = await sql.get('SELECT value, updated_at, updated_by_email FROM system_settings WHERE key = ?', [key]);
+      const stored = row ? parseJson(row.value) : null;
+      const value = Object.assign({}, SETTING_DEFAULTS[key] || {}, stored || {}, {
+        updatedAt: row ? row.updated_at : null,
+        updatedByEmail: row ? row.updated_by_email || null : null
+      });
+      settingsCache.set(key, { value, at: Date.now() });
+      return value;
+    },
+    async setSetting(key, value, actor) {
+      await sql.transaction(async (tx) => {
+        const beforeRow = await tx.get('SELECT value FROM system_settings WHERE key = ?', [key]);
+        await tx.run(
+          `INSERT INTO system_settings (key, value, updated_at, updated_by_email) VALUES (?, ?, ?, ?)
+           ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by_email = excluded.updated_by_email`,
+          [key, JSON.stringify(value), nowIso(), actor.email]
+        );
+        await insertAudit(tx, actor, `setting.${key}`, `setting:${key}`, beforeRow ? parseJson(beforeRow.value) : null, value);
+      });
+      settingsCache.delete(key);
+      return api.getSetting(key);
+    },
+
+    // ----- server errors -----
+    async insertError(label, detail) {
+      await sql.run('INSERT INTO server_errors (id, created_at, label, detail) VALUES (?, ?, ?, ?)', [
+        crypto.randomUUID(),
+        nowIso(),
+        String(label).slice(0, 300),
+        String(detail).slice(0, 4000)
+      ]);
+    },
+    async pruneErrors(now = Date.now()) {
+      const cutoff = new Date(now - ERROR_RETENTION_DAYS * 86400000).toISOString();
+      await sql.run('DELETE FROM server_errors WHERE created_at < ?', [cutoff]);
+    },
+    async listErrors(limit = 100) {
+      const n = Math.min(Math.max(Number(limit) || 100, 1), 500);
+      const rows = await sql.all('SELECT * FROM server_errors ORDER BY created_at DESC LIMIT ?', [n]);
+      return rows.map((r) => ({ id: r.id, createdAt: r.created_at, label: r.label, detail: r.detail }));
+    },
+    async clearErrors(actor) {
+      const r = await sql.run('DELETE FROM server_errors');
+      await insertAudit(sql, actor, 'errors.clear', null, { count: r.changes }, null);
+      return r.changes;
+    },
+
+    // ----- users (account status only - never portfolio contents) -----
+    // { users, total }. q matches the address; LIKE's wildcards in it are
+    // escaped with '!'.
+    async listUsers({ q = '', limit = 50, offset = 0 } = {}) {
+      const n = Math.min(Math.max(Number(limit) || 50, 1), 1000);
+      const skip = Math.max(Number(offset) || 0, 0);
+      const like = `%${String(q).trim().toLowerCase().replace(/[!%_]/g, (c) => `!${c}`)}%`;
+      const rows = await sql.all(
+        `SELECT u.id, u.email, u.created_at, u.email_verified_at, u.totp_enabled, u.deleted_at, u.password_set,
+                b.reason AS block_reason, b.blocked_at, b.blocked_by, r.role,
+                (SELECT MAX(s.last_seen_at) FROM user_sessions s WHERE s.user_id = u.id) AS last_seen_at,
+                (SELECT COUNT(*) FROM user_sessions s WHERE s.user_id = u.id AND s.revoked_at IS NULL AND s.expires_at > ?) AS active_sessions
+         FROM users u
+         LEFT JOIN user_blocks b ON b.user_id = u.id
+         LEFT JOIN user_roles r ON r.user_id = u.id
+         WHERE LOWER(u.email) LIKE ? ESCAPE '!'
+         ORDER BY u.id DESC LIMIT ? OFFSET ?`,
+        [nowIso(), like, n, skip]
+      );
+      const total = await sql.get("SELECT COUNT(*) AS n FROM users u WHERE LOWER(u.email) LIKE ? ESCAPE '!'", [like]);
+      const ids = rows.map((r) => Number(r.id));
+      const providers = {};
+      if (ids.length) {
+        const links = await sql.all(`SELECT user_id, provider FROM oauth_accounts WHERE user_id IN (${ids.map(() => '?').join(', ')})`, ids);
+        links.forEach((l) => {
+          const id = Number(l.user_id);
+          providers[id] = (providers[id] || []).concat(l.provider);
+        });
+      }
+      return {
+        total: Number(total ? total.n : 0),
+        users: rows.map((r) => ({
+          id: Number(r.id),
+          email: r.email,
+          createdAt: isoOf(r.created_at),
+          emailVerified: Boolean(r.email_verified_at),
+          has2fa: truthy(r.totp_enabled),
+          hasPassword: r.password_set === null || r.password_set === undefined ? true : truthy(r.password_set),
+          providers: providers[Number(r.id)] || [],
+          lastSeenAt: r.last_seen_at || null,
+          activeSessions: Number(r.active_sessions) || 0,
+          isAdmin: r.role === ADMIN_ROLE,
+          blocked: r.block_reason !== null && r.block_reason !== undefined ? { reason: r.block_reason, at: r.blocked_at, by: r.blocked_by } : null,
+          deletionPending: Boolean(r.deleted_at)
+        }))
+      };
+    },
+
+    // ----- usage statistics: counts only -----
+    async getStats(now = Date.now()) {
+      const users = await sql.all('SELECT created_at, email_verified_at, totp_enabled, deleted_at FROM users');
+      const count = (fn) => users.filter(fn).length;
+      const since = (days) => new Date(now - days * 86400000).toISOString();
+      const activeSince = async (days) =>
+        Number((await sql.get('SELECT COUNT(DISTINCT user_id) AS n FROM user_sessions WHERE last_seen_at >= ?', [since(days)])).n) || 0;
+
+      // Sign-ups per day for the last 30 days, every day present.
+      const days = [];
+      for (let i = 29; i >= 0; i -= 1) days.push(new Date(now - i * 86400000).toISOString().slice(0, 10));
+      const perDay = {};
+      days.forEach((d) => {
+        perDay[d] = 0;
+      });
+      users.forEach((u) => {
+        const d = dayOf(u.created_at);
+        if (d in perDay) perDay[d] += 1;
+      });
+
+      const providerRows = await sql.all('SELECT provider, COUNT(DISTINCT user_id) AS n FROM oauth_accounts GROUP BY provider');
+      const providers = {};
+      providerRows.forEach((r) => {
+        providers[r.provider] = Number(r.n);
+      });
+      const blocked = await sql.get('SELECT COUNT(*) AS n FROM user_blocks');
+      const portfolios = await sql.get('SELECT COUNT(*) AS n FROM user_portfolios');
+      return {
+        users: {
+          total: users.length,
+          verified: count((u) => u.email_verified_at),
+          with2fa: count((u) => truthy(u.totp_enabled)),
+          deletionPending: count((u) => u.deleted_at),
+          blocked: Number(blocked.n) || 0,
+          withSavedPortfolio: Number(portfolios.n) || 0
+        },
+        active: { day: await activeSince(1), week: await activeSince(7), month: await activeSince(30) },
+        signupsLast30Days: days.map((d) => ({ date: d, count: perDay[d] })),
+        providers
+      };
     },
 
     // ----- audit log -----

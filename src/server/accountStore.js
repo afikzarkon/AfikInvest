@@ -129,6 +129,20 @@ const MIGRATIONS = [
         updated_at TEXT NOT NULL
       )`
     ]
+  },
+  {
+    // Accounts an admin has blocked (adminRoutes.js). While a row exists no
+    // session can be issued (authSession.js) and the block itself ended the
+    // live ones. blocked_by is the admin's address, kept as text.
+    id: '2026-10-user-blocks-v1',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS user_blocks (
+        user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        reason TEXT NOT NULL,
+        blocked_at TEXT NOT NULL,
+        blocked_by TEXT NOT NULL
+      )`
+    ]
   }
 ];
 
@@ -543,6 +557,21 @@ async function initAccountStore(store) {
     // whose competing sign-ups left no trustworthy choice).
     async setUnusablePassword(userId, randomHash) {
       await sql.run('UPDATE users SET password_hash = ?, password_set = 0, token_version = token_version + 1 WHERE id = ?', [randomHash, userId]);
+    },
+    // ----- blocks (admin) -----
+    async isBlocked(userId) {
+      return Boolean(await sql.get('SELECT 1 AS x FROM user_blocks WHERE user_id = ?', [Number(userId)]));
+    },
+    async blockUser(userId, { reason, blockedBy }) {
+      await sql.run(
+        `INSERT INTO user_blocks (user_id, reason, blocked_at, blocked_by) VALUES (?, ?, ?, ?)
+         ON CONFLICT (user_id) DO UPDATE SET reason = excluded.reason, blocked_at = excluded.blocked_at, blocked_by = excluded.blocked_by`,
+        [Number(userId), String(reason || ''), nowIso(), String(blockedBy || '')]
+      );
+    },
+    async unblockUser(userId) {
+      const r = await sql.run('DELETE FROM user_blocks WHERE user_id = ?', [Number(userId)]);
+      return r.changes > 0;
     },
     async bumpTokenVersion(userId) {
       await sql.run('UPDATE users SET token_version = token_version + 1 WHERE id = ?', [userId]);

@@ -38,6 +38,16 @@ function clearCookieAttrs() {
   return cookieSharedAttributes();
 }
 
+// Thrown by issueSession for an account an admin has blocked; the route
+// error helpers turn it into a 403 with BLOCKED_MESSAGE.
+const BLOCKED_MESSAGE = 'החשבון הזה חסום. לפרטים אפשר לפנות לתמיכה.';
+function blockedError() {
+  const err = new Error('Account blocked');
+  err.code = 'ACCOUNT_BLOCKED';
+  return err;
+}
+const isBlockedError = (err) => Boolean(err && err.code === 'ACCOUNT_BLOCKED');
+
 function signSession(user, jwtSecret, { sid = null, ttlMs = REMEMBER_TTL_MS } = {}) {
   const claims = { sub: user.id, email: user.email, tv: user.token_version || 0 };
   if (sid) claims.sid = sid;
@@ -48,6 +58,8 @@ function signSession(user, jwtSecret, { sid = null, ttlMs = REMEMBER_TTL_MS } = 
 // as before device sessions existed).
 function createSessionIssuer({ accounts, jwtSecret }) {
   return async function issueSession(req, res, user, { remember = true, method = 'password' } = {}) {
+    // Every way in ends here, so a blocked account is refused here once.
+    if (accounts && accounts.isBlocked && (await accounts.isBlocked(user.id))) throw blockedError();
     const ttlMs = remember ? REMEMBER_TTL_MS : SHORT_TTL_MS;
     const context = requestContext(req);
     let sid = null;
@@ -68,5 +80,7 @@ module.exports = {
   cookieOptions,
   clearCookieAttrs,
   signSession,
-  createSessionIssuer
+  createSessionIssuer,
+  BLOCKED_MESSAGE,
+  isBlockedError
 };

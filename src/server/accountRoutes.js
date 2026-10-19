@@ -10,7 +10,7 @@
 const bcrypt = require('bcryptjs');
 const { getAppUrl } = require('./emailService');
 const { limiter, publicUser, sendInBackground, BCRYPT_ROUNDS } = require('./authCore');
-const { COOKIE_NAME, clearCookieAttrs } = require('./authSession');
+const { COOKIE_NAME, clearCookieAttrs, BLOCKED_MESSAGE, isBlockedError } = require('./authSession');
 const {
   profileSchema,
   emailSchema,
@@ -45,6 +45,8 @@ const EXTRA_KEYS = {
 const SERVER_ERROR = 'שגיאת שרת';
 
 const serverError = (res, label, err) => {
+  // A sign-in reaching a blocked account (authSession.js) - not a fault.
+  if (isBlockedError(err)) return res.status(403).json({ error: BLOCKED_MESSAGE, blocked: true });
   console.error(label, err && err.stack ? err.stack : err);
   return res.status(500).json({ error: SERVER_ERROR });
 };

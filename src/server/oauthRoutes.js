@@ -27,6 +27,7 @@ const FacebookStrategy = require('passport-facebook').Strategy;
 const { getAppUrl } = require('./emailService');
 const { limiter, sendInBackground, BCRYPT_ROUNDS } = require('./authCore');
 const { hashToken, randomToken, maskEmail } = require('./authHelpers');
+const { BLOCKED_MESSAGE, isBlockedError } = require('./authSession');
 
 const STATE_COOKIE = 'oauth_state';
 const STATE_TTL_SECONDS = 10 * 60;
@@ -284,6 +285,7 @@ function mountOAuthRoutes(app, { store, accounts, mailer, auth, jwtSecret }) {
       const outcome = await core.loginOutcome(req, res, user, { remember: used.payload.remember !== false, method: used.payload.method });
       return res.json({ ...outcome, newUser: Boolean(used.payload.newUser) });
     } catch (err) {
+      if (isBlockedError(err)) return res.status(403).json({ error: BLOCKED_MESSAGE, blocked: true });
       console.error('oauth/exchange', err && err.stack ? err.stack : err);
       return res.status(500).json({ error: 'שגיאת שרת' });
     }
@@ -310,6 +312,7 @@ function mountOAuthRoutes(app, { store, accounts, mailer, auth, jwtSecret }) {
       const fresh = await store.getAuthUser(user.id);
       return res.json(await core.loginOutcome(req, res, fresh, { remember: remember !== false, method: provider }));
     } catch (err) {
+      if (isBlockedError(err)) return res.status(403).json({ error: BLOCKED_MESSAGE, blocked: true });
       console.error('oauth/confirm-link', err && err.stack ? err.stack : err);
       return res.status(500).json({ error: 'שגיאת שרת' });
     }

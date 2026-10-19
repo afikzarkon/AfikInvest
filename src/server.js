@@ -32,6 +32,8 @@ const { mountInternalJobRoutes } = require('./server/internalJobRoutes');
 const { mountPreferenceRoutes } = require('./server/preferenceRoutes');
 const { mountValuationRoutes } = require('./server/valuationRoutes');
 const { mountAdminRoutes, createFlagGate } = require('./server/adminRoutes');
+const { createSystemGate } = require('./server/systemRoutes');
+const { installErrorCapture } = require('./server/errorLog');
 const { createValuationService, createDefaultSources } = require('./server/valuationService');
 const { createDcfSnapshotService, createReferenceMemory } = require('./server/dcfSnapshot');
 
@@ -48,6 +50,11 @@ app.use(crossSiteRequestGuard());
 // sessions against once bootstrap finishes.
 const sessionGuard = createSessionGuard();
 app.use(sessionGuard.middleware);
+// The banner and maintenance mode (systemRoutes.js): ahead of every route,
+// so maintenance answers 503 for all but admins and what they need to sign in.
+const systemGate = createSystemGate();
+app.use((req, res, next) => systemGate.middleware(req, res, next));
+systemGate.mountStatus(app);
 warnAboutConfiguration();
 
 mountQuotesRoutes(app);
@@ -74,6 +81,9 @@ bootstrapServices()
   .then(async ({ store, features, accounts, admin, marketData, runner }) => {
     sessionGuard.setStore(store, accounts);
     flagGate.attach(admin);
+    systemGate.attach(admin);
+    // Server errors are also kept for the admin panel, scrubbed (errorLog.js).
+    installErrorCapture(admin);
     // The first admin(s): ADMIN_EMAILS names verified accounts to grant the
     // role to. Only ever adds; removing an address here does not revoke.
     const adminEmails = String(process.env.ADMIN_EMAILS || '').split(',').map((e) => e.trim()).filter(Boolean);
@@ -95,7 +105,7 @@ bootstrapServices()
     mountAlertRoutes(app, { store, features, marketData });
     mountInternalJobRoutes(app, { features, runner });
     mountPreferenceRoutes(app, { features });
-    mountAdminRoutes(app, { admin, store });
+    mountAdminRoutes(app, { admin, store, accounts, auth, features });
     // Drains due jobs while the process is up; the external scheduler covers
     // the time the host is asleep. JOBS_POLL=0 turns the poller off - e.g.
     // when a separate worker (src/worker.js) runs the jobs instead.

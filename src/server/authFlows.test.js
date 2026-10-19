@@ -125,6 +125,18 @@ describe('account flows', () => {
     return res.body;
   }
 
+  test('a blocked account cannot sign in: 403 with the reason, no session', async () => {
+    const session = await account();
+    const userId = session.user.id;
+    await accounts.blockUser(userId, { reason: 'test', blockedBy: 'admin@example.com' });
+    const res = await api('POST', '/api/auth/login', { body: { email: 'user@example.com', password: PASSWORD } });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ blocked: true });
+    expect(res.body.token).toBeUndefined();
+    await accounts.unblockUser(userId);
+    expect((await api('POST', '/api/auth/login', { body: { email: 'user@example.com', password: PASSWORD } })).status).toBe(200);
+  });
+
   // ----- sign-up and verification -----
 
   test('sign-up: no session until the address is verified; then a session and the welcome email', async () => {
