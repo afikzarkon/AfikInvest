@@ -146,11 +146,32 @@ describe('PortfolioAnalysisView', () => {
     expect(screen.getByText('גרף עוגה - פיזור התיק', { selector: '.section-title' })).toBeInTheDocument();
   });
 
-  test('"תקציר ניתוח" is trimmed to the 3 metrics not already shown on Home - the other 3 (total P&L, forex impact, total portfolio value) are cut', () => {
+  test('"התיק במבט מהיר" is trimmed to the 3 metrics not already shown on Home - the other 3 (total P&L, forex impact, total portfolio value) are cut', () => {
     render(<PortfolioAnalysisView {...makeProps()} />);
-    expect(screen.getByText('מספר פוזיציות')).toBeInTheDocument();
-    expect(screen.getByText('שינוי יומי משוקלל')).toBeInTheDocument();
-    expect(screen.getByText('ריכוזיות 3 פוזיציות')).toBeInTheDocument();
+    expect(screen.getByText('החזקות בתיק')).toBeInTheDocument();
+    expect(screen.getByText('השינוי היום')).toBeInTheDocument();
+    expect(screen.getByText('3 ההחזקות הגדולות')).toBeInTheDocument();
+    // A per-holding "weighted annualized return" used to ride along here,
+    // disagreeing with the real annual return in the performance section.
+    expect(screen.queryByText(/תשואה שנתית משוקללת/)).toBeNull();
+  });
+
+  // Each number comes with the words that say what it means.
+  test('the concentration figure carries a plain-language verdict', () => {
+    const { container } = render(<PortfolioAnalysisView {...makeProps()} />);
+    const verdict = container.querySelector('.snap-tile .snap-verdict');
+    expect(['מפוזר היטב', 'ריכוזיות בינונית', 'ריכוזי מאוד']).toContain(verdict.textContent);
+  });
+
+  // The method is still on the page, folded away: most visitors want the
+  // answer, not the four steps that produce it.
+  test('the calculation method sits in a collapsed explainer, not above the chart', () => {
+    const { container } = render(<PortfolioAnalysisView {...makeProps()} />);
+    const guide = container.querySelector('.calc-guide');
+    const details = guide.closest('details');
+    expect(details).not.toBeNull();
+    expect(details.open).toBe(false);
+    expect(within(details).getByText('איך מחשבים את התשואה?')).toBeInTheDocument();
     expect(screen.queryByText('רווח/הפסד לא ממומש')).toBeNull();
     expect(screen.queryByText('השפעת מט"ח על רכיב ארה"ב')).toBeNull();
     expect(screen.queryByText('סה"כ שווי תיק מלא')).toBeNull();
@@ -164,7 +185,7 @@ describe('PortfolioAnalysisView', () => {
     const { container } = render(<PortfolioAnalysisView {...makeProps()} />);
     const titles = Array.from(container.querySelectorAll('.section-title')).map((el) => el.textContent);
     expect(titles).toEqual([
-      'תקציר ניתוח',
+      'התיק במבט מהיר',
       'ביצועי התיק לאורך זמן',
       'גרף עוגה - פיזור התיק',
       'פיזור לפי סקטור',
@@ -713,6 +734,8 @@ describe('PortfolioAnalysisView', () => {
       await waitFor(() => expect(screen.getByText('תשואה מאז תחילת ההשקעה')).toBeInTheDocument());
       // The old label measured from the first saved snapshot instead.
       expect(screen.queryByText('תשואה מאז תחילת המעקב')).toBeNull();
+      // The headline is also said as a sentence a non-investor can read.
+      expect(screen.getByText(/שהיו מושקעים בתחילת התקופה הפכו ל-/)).toBeInTheDocument();
     });
 
     test('narrowing the range re-fetches and recomputes, rather than reading a stored figure', async () => {
@@ -821,7 +844,7 @@ describe('PortfolioAnalysisView', () => {
 
       // Scoped to the headline cards: a return that includes deposits is
       // not a return, so no card may present one as performance.
-      const metricCards = Array.from(container.querySelectorAll('.distribution-card h3')).map(
+      const metricCards = Array.from(container.querySelectorAll('.perf-hero-label, .perf-stat-label')).map(
         (el) => el.textContent
       );
       expect(metricCards.some((label) => /כולל הפקדות/.test(label))).toBe(false);

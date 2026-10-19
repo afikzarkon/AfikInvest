@@ -88,6 +88,36 @@ import BetaBanner from './BetaBanner';
 // Labels are shorter than the section headings they lead to: a tab is a
 // signpost read at a glance, and the heading it lands on says the full
 // thing. The icons carry the grouping visually once the labels shorten.
+// A signed percentage that reads correctly inside right-to-left text. The
+// left-to-right mark keeps the sign in front of the number - without it a
+// negative axis tick rendered as "10%-".
+const LRM = '‎';
+const signedPercent = (value, digits = 1) =>
+  `${LRM}${value > 0 ? '+' : ''}${Number(value).toFixed(digits)}%`;
+
+// How long holdings are kept, in the unit a person would use.
+function holdingPeriodText(days) {
+  if (!Number.isFinite(days) || days <= 0) return null;
+  if (days < 60) return `${Math.round(days)} ימים`;
+  if (days < 730) return `כ-${Math.round(days / 30.4)} חודשים`;
+  return `כ-${(days / 365).toFixed(1)} שנים`;
+}
+
+// Plain-language readings of two numbers that mean little on their own.
+// The thresholds are rules of thumb for a private stock portfolio, said as
+// such in the UI, not a formal risk rating.
+function concentrationLevel(percent) {
+  if (percent < 35) return { label: 'מפוזר היטב', tone: 'good' };
+  if (percent < 60) return { label: 'ריכוזיות בינונית', tone: 'warn' };
+  return { label: 'ריכוזי מאוד', tone: 'bad' };
+}
+
+function volatilityLevel(percent) {
+  if (percent < 12) return { label: 'רגוע', tone: 'good' };
+  if (percent < 22) return { label: 'בינוני', tone: 'warn' };
+  return { label: 'תנודתי', tone: 'bad' };
+}
+
 const NAV_GROUPS = [
   {
     label: 'ביצועים',
@@ -984,191 +1014,181 @@ function PortfolioAnalysisView({
 
           <div className="analysis-grid">
           <div className="analysis-section" data-section-key="summary" ref={(el) => (sectionRefs.current.summary = el)}>
-            <h2 className="section-title">תקציר ניתוח</h2>
-            <div className="distribution-grid">
-              <div className="distribution-card">
-                <h3>מספר פוזיציות</h3>
-                <div className="distribution-value">{analysis.summaryMetrics.positionsCount}</div>
-                <div className="distribution-percentage">
-                  ישראליות: {analysis.summaryMetrics.israeliPositions} | אמריקאיות: {analysis.summaryMetrics.americanPositions}
-                </div>
-                <div className="distribution-percentage">
-                  גמל: {analysis.summaryMetrics.pensionPositions} | כספית: {analysis.summaryMetrics.cashFundsPositions} | עו"ש: {analysis.summaryMetrics.bankPositions}
-                </div>
-              </div>
-              <div className="distribution-card">
-                <h3>שינוי יומי משוקלל</h3>
-                <div className={`distribution-value ${analysis.summaryMetrics.weightedDailyChangePercent >= 0 ? 'profit-positive' : 'profit-negative'}`}>
-                  {analysis.summaryMetrics.weightedDailyChangePercent.toFixed(2)}%
-                </div>
-                <div className="distribution-percentage">
-                  תשואה שנתית משוקללת: {analysis.summaryMetrics.weightedAnnualizedReturnPercent.toFixed(2)}%
-                </div>
-              </div>
-              <div className="distribution-card">
-                <h3>ריכוזיות 3 פוזיציות</h3>
-                <div className="distribution-value">
-                  {analysis.summaryMetrics.concentrationTop3Percent.toFixed(1)}%
-                </div>
-                <div className="distribution-percentage">
-                  זמן החזקה ממוצע: {analysis.summaryMetrics.averageHoldingDays} ימים
-                </div>
-              </div>
+            <h2 className="section-title">התיק במבט מהיר</h2>
+            {/* Three things the home page does not already say, each with
+                the sentence that explains it. "Weighted annualized return"
+                used to ride along here: a per-holding average that
+                disagreed with the real annual return further down the page,
+                with nothing to say which one to believe. */}
+            <div className="snap-grid">
+              {(() => {
+                const m = analysis.summaryMetrics;
+                const parts = [
+                  ['ישראליות', m.israeliPositions],
+                  ['אמריקאיות', m.americanPositions],
+                  ['גמל', m.pensionPositions],
+                  ['כספיות', m.cashFundsPositions],
+                  ['עו"ש', m.bankPositions]
+                ].filter(([, count]) => count > 0);
+                const holding = holdingPeriodText(m.averageHoldingDays);
+                const daily = m.weightedDailyChangePercent;
+                const top3 = m.concentrationTop3Percent;
+                const level = concentrationLevel(top3);
+                return (
+                  <>
+                    <div className="snap-tile">
+                      <span className="snap-icon" aria-hidden="true">▤</span>
+                      <h3 className="snap-label">החזקות בתיק</h3>
+                      <div className="snap-value">{m.positionsCount}</div>
+                      <div className="snap-chips">
+                        {parts.map(([label, count]) => (
+                          <span key={label} className="snap-chip">
+                            {count} {label}
+                          </span>
+                        ))}
+                      </div>
+                      {holding && <p className="snap-note">כל החזקה נמצאת בתיק בממוצע {holding}</p>}
+                    </div>
+
+                    <div className="snap-tile">
+                      <span className={`snap-icon ${daily >= 0 ? 'is-up' : 'is-down'}`} aria-hidden="true">
+                        {daily >= 0 ? '▲' : '▼'}
+                      </span>
+                      <h3 className="snap-label">השינוי היום</h3>
+                      <div className={`snap-value ${daily >= 0 ? 'profit-positive' : 'profit-negative'}`}>
+                        {signedPercent(daily, 2)}
+                      </div>
+                      <p className="snap-note">
+                        {daily >= 0 ? 'התיק עלה היום' : 'התיק ירד היום'} - ממוצע של כל ההחזקות לפי המשקל שלהן בתיק
+                      </p>
+                    </div>
+
+                    <div className="snap-tile">
+                      <span className="snap-icon" aria-hidden="true">◔</span>
+                      <h3 className="snap-label">3 ההחזקות הגדולות</h3>
+                      <div className="snap-value">
+                        {top3.toFixed(1)}%<span className="snap-value-unit"> מהתיק</span>
+                      </div>
+                      <div className="snap-meter" role="presentation">
+                        <span className={`snap-meter-fill is-${level.tone}`} style={{ width: `${Math.min(100, top3)}%` }} />
+                      </div>
+                      <p className="snap-note">
+                        <span className={`snap-verdict is-${level.tone}`}>{level.label}</span> ככל שהאחוז נמוך יותר,
+                        נפילה של מניה אחת פוגעת פחות בתיק
+                      </p>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           </div>
 
           <div className="analysis-section" data-section-key="performance" ref={(el) => (sectionRefs.current.performance = el)}>
             <h2 className="section-title">ביצועי התיק לאורך זמן</h2>
+            <p className="perf-intro">כמה ההשקעות שלך הרוויחו - בלי לספור כסף שהפקדת או משכת.</p>
 
-            {/* HOW THE NUMBER IS MADE, in four steps.
-                This replaces a paragraph that said the same things in
-                prose. A method is a sequence, and a reader checking
-                whether a figure means what they think has to find one
-                step in it - which a block of text makes them re-read the
-                whole thing to do. */}
-            <ol className="calc-guide">
-              <li className="calc-guide-step">
-                <span className="calc-guide-title">שערי סגירה אמיתיים</span>
-                <span className="calc-guide-text">
-                  התיק מוערך מחדש בכל תאריך לפי שערי הסגירה בפועל (תל אביב, וול סטריט ושער הדולר) ולפי ההחזקות
-                  שהיו בו באותו יום - לא מתוך נתונים שנשמרו מראש.
-                </span>
-              </li>
-              <li className="calc-guide-step">
-                <span className="calc-guide-title">נטרול הפקדות ומשיכות</span>
-                <span className="calc-guide-text">
-                  הטווח מחולק לתת-תקופות בכל תאריך שנכנס או יצא בו כסף. הפקדה מגדילה שווי בלי שההחזקות הרוויחו
-                  דבר, ולכן היא מנוכה מהחישוב ולא נספרת כתשואה.
-                </span>
-              </li>
-              <li className="calc-guide-step">
-                <span className="calc-guide-title">שרשור התקופות (TWR)</span>
-                <span className="calc-guide-text">
-                  כל תת-תקופה נמדדת בנפרד (Modified Dietz) והתוצאות מוכפלות זו בזו. כך גודל ההפקדות ותזמונן אינם
-                  משפיעים על התשואה - מה שנמדד הוא ביצועי הנכסים בלבד.
-                </span>
-              </li>
-              <li className="calc-guide-step">
-                <span className="calc-guide-title">הצגה באחוזים מ-100</span>
-                <span className="calc-guide-text">
-                  הגרף מתחיל ב-100 בתאריך הראשון, כך שכל נקודה היא הצמיחה המצטברת באחוזים מאותו יום - ולא שווי
-                  התיק בשקלים.
-                </span>
-              </li>
-            </ol>
-
-            {/* WHAT THE CURVE IS ABOUT.
-                Two independent choices - which market, and whether the
-                non-equity accounts count - because they answer different
-                questions and are routinely wanted in combination. */}
-            <div className="segment-controls">
-              <div className="segment-group" role="group" aria-label="בחירת שוק">
-                <span className="segment-group-label" id="segment-market-label">
-                  שוק
-                </span>
-                <div className="segment-buttons" aria-labelledby="segment-market-label">
-                  {MARKET_SEGMENTS.map((option) => (
-                    <button
-                      key={option.key}
-                      type="button"
-                      className={`segment-button ${marketSegment === option.key ? 'active' : ''}`}
-                      aria-pressed={marketSegment === option.key}
-                      title={option.hint}
-                      onClick={() => setMarketSegment(option.key)}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
+            {/* EVERY CONTROL IN ONE STRIP: the period (asked for most), then
+                which market, then the dollar switch. The date inputs stay
+                visible - they are the precise control, and the period
+                buttons are shortcuts into the same two values. */}
+            <div className="perf-controls">
+              <div className="period-toggles" role="group" aria-label="תקופת תשואה">
+                {RETURN_PERIODS.map((period) => (
+                  <button
+                    key={period.key}
+                    type="button"
+                    className={`period-toggle ${activeReturnPeriod === period.key ? 'active' : ''}`}
+                    aria-pressed={activeReturnPeriod === period.key}
+                    title={period.hint}
+                    onClick={() => selectReturnPeriod(period.key)}
+                  >
+                    {period.label}
+                  </button>
+                ))}
               </div>
 
-              {/* Shown wherever the selection holds American lots - the US
-                  view and the combined one. Hidden for the Israeli view,
-                  where no holding has an exchange rate inside it and the
-                  control would be a switch wired to nothing.
-                  Toggling it on the combined view is how the currency's
-                  effect on the whole stock portfolio is read: the Israeli
-                  side does not move, so the difference between the two
-                  curves is the dollar. */}
-              {showFxToggle && (
-                <div className="segment-group">
-                  <label
-                    className="fx-toggle"
-                    title="כלול את תנודות שער הדולר בחישוב התשואה. כיבוי והדלקה מראים כמה מהתשואה נבע מהמטבע ולא מהמניות"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={fxMode === FX_MODES.HISTORICAL}
-                      onChange={(e) =>
-                        setRequestedFxMode(e.target.checked ? FX_MODES.HISTORICAL : FX_MODES.PURE_USD)
-                      }
-                    />
-                    <span>השפעת שער הדולר</span>
-                  </label>
+              <div className="segment-controls">
+                <div className="segment-group" role="group" aria-label="בחירת שוק">
+                  <div className="segment-buttons">
+                    {MARKET_SEGMENTS.map((option) => (
+                      <button
+                        key={option.key}
+                        type="button"
+                        className={`segment-button ${marketSegment === option.key ? 'active' : ''}`}
+                        aria-pressed={marketSegment === option.key}
+                        title={option.hint}
+                        onClick={() => setMarketSegment(option.key)}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              )}
+
+                {/* Only where the selection holds American lots: on the
+                    Israeli view no holding has an exchange rate in it. On
+                    the combined view, switching it off and on shows how
+                    much of the return was the dollar. */}
+                {showFxToggle && (
+                  <div className="segment-group">
+                    <label
+                      className="fx-toggle"
+                      title="כיבוי והדלקה מראים כמה מהתשואה נבע משער הדולר ולא מהמניות עצמן"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={fxMode === FX_MODES.HISTORICAL}
+                        onChange={(e) =>
+                          setRequestedFxMode(e.target.checked ? FX_MODES.HISTORICAL : FX_MODES.PURE_USD)
+                        }
+                      />
+                      <span>כולל השפעת הדולר</span>
+                    </label>
+                  </div>
+                )}
+              </div>
+
+              {/* Layout lives in .date-range-controls, not an inline style:
+                  an inline align-items outranks the stylesheet, so the
+                  mobile rule that stacks these could never take effect. */}
+              <div className="date-range-controls">
+                <div className="form-group">
+                  <label htmlFor="performanceFrom">מתאריך</label>
+                  <input
+                    type="date"
+                    id="performanceFrom"
+                    max={effectivePerformanceTo}
+                    value={effectivePerformanceFrom}
+                    onChange={(e) => handlePerformanceFromChange(e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="performanceTo">עד תאריך</label>
+                  <input
+                    type="date"
+                    id="performanceTo"
+                    min={effectivePerformanceFrom}
+                    max={todayDate}
+                    value={effectivePerformanceTo}
+                    onChange={(e) => handlePerformanceToChange(e.target.value)}
+                  />
+                </div>
+              </div>
             </div>
 
+            {/* What the curve covers, in words - two toggles read
+                separately do not say what their combination means. The
+                why (cash accounts left out, the base of 100) is in the
+                explainer at the bottom of the section. */}
             <p className="section-subtitle segment-summary">
-              מוצג כעת: <strong>{describeSelection(marketSegment, fxMode)}</strong>. עו"ש, קרנות כספיות, חיסכון
-              בבנק וקופות גמל אינם נכללים בגרף הזה - הם אינם נעים עם השוק, ונוכחותם בשני קצות כל תת-תקופה מקררת כל
-              אחוז ואחוז לכיוון האפס. הגרף מציג צמיחה מנוטרלת הפקדות באחוזים מהתאריך הראשון, ולא את שווי התיק
-              בשקלים - הפקדה מגדילה שווי בלי שההחזקות הרוויחו דבר.
+              מוצג: <strong>{describeSelection(marketSegment, fxMode)}</strong>.
               {showFxToggle &&
                 (fxMode === FX_MODES.PURE_USD
-                  ? ` התשואה המוצגת היא דולרית בלבד: כל התאריכים מומרו לפי שער אחיד${
-                      currentExchangeRate ? ` (${currentExchangeRate.toFixed(3)} ₪ לדולר)` : ''
-                    }, כך שתנועת המטבע מתקזזת ומה שנמדד הוא ביצועי המניות עצמן.`
-                  : ' כל תאריך מומר לפי שער הדולר שלו באותו יום, כך שהתשואה כוללת גם את תנועת המטבע.')}
+                  ? ` התשואה דולרית בלבד${
+                      currentExchangeRate ? ` (שער אחיד של ${currentExchangeRate.toFixed(3)} ₪ לדולר)` : ''
+                    }, כדי לראות רק את ביצועי המניות. הסכומים עצמם נשארים בשקלים.`
+                  : ' התשואה כוללת גם את תנועת שער הדולר, כמו שמשקיע ישראלי מרגיש אותה. הסכומים נשארים בשקלים.')}
             </p>
-
-            {/* THE PERIODS ACTUALLY ASKED FOR, as one click each.
-                The date inputs below stay - they are the precise control,
-                and these are shortcuts into the same two values, not a
-                separate mode. Which one is current is derived from the
-                dates (see periodKeyForRange), so typing a range of your
-                own simply leaves none of them marked. */}
-            <div className="period-toggles" role="group" aria-label="תקופת תשואה">
-              {RETURN_PERIODS.map((period) => (
-                <button
-                  key={period.key}
-                  type="button"
-                  className={`period-toggle ${activeReturnPeriod === period.key ? 'active' : ''}`}
-                  aria-pressed={activeReturnPeriod === period.key}
-                  title={period.hint}
-                  onClick={() => selectReturnPeriod(period.key)}
-                >
-                  {period.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Layout lives in .date-range-controls, not in an inline style:
-                an inline align-items outranks the stylesheet, so the mobile
-                rule that stacks these could never take effect. */}
-            <div className="date-range-controls">
-              <div className="form-group">
-                <label htmlFor="performanceFrom">מתאריך</label>
-                <input
-                  type="date"
-                  id="performanceFrom"
-                  max={effectivePerformanceTo}
-                  value={effectivePerformanceFrom}
-                  onChange={(e) => handlePerformanceFromChange(e.target.value)}
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="performanceTo">עד תאריך</label>
-                <input
-                  type="date"
-                  id="performanceTo"
-                  min={effectivePerformanceFrom}
-                  max={todayDate}
-                  value={effectivePerformanceTo}
-                  onChange={(e) => handlePerformanceToChange(e.target.value)}
-                />
-              </div>
-            </div>
 
             {segmentIsEmpty ? (
               // Naming the filter that emptied the chart, rather than
@@ -1192,12 +1212,59 @@ function PortfolioAnalysisView({
               </div>
             ) : (
               <>
-                {/* THE BENCHMARK OVERLAY.
-                    One canvas, two measures: the portfolio's shekel value on
-                    its own axis, and - when asked for - the neutralized
-                    return against the chosen index on a second one, both
-                    based at 100 so the divergence between them is the
-                    relative performance. */}
+                {/* THE ANSWER FIRST. One number, said as a sentence, with
+                    the money paid in named as what it is. Every figure in
+                    this section is scoped to the range above, so the label
+                    stops saying "since inception" once it is narrowed. */}
+                {(() => {
+                  const ret = stats.totalReturnPercent;
+                  const up = (ret || 0) >= 0;
+                  const startValue = stats.series[0].value;
+                  const endValue = stats.series[stats.series.length - 1].value;
+                  return (
+                    <div className={`perf-hero ${up ? 'is-up' : 'is-down'}`}>
+                      <div className="perf-hero-main">
+                        <h3 className="perf-hero-label">
+                          {isRangeNarrowed ? 'תשואה בתקופה שנבחרה' : 'תשואה מאז תחילת ההשקעה'}
+                        </h3>
+                        <div className={`perf-hero-value ${up ? 'profit-positive' : 'profit-negative'}`}>
+                          {ret != null ? signedPercent(ret) : '—'}
+                        </div>
+                        <div className="perf-hero-dates">
+                          {formatDate(stats.firstDate)} - {formatDate(stats.lastDate)}
+                        </div>
+                      </div>
+                      <div className="perf-hero-story">
+                        {ret != null && (
+                          <p className="perf-hero-sentence">
+                            כל <strong>₪100</strong> שהיו מושקעים בתחילת התקופה הפכו ל-
+                            <strong className={up ? 'profit-positive' : 'profit-negative'}>
+                              ₪{(100 + ret).toFixed(1)}
+                            </strong>
+                          </p>
+                        )}
+                        <p className="perf-hero-detail">
+                          שווי התיק: {formatPriceWithSign(startValue)} ₪ ← {formatPriceWithSign(endValue)} ₪
+                        </p>
+                        {stats.isCashFlowNeutralized && (
+                          <p
+                            className="perf-hero-detail"
+                            title="תשואה משוקללת-זמן (Time-Weighted): כל הפקדה, משיכה ורכישה חדשה מנוטרלות, כך שהמספר משקף אך ורק את ביצועי הנכסים עצמם"
+                          >
+                            מנוטרל הפקדות ורכישות
+                            {stats.netCashFlow
+                              ? ` - ${formatPriceWithSign(stats.netCashFlow)} ₪ שנכנסו לתיק בתקופה לא נספרים כרווח`
+                              : ''}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* THE BENCHMARK OVERLAY: the same neutralized growth for an
+                    index, based at 100 on the same first date, so the gap
+                    between the two lines is the relative performance. */}
                 <div className="chart-overlay-controls">
                   <label className="overlay-toggle">
                     <input
@@ -1226,9 +1293,8 @@ function PortfolioAnalysisView({
                         ))}
                       </div>
                       <p className="overlay-hint">
-                        המדדים המוצעים משתנים לפי השוק שנבחר למעלה. מדדים אמריקאיים מוצגים בשקלים, לפי
-                        שער הדולר בכל תאריך - כך שההשוואה מודדת את התשואה שמשקיע ישראלי היה מקבל מהם
-                        בפועל.
+                        מדדים אמריקאיים מוצגים בשקלים, לפי שער הדולר בכל תאריך - כמו שמשקיע ישראלי היה מרוויח
+                        מהם בפועל.
                       </p>
                     </>
                   )}
@@ -1237,31 +1303,21 @@ function PortfolioAnalysisView({
                 {benchmarkStatus && <p className="history-empty-note">{benchmarkStatus}</p>}
 
                 {/* ONE MEASURE ON THIS CHART: growth with contributions
-                    removed. The portfolio's raw shekel value used to be the
-                    curve, and it answers a different question - a deposit
-                    lifts it without the holdings having gained anything, so
-                    read as performance it is simply wrong. The shekel
-                    figures it carried are still on the cards below, where
-                    they are labelled as values rather than as a return. */}
+                    removed. The shekel value answers a different question -
+                    a deposit lifts it without the holdings gaining anything
+                    - so it is a figure in the hero above, not a curve. */}
                 <div className="equity-chart-container">
                   <ResponsiveContainer width="100%" height={280}>
                     <ComposedChart
                       data={performanceChartData}
                       margin={{ top: 10, right: 12, left: 4, bottom: 0 }}
                     >
-                      {/* The fill fades to nothing at the baseline, so the
-                          area reads as depth under the line rather than as a
-                          solid block competing with it. */}
                       <defs>
                         <linearGradient id={AREA_GRADIENT_ID} x1="0" y1="0" x2="0" y2="1">
                           <stop offset="0%" stopColor={chart.accent} stopOpacity={0.35} />
                           <stop offset="100%" stopColor={chart.accent} stopOpacity={0} />
                         </linearGradient>
                       </defs>
-                      {/* Horizontal only, solid and faint. The dashed
-                          lattice it replaces was the busiest thing on the
-                          chart; a grid is there to read a value against,
-                          not to be seen. */}
                       <CartesianGrid stroke={chart.grid} vertical={false} />
                       <XAxis
                         dataKey="date"
@@ -1272,11 +1328,16 @@ function PortfolioAnalysisView({
                         axisLine={false}
                         minTickGap={28}
                       />
-                      {/* Both series are based at 100, so the axis reads as
-                          the growth since the first date rather than as an
-                          index level nobody has to decode. */}
+                      {/* Fitted to the data. The default domain starts at
+                          zero, which on a series based at 100 put -100% at
+                          the bottom of the axis and flattened every real
+                          move into a line along the top. */}
                       <YAxis
-                        tickFormatter={(v) => `${v >= 100 ? '+' : ''}${(v - 100).toFixed(0)}%`}
+                        domain={[
+                          (min) => Math.floor(Math.min(min, 100) - 2),
+                          (max) => Math.ceil(Math.max(max, 100) + 2)
+                        ]}
+                        tickFormatter={(v) => signedPercent(v - 100, 0)}
                         tick={{ fontSize: 11, fill: chart.axis }}
                         stroke={chart.grid}
                         tickLine={false}
@@ -1287,13 +1348,10 @@ function PortfolioAnalysisView({
                         {...chartTooltip}
                         cursor={{ stroke: chart.accent, strokeWidth: 1, strokeDasharray: '4 4' }}
                         labelFormatter={(d) => formatDate(d)}
-                        formatter={(value, name) => {
-                          const change = Number(value) - 100;
-                          return [
-                            `${change >= 0 ? '+' : ''}${change.toFixed(1)}%`,
-                            name === 'portfolioIndexed' ? 'התיק שלי' : selectedBenchmarkLabel
-                          ];
-                        }}
+                        formatter={(value, name) => [
+                          signedPercent(Number(value) - 100),
+                          name === 'portfolioIndexed' ? 'התיק שלי' : selectedBenchmarkLabel
+                        ]}
                       />
                       {benchmarkOverlayReady && (
                         <Legend
@@ -1335,7 +1393,7 @@ function PortfolioAnalysisView({
                         comparisonLast.portfolioIndexed >= 100 ? 'profit-positive' : 'profit-negative'
                       }
                     >
-                      {(comparisonLast.portfolioIndexed - 100).toFixed(1)}%
+                      {signedPercent(comparisonLast.portfolioIndexed - 100)}
                     </span>{' '}
                     לעומת {selectedBenchmarkLabel}{' '}
                     <span
@@ -1343,89 +1401,79 @@ function PortfolioAnalysisView({
                         comparisonLast.benchmarkIndexed >= 100 ? 'profit-positive' : 'profit-negative'
                       }
                     >
-                      {(comparisonLast.benchmarkIndexed - 100).toFixed(1)}%
+                      {signedPercent(comparisonLast.benchmarkIndexed - 100)}
                     </span>
-                    . שתי השורות מנוטרלות הפקדות ומבוססות ל-100 בתאריך הראשון המשותף, כך שהפער ביניהן הוא
-                    ביצועים ולא כסף שהוכנס.
+                    {comparisonLast.portfolioIndexed >= comparisonLast.benchmarkIndexed
+                      ? ' - התיק שלך עקף את המדד 🎉'
+                      : ' - המדד הקדים את התיק בתקופה הזו'}
                   </p>
                 )}
-                <div className="distribution-grid" style={{ marginTop: 16 }}>
-                  <div className="distribution-card">
-                    {/* Every figure in this section is scoped to the range
-                        above, so the headline cannot keep saying "since
-                        inception" once that range has been narrowed - it
-                        would name a start date the number is not measured
-                        from. */}
-                    <h3>{isRangeNarrowed ? 'תשואה בתקופה שנבחרה' : 'תשואה מאז תחילת ההשקעה'}</h3>
+
+                {/* The two figures besides the headline that a person can
+                    act on. Each says in words what its number means. */}
+                <div className="perf-stats">
+                  <div className="perf-stat">
+                    <h3 className="perf-stat-label">תשואה שנתית ממוצעת</h3>
                     <div
-                      className={`distribution-value ${
-                        stats.totalReturnPercent >= 0 ? 'profit-positive' : 'profit-negative'
-                      }`}
-                    >
-                      {stats.totalReturnPercent != null ? `${stats.totalReturnPercent.toFixed(1)}%` : '—'}
-                    </div>
-                    <div className="distribution-percentage">
-                      {formatDate(stats.firstDate)} - {formatDate(stats.lastDate)}
-                    </div>
-                    {stats.isCashFlowNeutralized && (
-                      <div
-                        className="distribution-percentage"
-                        title="תשואה משוקללת-זמן (Time-Weighted): כל הפקדה, משיכה ורכישה חדשה מנוטרלות, כך שהמספר משקף אך ורק את ביצועי הנכסים עצמם"
-                      >
-                        מנוטרל הפקדות ורכישות
-                        {stats.netCashFlow
-                          ? ` (${formatPriceWithSign(stats.netCashFlow)} ₪ נכנסו לתיק בתקופה)`
-                          : ''}
-                      </div>
-                    )}
-                  </div>
-                  <div className="distribution-card">
-                    <h3>תשואה שנתית ממוצעת</h3>
-                    <div
-                      className={`distribution-value ${
+                      className={`perf-stat-value ${
                         (stats.annualizedReturnPercent || 0) >= 0 ? 'profit-positive' : 'profit-negative'
                       }`}
                     >
                       {stats.annualizedReturnPercent != null
-                        ? `${stats.annualizedReturnPercent.toFixed(1)}%`
+                        ? signedPercent(stats.annualizedReturnPercent)
                         : 'התקופה קצרה מדי'}
                     </div>
-                    <div className="distribution-percentage">
-                      תשואה שנתית מתואמת (CAGR) לאורך התקופה שנבחרה, מאותה תשואה מנוטרלת-הפקדות
-                    </div>
+                    <p className="perf-stat-note">אם הקצב הזה היה נמשך שנה שלמה (CAGR)</p>
                   </div>
-                  {exactReturns && (
-                    <>
-                      <div className="distribution-card">
-                        <h3>תשואה משוקללת-זמן מדויקת (TWR)</h3>
-                        <div
-                          className={`distribution-value ${
-                            (exactReturns.exactTwr.percent || 0) >= 0 ? 'profit-positive' : 'profit-negative'
-                          }`}
-                        >
+                  <div className="perf-stat">
+                    <h3 className="perf-stat-label">תנודתיות שנתית (משוערת)</h3>
+                    <div className="perf-stat-value">
+                      {stats.volatilityPercent != null ? `${stats.volatilityPercent.toFixed(1)}%` : 'עוד לא מספיק נתונים'}
+                      {stats.volatilityPercent != null && (
+                        <span className={`snap-verdict is-${volatilityLevel(stats.volatilityPercent).tone}`}>
+                          {volatilityLevel(stats.volatilityPercent).label}
+                        </span>
+                      )}
+                    </div>
+                    <p className="perf-stat-note">כמה התיק נוטה לקפוץ למעלה ולמטה במהלך שנה</p>
+                  </div>
+                </div>
+
+                {performanceLoading && <p className="perf-footnote">מעדכן נתוני מחירים היסטוריים…</p>}
+
+                {/* For whoever wants them: the exact chained return and the
+                    money-weighted one. Both are kept, out of the way - side
+                    by side with the headline they were three returns for
+                    one question. */}
+                {exactReturns && (
+                  <details className="perf-details">
+                    <summary>מדדי תשואה נוספים למתקדמים</summary>
+                    <div className="perf-stats">
+                      <div className="perf-stat">
+                        <h3 className="perf-stat-label">תשואה משוקללת-זמן מדויקת (TWR)</h3>
+                        <div className="perf-stat-value">
                           {exactReturns.exactTwr.percent != null && !exactReturns.exactTwr.isPartial
-                            ? `${exactReturns.exactTwr.percent.toFixed(1)}%`
+                            ? signedPercent(exactReturns.exactTwr.percent)
                             : '—'}
                         </div>
-                        <div className="distribution-percentage">
-                          שרשור בכל תאריך של הפקדה/רכישה/מכירה ({exactReturns.exactTwr.subPeriods} תת-תקופות), בלי קירוב
+                        <p className="perf-stat-note">
+                          מחושבת בכל תאריך של הפקדה, רכישה או מכירה ({exactReturns.exactTwr.subPeriods} תת-תקופות), בלי
+                          קירוב
                           {exactReturns.exactTwr.isPartial ? ' - חסרים מחירים לחלק מהתאריכים' : ''}
-                        </div>
+                        </p>
                       </div>
-                      <div className="distribution-card">
-                        <h3>תשואה משוקללת-כסף (MWR / IRR)</h3>
-                        <div
-                          className={`distribution-value ${
-                            (exactReturns.mwr.periodPercent || 0) >= 0 ? 'profit-positive' : 'profit-negative'
-                          }`}
-                        >
+                      <div className="perf-stat">
+                        <h3 className="perf-stat-label">התשואה על הכסף שלך (IRR)</h3>
+                        <div className="perf-stat-value">
                           {exactReturns.mwr.periodPercent != null
-                            ? `${(exactReturns.mwr.days >= 365 ? exactReturns.mwr.annualPercent : exactReturns.mwr.periodPercent).toFixed(1)}%`
+                            ? signedPercent(
+                                exactReturns.mwr.days >= 365 ? exactReturns.mwr.annualPercent : exactReturns.mwr.periodPercent
+                              )
                             : '—'}
                         </div>
-                        <div className="distribution-percentage">
-                          {exactReturns.mwr.days >= 365 ? 'בשנה, ' : 'לתקופה, '}
-                          כולל העיתוי של כל שקל שנכנס או יצא.{' '}
+                        <p className="perf-stat-note">
+                          {exactReturns.mwr.days >= 365 ? 'בשנה. ' : 'לתקופה. '}
+                          כאן גם התזמון של ההפקדות נספר.{' '}
                           {exactReturns.mwr.periodPercent != null &&
                             exactReturns.exactTwr.percent != null &&
                             (exactReturns.mwr.periodPercent < exactReturns.exactTwr.percent - 0.5
@@ -1433,58 +1481,62 @@ function PortfolioAnalysisView({
                               : exactReturns.mwr.periodPercent > exactReturns.exactTwr.percent + 0.5
                               ? 'גבוהה מה-TWR: הכסף נכנס בעיתוי טוב.'
                               : '')}
-                        </div>
+                        </p>
                       </div>
-                    </>
-                  )}
-                  <div className="distribution-card">
-                    <h3>שווי בתחילת התקופה</h3>
-                    <div className="distribution-value">
-                      {formatPriceWithSign(stats.series[0].value)} ₪
                     </div>
-                    <div className="distribution-percentage">{formatDate(stats.firstDate)}</div>
-                  </div>
-                  <div className="distribution-card">
-                    <h3>שווי בסוף התקופה</h3>
-                    <div className="distribution-value">
-                      {formatPriceWithSign(stats.series[stats.series.length - 1].value)} ₪
-                    </div>
-                    <div className="distribution-percentage">{formatDate(stats.lastDate)}</div>
-                  </div>
-                  {/* The raw "how much bigger is the portfolio now" figure
-                      used to sit here. It is not a return - a portfolio that
-                      grew only because money was paid into it shows a large
-                      positive number while the holdings did nothing - and
-                      printing it beside the real return invited the two to
-                      be read as alternatives. Every percentage in this
-                      section is now cash-flow-neutralized. The money that
-                      did come in is still stated, as a contribution, on the
-                      return card above. */}
-                  <div className="distribution-card">
-                    <h3>תנודתיות שנתית (משוערת)</h3>
-                    <div className="distribution-value">
-                      {stats.volatilityPercent != null
-                        ? `${stats.volatilityPercent.toFixed(1)}%`
-                        : 'עוד לא מספיק נתונים'}
-                    </div>
-                    <div className="distribution-percentage">
-                      סטיית תקן שנתית של תשואות התיק, מחושבת משערי סגירה היסטוריים
-                    </div>
-                  </div>
-                </div>
-                {performanceLoading && (
-                  <p className="history-empty-note" style={{ marginTop: 8 }}>מעדכן נתוני מחירים היסטוריים…</p>
+                  </details>
                 )}
               </>
             )}
+
             {skippedPartial.count > 0 && (
-              <p className="history-empty-note" style={{ marginTop: 8 }}>
-                {skippedPartial.count} תאריכים הושמטו מהגרף - לא נמצא עבורם מחיר היסטורי לכל ההחזקות, ולכן לא
-                ניתן לחשב בהם את שווי התיק המלא
-                {skippedPartial.symbols.length > 0 && ` (${skippedPartial.symbols.join(', ')})`}. התאריכים
-                האלה מושמטים ולא מוצגים כירידה בשווי.
+              <p className="perf-footnote">
+                ⓘ {skippedPartial.count === 1 ? 'תאריך אחד לא מוצג' : `${skippedPartial.count} תאריכים לא מוצגים`} בגרף כי
+                חסר בו מחיר היסטורי לחלק מההחזקות
+                {skippedPartial.symbols.length > 0 && ` (${skippedPartial.symbols.join(', ')})`} - כדי שלא ייראה
+                כירידה בשווי.
               </p>
             )}
+
+            {/* HOW THE NUMBER IS MADE, for whoever asks. A method is a
+                sequence, so it stays as four steps - folded away, because
+                most visitors want the answer and not the method. */}
+            <details className="perf-details">
+              <summary>איך מחשבים את התשואה?</summary>
+              <ol className="calc-guide">
+                <li className="calc-guide-step">
+                  <span className="calc-guide-title">שערי סגירה אמיתיים</span>
+                  <span className="calc-guide-text">
+                    התיק מוערך מחדש בכל תאריך לפי שערי הסגירה בפועל (תל אביב, וול סטריט ושער הדולר) ולפי ההחזקות
+                    שהיו בו באותו יום.
+                  </span>
+                </li>
+                <li className="calc-guide-step">
+                  <span className="calc-guide-title">הפקדות לא נספרות כרווח</span>
+                  <span className="calc-guide-text">
+                    בכל תאריך שנכנס או יצא כסף, הטווח מתחלק לתקופה חדשה. הפקדה מגדילה את השווי בלי שההחזקות
+                    הרוויחו משהו, ולכן היא מנוכה.
+                  </span>
+                </li>
+                <li className="calc-guide-step">
+                  <span className="calc-guide-title">שרשור התקופות (TWR)</span>
+                  <span className="calc-guide-text">
+                    כל תקופה נמדדת בנפרד והתוצאות מוכפלות זו בזו, כך שגודל ההפקדות ותזמונן לא משפיעים - נמדדים
+                    רק ביצועי הנכסים.
+                  </span>
+                </li>
+                <li className="calc-guide-step">
+                  <span className="calc-guide-title">מתחילים מ-100</span>
+                  <span className="calc-guide-text">
+                    הגרף מתחיל ב-100 בתאריך הראשון, כך שכל נקודה היא הצמיחה באחוזים מאותו יום - ולא שווי התיק.
+                  </span>
+                </li>
+              </ol>
+              <p className="perf-footnote">
+                עו"ש, קרנות כספיות, חיסכון בבנק וקופות גמל לא נכללים בגרף: הם לא נעים עם השוק, ונוכחותם הייתה
+                מושכת כל אחוז לכיוון האפס.
+              </p>
+            </details>
           </div>
 
           <div className="analysis-section analysis-section-half" data-section-key="pie" ref={(el) => (sectionRefs.current.pie = el)}>
