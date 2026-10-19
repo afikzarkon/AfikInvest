@@ -7,6 +7,13 @@ const { tradeDateFromYahooMeta, lastSessionDate } = require('./marketCalendar');
 const { sourceHealth } = require('./sourceHealth');
 const { marketMemory } = require('./marketMemory');
 const { fetchFinnhubQuote, isFinnhubEnabled, isFinnhubSymbol } = require('./finnhubQuotes');
+const { runFallbackChain } = require('./fallbackChain');
+const {
+  isFrankfurterSymbol,
+  fetchFrankfurterQuote,
+  fetchFrankfurterRateForDate,
+  fetchFrankfurterHistory
+} = require('./frankfurterClient');
 
 // 30s: the client polls every minute, and with Finnhub on, each symbol
 // refreshed costs a call from its 60-a-minute free budget.
@@ -95,26 +102,30 @@ async function fetchYahooQuote(symbol) {
 // `source` names which one answered, for the logs and for diagnosing a
 // price that looks wrong.
 async function fetchUsQuote(symbol) {
-  if (isFinnhubEnabled() && isFinnhubSymbol(symbol)) {
-    try {
-      const quote = await fetchFinnhubQuote(symbol);
-      sourceHealth.success('finnhub');
-      return { ...quote, tradeDate: quote.tradeDate || lastSessionDate('us'), source: 'finnhub' };
-    } catch (err) {
-      // Running out of the free plan's budget is the plan working, not
-      // Finnhub failing.
-      if (err.code !== 'FINNHUB_BUDGET') {
-        sourceHealth.failure('finnhub', err);
-        console.warn('[finnhub] quote failed, falling back to yahoo', {
-          symbol,
-          status: err && err.response && err.response.status,
-          error: err && err.message
-        });
-      }
-    }
+  // Exchange rates: Yahoo, then the ECB's daily reference rate through
+  // Frankfurter (frankfurterClient.js) - free, no key.
+  if (isFrankfurterSymbol(symbol)) {
+    const { value, source } = await runFallbackChain(`fx ${symbol}`, [
+      { source: 'yahoo-chart', fn: () => fetchYahooQuote(symbol) },
+      { source: 'frankfurter', fn: () => fetchFrankfurterQuote(symbol) }
+    ]);
+    return { ...value, source: source === 'yahoo-chart' ? 'yahoo' : source };
   }
-  const quote = await sourceHealth.track('yahoo-chart', () => fetchYahooQuote(symbol));
-  return { ...quote, source: 'yahoo' };
+  // Stocks: Finnhub when configured, then Yahoo. Running out of Finnhub's
+  // free per-minute budget is the plan working, not Finnhub failing, so it
+  // is not counted against it (see fallbackChain.js).
+  const { value, source } = await runFallbackChain(`quote ${symbol}`, [
+    {
+      source: 'finnhub',
+      enabled: isFinnhubEnabled() && isFinnhubSymbol(symbol),
+      fn: async () => {
+        const quote = await fetchFinnhubQuote(symbol);
+        return { ...quote, tradeDate: quote.tradeDate || lastSessionDate('us') };
+      }
+    },
+    { source: 'yahoo-chart', fn: () => fetchYahooQuote(symbol) }
+  ]);
+  return { ...value, source: source === 'yahoo-chart' ? 'yahoo' : source };
 }
 
 // A US stock or FX quote, cached briefly and deduplicated per symbol, with
@@ -213,7 +224,18 @@ async function fetchYahooHistoricalCloses(symbol, fromDateStr) {
     ? Math.floor(new Date(`${fromDateStr}T00:00:00Z`).getTime() / 1000)
     : Math.floor(Date.now() / 1000) - 400 * 24 * 60 * 60;
   const period2 = Math.floor(Date.now() / 1000);
-  return fetchYahooDailyCloses(symbol, period1, period2);
+  if (!isFrankfurterSymbol(symbol)) return fetchYahooDailyCloses(symbol, period1, period2);
+  // An exchange-rate history (the shekel value of US holdings over time)
+  // falls back to the ECB's daily rates.
+  const { value } = await runFallbackChain(
+    `fx history ${symbol}`,
+    [
+      { source: 'yahoo-chart', fn: () => fetchYahooDailyCloses(symbol, period1, period2) },
+      { source: 'frankfurter', fn: () => fetchFrankfurterHistory(symbol, fromDateStr) }
+    ],
+    { accept: (points) => Array.isArray(points) && points.length > 0 }
+  );
+  return value;
 }
 
 // The historical rate for a symbol on one specific date (e.g. "USDILS=X"
@@ -229,6 +251,28 @@ async function fetchYahooHistoricalCloses(symbol, fromDateStr) {
 async function fetchYahooHistoricalRateForDate(symbol, dateStr) {
   const target = new Date(`${dateStr}T00:00:00Z`);
   if (Number.isNaN(target.getTime())) return null;
+  if (!isFrankfurterSymbol(symbol)) return fetchYahooRateForDate(symbol, dateStr, target);
+  // The purchase-day rate falls back to the ECB's rate for that day (or the
+  // last working day before it).
+  try {
+    const { value } = await runFallbackChain(
+      `fx rate ${symbol} ${dateStr}`,
+      [
+        { source: 'yahoo-chart', fn: () => fetchYahooRateForDate(symbol, dateStr, target) },
+        { source: 'frankfurter', fn: () => fetchFrankfurterRateForDate(symbol, dateStr) }
+      ],
+      { accept: (v) => v !== null }
+    );
+    return value;
+  } catch (err) {
+    // Both answered and neither had a rate on or before the date: that is
+    // "no rate", as it always was, not an error.
+    if (err.failures && err.failures.every((f) => f.endsWith('no usable data'))) return null;
+    throw err;
+  }
+}
+
+async function fetchYahooRateForDate(symbol, dateStr, target) {
   const period1 = Math.floor(target.getTime() / 1000) - 7 * 24 * 60 * 60;
   const period2 = Math.floor(target.getTime() / 1000) + 24 * 60 * 60;
 

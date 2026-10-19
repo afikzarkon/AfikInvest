@@ -336,13 +336,21 @@ async function fetchTrailingFreeCashFlow(symbol, { get = crumbGet, plainGet = ax
 // a USD market cap by TWD figures - TSM read 0.43x sales and 1.9x free cash
 // flow, dragging the sector median down. Those two are left out for such a
 // peer; P/E is Yahoo's own and already on one currency.
+//
+// A summary from Finnhub or FMP (marketDataFallbacks.js) carries its own
+// price-to-free-cash-flow, computed by them on the same statement basis
+// (operating cash flow less capital spending). It stands in when there is
+// no statement figure to divide by - which is the case whenever that
+// summary came from them, since the peer's Yahoo statements are then not
+// fetched at all.
 function peerMultiples(summary, trailingFreeCashFlow = null) {
   const cap = summary.marketCap;
   const mixedCurrency = !!(summary.financialCurrency && summary.currency && summary.financialCurrency !== summary.currency);
+  const ownPfcf = Number.isFinite(summary.priceToFreeCashFlow) && summary.priceToFreeCashFlow > 0 ? summary.priceToFreeCashFlow : null;
   return {
     PE: summary.trailingPE,
     PS: mixedCurrency ? null : summary.priceToSales,
-    PFCF: !mixedCurrency && Number.isFinite(cap) && trailingFreeCashFlow > 0 ? cap / trailingFreeCashFlow : null
+    PFCF: mixedCurrency ? null : Number.isFinite(cap) && trailingFreeCashFlow > 0 ? cap / trailingFreeCashFlow : ownPfcf
   };
 }
 

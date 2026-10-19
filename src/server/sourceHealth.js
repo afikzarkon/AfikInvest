@@ -18,7 +18,7 @@ const FAILURE_ALERT_THRESHOLD = 5;
 
 // Known sources, in the order the panel lists them, with a Hebrew label.
 const SOURCES = {
-  finnhub: 'Finnhub - מחירי מניות ארה"ב (מקור ראשי, כשמוגדר מפתח)',
+  finnhub: 'Finnhub - מחירי מניות ארה"ב, מכפילים ועמיתים (ראשי), סקטורים ואנליסטים (גיבוי)',
   'yahoo-chart': 'Yahoo - מחירי מניות ארה"ב (גיבוי) ושערי מט"ח',
   'yahoo-summary': 'Yahoo - סקטורים, אנליסטים, דיבידנדים, הערכת שווי',
   'tase-api': 'הבורסה - מחיר חי (API)',
@@ -26,7 +26,10 @@ const SOURCES = {
   puppeteer: 'הבורסה - קריאת דף (Puppeteer)',
   'tase-index': 'הבורסה - היסטוריית מדדים',
   bizportal: 'ביזפורטל - חיפוש ניירות לפי שם',
-  cbs: 'הלמ"ס - מדד המחירים לצרכן'
+  cbs: 'הלמ"ס - מדד המחירים לצרכן',
+  frankfurter: 'Frankfurter (ECB) - שערי מט"ח (גיבוי)',
+  fmp: 'Financial Modeling Prep - סקטורים ומכפילים (גיבוי)',
+  tiingo: 'Tiingo - דיבידנדים ומחירים חודשיים (גיבוי)'
 };
 
 function errorText(err) {

@@ -4,7 +4,9 @@
 // are injected so tests run on fixtures.
 const { historicalMultiples, buildMultiplesTable, trailingTwelveMonths } = require('../shared/valuationMultiples');
 
-const CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+// 24h: multiples and peers move slowly, and every rebuild spends free-plan
+// calls (Finnhub, FMP) on the symbol and its peers.
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const FAILURE_TTL_MS = 2 * 60 * 1000;
 const PARTIAL_TTL_MS = 15 * 60 * 1000;
 const MAX_PEERS = 5;
@@ -62,10 +64,13 @@ function createValuationService({ sources, now = () => new Date(), logger = cons
           const out = [];
           for (const peer of symbols) {
             try {
-              const [peerSummary, peerFcf] = await Promise.all([
-                sources.summary(peer),
-                sources.peerFreeCashFlow ? sources.peerFreeCashFlow(peer).catch(() => null) : Promise.resolve(null)
-              ]);
+              const peerSummary = await sources.summary(peer);
+              // A summary from Finnhub or FMP brings its own P/FCF; the
+              // statement-basis figure is only fetched (from Yahoo) when it
+              // did not.
+              const needsFcf = !Number.isFinite(peerSummary && peerSummary.priceToFreeCashFlow);
+              const peerFcf =
+                needsFcf && sources.peerFreeCashFlow ? await sources.peerFreeCashFlow(peer).catch(() => null) : null;
               out.push(Object.assign({ symbol: peer }, sources.peerMultiples(peerSummary, peerFcf)));
             } catch (err) {
               logger.warn && logger.warn('[valuation] peer failed', peer, err && err.message);
@@ -127,7 +132,7 @@ function createValuationService({ sources, now = () => new Date(), logger = cons
       warnings,
       diagnostics,
       partial: Object.values(diagnostics).some((v) => v !== 'ok'),
-      sources: { statements: statements.source || null, prices: 'yahoo', peers: 'yahoo' },
+      sources: { statements: statements.source || null, summary: summary.source || null },
       asOf: now().toISOString()
     };
   }
@@ -147,6 +152,15 @@ function createValuationService({ sources, now = () => new Date(), logger = cons
         return data;
       })
       .catch((err) => {
+        // The last good valuation, if there is one, beats an error: the
+        // final link of the fallback chain. It is kept as it was, and
+        // retried after the short failure window like any failure.
+        const previous = cached && cached.data;
+        if (previous) {
+          logger.warn && logger.warn(`[valuation] ${symbol} rebuild failed, serving the last good result: ${err && err.message}`);
+          cache.set(symbol, { data: previous, ts: now().getTime(), ttl: FAILURE_TTL_MS });
+          return previous;
+        }
         cache.set(symbol, { error: err, ts: now().getTime() });
         throw err;
       })
@@ -158,13 +172,18 @@ function createValuationService({ sources, now = () => new Date(), logger = cons
   return { getValuation, build };
 }
 
+// Each source is a fallback chain (marketDataFallbacks.js): the summary
+// and peers from Finnhub first, then FMP, then Yahoo; the monthly prices
+// from Yahoo, then Tiingo. The statements keep their own FMP-then-Yahoo
+// order (fundamentals.js's fetchStatements).
 function createDefaultSources(env = process.env) {
   const f = require('./fundamentals');
+  const m = require('./marketDataFallbacks');
   return {
-    summary: f.fetchValuationSummary,
+    summary: (symbol) => m.fetchValuationSummaryWithFallbacks(symbol, { fetchYahooSummary: f.fetchValuationSummary }),
     statements: (symbol) => f.fetchStatements(symbol, { fmpApiKey: env.FMP_API_KEY || '' }),
-    monthlyPrices: (symbol) => f.fetchMonthlyPrices(symbol),
-    peerSymbols: (symbol) => f.fetchPeerSymbols(symbol),
+    monthlyPrices: (symbol) => m.fetchMonthlyPricesWithFallbacks(symbol, { fetchYahooMonthly: f.fetchMonthlyPrices }),
+    peerSymbols: (symbol) => m.fetchPeersWithFallbacks(symbol, { fetchYahooPeers: f.fetchPeerSymbols }),
     peerMultiples: f.peerMultiples,
     peerFreeCashFlow: (symbol) => f.fetchTrailingFreeCashFlow(symbol)
   };

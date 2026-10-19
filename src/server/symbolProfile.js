@@ -2,15 +2,20 @@
 // dividend routes all read from (see yahooQuotes.js's
 // fetchYahooSymbolProfile for why it is one request rather than three).
 //
-// 6h, the shortest of what the three used to be on their own: an analyst
-// consensus and a dividend yield do not move minute to minute, and a
-// sector not at all. Kept in the database as well (marketMemory.js), so a
-// restart neither empties it nor sends a burst of requests to Yahoo.
+// 24h: an analyst consensus and a dividend yield do not move within a
+// day, and a sector not at all - and every refresh spends free-plan calls
+// when Yahoo is down and the fallbacks answer instead. Kept in the
+// database as well (marketMemory.js), so a restart neither empties it nor
+// sends a burst of requests out.
+//
+// Yahoo first; when it fails, Finnhub, FMP and Tiingo each fill the part
+// they can (marketDataFallbacks.js's fetchProfileWithFallbacks).
 const { fetchYahooSymbolProfile } = require('./yahooQuotes');
+const { fetchProfileWithFallbacks } = require('./marketDataFallbacks');
 const { createSymbolCache } = require('./symbolCache');
 const { marketMemory } = require('./marketMemory');
 
-const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 const EMPTY_SECTOR = { sector: null, industry: null };
 const EMPTY_ANALYST = {
@@ -33,7 +38,7 @@ const EMPTY_DIVIDEND_SUMMARY = {
 const profileCache = createSymbolCache({
   name: 'yahoo-profile',
   ttlMs: CACHE_TTL_MS,
-  fetchOne: fetchYahooSymbolProfile,
+  fetchOne: (symbol) => fetchProfileWithFallbacks(symbol, { fetchYahooProfile: fetchYahooSymbolProfile }),
   fallback: () => ({
     sector: { ...EMPTY_SECTOR },
     analyst: { ...EMPTY_ANALYST, upgradeHistory: [] },

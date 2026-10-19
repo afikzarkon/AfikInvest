@@ -5,6 +5,8 @@
 // estimate vs. an actual payment ledger - so they're fetched and cached
 // independently, and only combined here at the route layer.
 const { fetchYahooDividendHistory } = require('./yahooQuotes');
+// Yahoo, then Tiingo when one is configured (marketDataFallbacks.js).
+const { fetchDividendHistoryWithFallbacks } = require('./marketDataFallbacks');
 // The forward-looking summary comes from the per-symbol profile shared
 // with the sector and analyst routes - one Yahoo request for all three
 // (symbolProfile.js), with its last known value kept through failures
@@ -31,7 +33,9 @@ async function getCachedDividendHistory(symbol, fromDateStr) {
 
   const requestPromise = (async () => {
     try {
-      const history = await fetchYahooDividendHistory(symbol, fromDateStr);
+      const history = await fetchDividendHistoryWithFallbacks(symbol, fromDateStr, {
+        fetchYahooHistory: fetchYahooDividendHistory
+      });
       historyCache.set(cacheKey, { data: history, ts: Date.now() });
       return history;
     } catch (err) {

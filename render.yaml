@@ -18,6 +18,11 @@ services:
       # value in the Render dashboard; without it, quotes come from Yahoo.
       - key: FINNHUB_API_KEY
         sync: false
+      # Fallbacks behind Yahoo (see .env.example); both optional.
+      - key: TIINGO_API_KEY
+        sync: false
+      - key: FMP_API_KEY
+        sync: false
 
 # Optional: run background jobs (alert scans, event calendar) in a separate
 # process so they never compete with the API for memory. Render background

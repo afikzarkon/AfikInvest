@@ -194,7 +194,12 @@ const defaultDeps = {
   get: (url, config) => fetchYahooWithCrumbRetry(url, config.params),
   plainGet: axios.get,
   quoteSummary: (symbol) => fetchYahooQuoteSummary(symbol, 'price,summaryDetail,financialData,defaultKeyStatistics,earningsTrend,assetProfile'),
-  riskFree: () => axios.get('https://query1.finance.yahoo.com/v8/finance/chart/%5ETNX', { params: { range: '5d', interval: '1d' }, timeout: 15000, headers: HEADERS })
+  riskFree: () => axios.get('https://query1.finance.yahoo.com/v8/finance/chart/%5ETNX', { params: { range: '5d', interval: '1d' }, timeout: 15000, headers: HEADERS }),
+  // Price, shares, beta and sector from Finnhub, then FMP, when Yahoo's
+  // quote summary fails (marketDataFallbacks.js). Yahoo stays first here:
+  // it is the only one with the consensus revenue estimates the DCF
+  // starts from.
+  quoteFallback: (symbol, retrievedDay) => require('./marketDataFallbacks').fetchDcfQuoteFallback(symbol, retrievedDay)
 };
 
 // Each source may fail on its own; what failed is recorded, and the
@@ -210,7 +215,18 @@ async function fetchDcfSnapshot(symbol, deps = {}) {
     d.riskFree()
   ]);
   const status = (r) => (r.status === 'fulfilled' ? 'ok' : `error: ${(r.reason && r.reason.message) || r.reason}`);
-  const quote = sR.status === 'fulfilled' ? parseQuote(sR.value, retrievedDay) : {};
+  let quote = sR.status === 'fulfilled' ? parseQuote(sR.value, retrievedDay) : {};
+  let quoteStatus = status(sR);
+  if (sR.status !== 'fulfilled' && d.quoteFallback) {
+    try {
+      quote = await d.quoteFallback(symbol, retrievedDay);
+      // Not 'ok': the fallback has no consensus, so the snapshot is
+      // partial and is refreshed sooner (createDcfSnapshotService).
+      quoteStatus = `fallback (${quoteStatus}) - no consensus estimates`;
+    } catch {
+      // Keep Yahoo's own error as the reason.
+    }
+  }
   // The yield: today's, which is then remembered; or, when the chart is
   // down, the last one remembered - offered separately, never in its place.
   const rf = rR.status === 'fulfilled' ? parseRiskFree(rR.value.data) : null;
@@ -235,7 +251,7 @@ async function fetchDcfSnapshot(symbol, deps = {}) {
     quarters: qR.status === 'fulfilled' ? qR.value : [],
     annual: aR.status === 'fulfilled' ? aR.value : [],
     sources: { quarters: SOURCES.quarters, annual: SOURCES.annual },
-    diagnostics: { quarters: status(qR), annual: status(aR), quote: status(sR), riskFree: status(rR) }
+    diagnostics: { quarters: status(qR), annual: status(aR), quote: quoteStatus, riskFree: status(rR) }
   };
 }
 

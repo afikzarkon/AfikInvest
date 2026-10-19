@@ -10,6 +10,14 @@ import MultiplesSection from './valuation/MultiplesSection';
 import DcfCalculator from './valuation/DcfCalculator';
 import { fmtMoney } from './valuation/shared';
 
+// Where the current multiples came from (server/marketDataFallbacks.js):
+// Finnhub first, then FMP, then Yahoo.
+const SUMMARY_SOURCE_LABELS = {
+  finnhub: 'Finnhub',
+  fmp: 'Financial Modeling Prep',
+  'yahoo-summary': 'Yahoo Finance'
+};
+
 // /valuation - is this stock cheap or expensive? Written for someone who has
 // never heard of a multiple: the answer first, on a cheap-to-expensive
 // scale, then the three checks told as short stories with their numbers
@@ -65,7 +73,9 @@ function ValuationResult({ data }) {
           {data.name || data.symbol} ({data.symbol})
         </h2>
         <p className="section-subtitle">
-          {[data.sector, data.industry].filter(Boolean).join(' · ')} · מחיר {fmtMoney(data.price, data.currency)} · שווי שוק {fmtMoney(data.marketCap, data.currency)} · נתונים: {data.sources.statements === 'fmp' ? 'Financial Modeling Prep' : 'Yahoo Finance'}{data.partial ? ' (חלקיים)' : ''}, {String(data.asOf).slice(0, 10)}
+          {[data.sector, data.industry].filter(Boolean).join(' · ')} · מחיר {fmtMoney(data.price, data.currency)} · שווי שוק {fmtMoney(data.marketCap, data.currency)} · נתונים: {data.sources.statements === 'fmp' ? 'Financial Modeling Prep' : 'Yahoo Finance'}
+          {data.sources.summary && SUMMARY_SOURCE_LABELS[data.sources.summary] ? ` · מכפילים נוכחיים: ${SUMMARY_SOURCE_LABELS[data.sources.summary]}` : ''}
+          {data.partial ? ' (חלקיים)' : ''}, {String(data.asOf).slice(0, 10)}
         </p>
         {data.warnings.map((w) => (
           <p key={w} className="profit-negative">

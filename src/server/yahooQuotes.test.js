@@ -559,6 +559,18 @@ describe('getYahooPayload with Finnhub configured', () => {
     expect(mockAxios.get.mock.calls[1][0]).toContain('finance.yahoo.com');
   });
 
+  // The ECB's daily reference rate through Frankfurter, when Yahoo fails.
+  test('an exchange rate falls back to Frankfurter when Yahoo fails', async () => {
+    mockAxios.get
+      .mockRejectedValueOnce({ response: { status: 429 }, message: 'Request failed with status code 429' })
+      .mockResolvedValueOnce({
+        data: { base: 'USD', rates: { '2026-10-15': { ILS: 3.1 }, '2026-10-16': { ILS: 3.11 } } }
+      });
+    const payload = await fresh.getYahooPayload('USDILS=X');
+    expect(payload).toMatchObject({ currentPrice: 3.11, source: 'frankfurter', tradeDate: '2026-10-16' });
+    expect(mockAxios.get.mock.calls[1][0]).toContain('api.frankfurter.dev');
+  });
+
   test('an exchange rate never goes to Finnhub', async () => {
     mockAxios.get.mockResolvedValueOnce(yahooChart(3.1, 3.05));
     const payload = await fresh.getYahooPayload('USDILS=X');
