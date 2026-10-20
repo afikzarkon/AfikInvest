@@ -95,3 +95,68 @@ test('lists transactions and the realized gain for the year', () => {
   expect(screen.getByText(/1 מנות שמומשו/)).toBeInTheDocument();
   expect(screen.getAllByText('100.00 ₪').length).toBeGreaterThan(0);
 });
+
+// THE PAGE ON A PHONE: cards by month instead of the nine-column table,
+// type buttons and a search in view, the rest of the filters in a sheet.
+describe('TransactionsView on a phone', () => {
+  let originalMatchMedia;
+  beforeEach(() => {
+    originalMatchMedia = window.matchMedia;
+    window.matchMedia = (query) => ({
+      matches: /max-width:\s*768px/.test(query),
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {}
+    });
+  });
+  afterEach(() => {
+    window.matchMedia = originalMatchMedia;
+  });
+
+  test('the history is cards grouped by month, newest first, with no table', () => {
+    renderView({ transactions: [sale, deposit] });
+    expect(screen.queryByRole('table')).toBeNull();
+    const list = screen.getByLabelText('עסקאות');
+    const months = within(list)
+      .getAllByRole('heading', { level: 3 })
+      .map((h) => h.textContent);
+    expect(months[0]).toMatch(/פברואר/);
+    expect(months[1]).toMatch(/ינואר/);
+    expect(within(list).getByText('לאומי (604611)')).toBeInTheDocument();
+    expect(within(list).getByText('בונוס')).toBeInTheDocument();
+  });
+
+  test('editing and deleting work from a card', async () => {
+    const confirm = jest.spyOn(window, 'confirm').mockReturnValue(true);
+    const props = renderView({ transactions: [sale] });
+    fireEvent.click(screen.getByRole('button', { name: `עריכת עסקה ${sale.date}` }));
+    expect(props.onEditTransaction).toHaveBeenCalledWith(sale);
+    fireEvent.click(screen.getByRole('button', { name: `מחיקת עסקה ${sale.date}` }));
+    await waitFor(() => expect(props.onDeleteTransaction).toHaveBeenCalledWith('t1'));
+    confirm.mockRestore();
+  });
+
+  test('the type buttons filter in place; asset class and dates are in the sheet', () => {
+    renderView({ transactions: [sale, deposit] });
+    const types = screen.getByRole('group', { name: 'סוג' });
+    fireEvent.click(within(types).getByRole('button', { name: 'הפקדה' }));
+    expect(screen.queryByText('לאומי (604611)')).toBeNull();
+    fireEvent.click(within(types).getByRole('button', { name: 'הכול' }));
+    expect(screen.getByText('לאומי (604611)')).toBeInTheDocument();
+
+    expect(screen.queryByLabelText('סוג נכס')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'סינון' }));
+    const sheet = screen.getByRole('dialog', { name: 'סינון עסקאות' });
+    fireEvent.change(within(sheet).getByLabelText('סוג נכס'), { target: { value: 'pension' } });
+    fireEvent.click(within(sheet).getByRole('button', { name: 'הצגת 1 עסקאות' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByText('לאומי (604611)')).toBeNull();
+    expect(document.querySelector('.perf-filter-count')).toHaveTextContent('1');
+  });
+
+  test('the year\'s realized totals come before the history', () => {
+    renderView({ transactions: [sale] });
+    const titles = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+    expect(titles.indexOf(`רווח הון ממומש ${year}`)).toBeLessThan(titles.indexOf('כל העסקאות'));
+  });
+});

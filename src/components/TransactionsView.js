@@ -1,8 +1,11 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import PageToolbar from './PageToolbar';
 import BetaBanner from './BetaBanner';
+import BottomSheet from './ui/BottomSheet';
 import { computeRealizedGains } from '../utils/realizedGains';
-import { todayISO } from '../utils/portfolioDates';
+import { todayISO, formatMonthLabel } from '../utils/portfolioDates';
+import { formatDate } from '../utils/formatters';
+import { useMediaQuery } from '../hooks/useMediaQuery';
 import { ACTION_LABELS, ASSET_CLASSES, accountLabel, classInfo, heldSymbols } from '../utils/assetEntry';
 
 // /transactions - the HISTORY of sales, purchases, dividends, deposits and
@@ -72,6 +75,21 @@ export function describeAsset(tx, holdings) {
 
 const EMPTY_FILTERS = { type: '', assetClass: '', text: '', from: '', to: '' };
 
+// The history newest first, in calendar months - the way a statement is
+// read on a phone, where a nine-column table does not fit. Pure.
+export function groupByMonth(transactions) {
+  const groups = [];
+  [...(transactions || [])]
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+    .forEach((tx) => {
+      const month = String(tx.date || '').slice(0, 7);
+      const last = groups[groups.length - 1];
+      if (last && last.month === month) last.items.push(tx);
+      else groups.push({ month, items: [tx] });
+    });
+  return groups;
+}
+
 // The history, narrowed by the filters. Pure, so it is tested directly.
 export function filterTransactions(transactions, filters, holdings) {
   const text = String(filters.text || '').trim().toLowerCase();
@@ -119,6 +137,15 @@ function TransactionsView({
   const setFilter = (name, value) => setFilters((prev) => ({ ...prev, [name]: value }));
   const filtersActive = Object.values(filters).some(Boolean);
 
+  // THE PAGE ON A PHONE: the realized-gain totals first as three small
+  // tiles, then search and the type buttons, the rest of the filters in a
+  // sheet, and the history as cards by month instead of a table.
+  const isPhone = useMediaQuery('(max-width: 768px)');
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const closeFilters = useCallback(() => setFiltersOpen(false), []);
+  // What the sheet holds and is set away from "everything".
+  const sheetFilterCount = [filters.assetClass, filters.from, filters.to].filter(Boolean).length;
+
   const handleDelete = async (tx) => {
     const ok = window.confirm(`למחוק את ה${TYPE_LABELS[tx.type]} מ-${tx.date}? הפעולה תבוטל גם בתיק.`);
     if (!ok) return;
@@ -126,15 +153,89 @@ function TransactionsView({
     setMessage(result.ok ? { tone: 'ok', text: 'העסקה נמחקה והתיק עודכן' } : { tone: 'error', text: result.error || 'המחיקה נכשלה' });
   };
 
+  const amountText = (tx) =>
+    tx.amountILS !== null && tx.amountILS !== undefined ? `${formatPriceWithSign(tx.amountILS)} ₪` : '';
+
+  const rowActions = (tx) => (
+    <>
+      {onEditTransaction && (
+        <button
+          type="button"
+          className="benchmark-toggle-button"
+          onClick={() => onEditTransaction(tx)}
+          aria-label={`עריכת עסקה ${tx.date}`}
+        >
+          עריכה
+        </button>
+      )}
+      <button type="button" className="benchmark-toggle-button" onClick={() => handleDelete(tx)} aria-label={`מחיקת עסקה ${tx.date}`}>
+        מחיקה
+      </button>
+    </>
+  );
+
+  const realizedSection = (
+    <div className="analysis-section tx-realized">
+      <h2 className="section-title">רווח הון ממומש {currentYear}</h2>
+      <div className="distribution-grid">
+        <div className="distribution-card">
+          <h3>רווח ריאלי נטו</h3>
+          <div className={`distribution-value ${(yearTotals?.netRealGainILS || 0) >= 0 ? 'profit-positive' : 'profit-negative'}`}>
+            {formatPriceWithSign(yearTotals?.netRealGainILS || 0)} ₪
+          </div>
+          <div className="distribution-percentage">{yearTotals?.count || 0} מנות שמומשו</div>
+        </div>
+        <div className="distribution-card">
+          <h3>הפסדים ממומשים לקיזוז</h3>
+          <div className="distribution-value profit-negative">{formatPriceWithSign(yearTotals?.realLossesILS || 0)} ₪</div>
+        </div>
+        <div className="distribution-card">
+          <h3>מס משוער (25%)</h3>
+          <div className="distribution-value">{formatPriceWithSign(yearTotals?.estimatedTaxILS || 0)} ₪</div>
+          <div className="distribution-percentage">הערכה בלבד, לא ייעוץ מס</div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const assetClassSelect = (
+    <select id="tx-filter-class" className="monthly-select" value={filters.assetClass} onChange={(e) => setFilter('assetClass', e.target.value)}>
+      <option value="">הכול</option>
+      {ASSET_CLASSES.map((c) => (
+        <option key={c.key} value={c.key}>
+          {c.label}
+        </option>
+      ))}
+    </select>
+  );
+
+  const dateInputs = (
+    <>
+      <div className="rebalance-input-item">
+        <label htmlFor="tx-filter-from">מתאריך</label>
+        <input id="tx-filter-from" className="monthly-select" type="date" value={filters.from} onChange={(e) => setFilter('from', e.target.value)} />
+      </div>
+      <div className="rebalance-input-item">
+        <label htmlFor="tx-filter-to">עד תאריך</label>
+        <input id="tx-filter-to" className="monthly-select" type="date" value={filters.to} onChange={(e) => setFilter('to', e.target.value)} />
+      </div>
+    </>
+  );
+
   return (
-    <div className="App">
+    <div className="App phone-flat">
       <div className="analysis-container">
         <div className="analysis-content">
           <PageToolbar
             title="עסקאות"
             subtitle="יומן כל הפעולות - קניות, מכירות, דיבידנדים, הפקדות ומשיכות. רישום ועריכה דרך טופס ההוספה האחד."
+            sticky={!isPhone}
           />
           <BetaBanner tone="data" />
+
+          {/* The year's totals are what a person checks; on a phone they
+              come before the history rather than after all of it. */}
+          {isPhone && realizedSection}
 
           <div className="analysis-section">
             <div className="rebalance-sum-row">
@@ -146,47 +247,105 @@ function TransactionsView({
               )}
             </div>
 
-            <div className="rebalance-inputs-grid" role="search" aria-label="סינון עסקאות">
-              <div className="rebalance-input-item">
-                <label htmlFor="tx-filter-type">סוג</label>
-                <select id="tx-filter-type" className="monthly-select" value={filters.type} onChange={(e) => setFilter('type', e.target.value)}>
-                  <option value="">הכול</option>
-                  {Object.entries(TYPE_LABELS).map(([key, label]) => (
-                    <option key={key} value={key}>
+            {isPhone ? (
+              <div className="tx-phone-filters" role="search" aria-label="סינון עסקאות">
+                <div className="tx-phone-search">
+                  <label htmlFor="tx-filter-text" className="visually-hidden">
+                    חיפוש
+                  </label>
+                  <input
+                    id="tx-filter-text"
+                    className="monthly-select"
+                    type="search"
+                    value={filters.text}
+                    placeholder="חיפוש נייר, חשבון או הערה"
+                    onChange={(e) => setFilter('text', e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="perf-filter-button"
+                    aria-haspopup="dialog"
+                    aria-expanded={filtersOpen}
+                    onClick={() => setFiltersOpen(true)}
+                  >
+                    סינון
+                    {sheetFilterCount > 0 && (
+                      <span className="perf-filter-count" aria-label={`${sheetFilterCount} פעילים`}>
+                        {sheetFilterCount}
+                      </span>
+                    )}
+                  </button>
+                </div>
+                <div className="tx-type-chips" role="group" aria-label="סוג">
+                  {[['', 'הכול'], ...Object.entries(TYPE_LABELS)].map(([key, label]) => (
+                    <button
+                      key={key || 'all'}
+                      type="button"
+                      className={`period-toggle ${filters.type === key ? 'active' : ''}`}
+                      aria-pressed={filters.type === key}
+                      onClick={() => setFilter('type', key)}
+                    >
                       {label}
-                    </option>
+                    </button>
                   ))}
-                </select>
+                </div>
+                {filtersOpen && (
+                  <BottomSheet
+                    title="סינון עסקאות"
+                    onClose={closeFilters}
+                    footer={
+                      <button type="button" className="perf-filter-apply" onClick={closeFilters}>
+                        הצגת {visible.length} עסקאות
+                      </button>
+                    }
+                  >
+                    <div className="perf-sheet-group">
+                      <label className="perf-sheet-label" htmlFor="tx-filter-class">
+                        סוג נכס
+                      </label>
+                      {assetClassSelect}
+                    </div>
+                    <div className="perf-sheet-group">
+                      <span className="perf-sheet-label">טווח תאריכים</span>
+                      <div className="tx-sheet-dates">{dateInputs}</div>
+                    </div>
+                    {filtersActive && (
+                      <button type="button" className="benchmark-toggle-button" onClick={() => setFilters(EMPTY_FILTERS)}>
+                        ניקוי סינון
+                      </button>
+                    )}
+                  </BottomSheet>
+                )}
               </div>
-              <div className="rebalance-input-item">
-                <label htmlFor="tx-filter-class">סוג נכס</label>
-                <select id="tx-filter-class" className="monthly-select" value={filters.assetClass} onChange={(e) => setFilter('assetClass', e.target.value)}>
-                  <option value="">הכול</option>
-                  {ASSET_CLASSES.map((c) => (
-                    <option key={c.key} value={c.key}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
+            ) : (
+              <div className="rebalance-inputs-grid" role="search" aria-label="סינון עסקאות">
+                <div className="rebalance-input-item">
+                  <label htmlFor="tx-filter-type">סוג</label>
+                  <select id="tx-filter-type" className="monthly-select" value={filters.type} onChange={(e) => setFilter('type', e.target.value)}>
+                    <option value="">הכול</option>
+                    {Object.entries(TYPE_LABELS).map(([key, label]) => (
+                      <option key={key} value={key}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="rebalance-input-item">
+                  <label htmlFor="tx-filter-class">סוג נכס</label>
+                  {assetClassSelect}
+                </div>
+                <div className="rebalance-input-item">
+                  <label htmlFor="tx-filter-text">חיפוש</label>
+                  <input id="tx-filter-text" className="monthly-select" value={filters.text} placeholder="נייר, חשבון או הערה" onChange={(e) => setFilter('text', e.target.value)} />
+                </div>
+                {dateInputs}
+                {filtersActive && (
+                  <button type="button" className="benchmark-toggle-button" onClick={() => setFilters(EMPTY_FILTERS)}>
+                    ניקוי סינון
+                  </button>
+                )}
               </div>
-              <div className="rebalance-input-item">
-                <label htmlFor="tx-filter-text">חיפוש</label>
-                <input id="tx-filter-text" className="monthly-select" value={filters.text} placeholder="נייר, חשבון או הערה" onChange={(e) => setFilter('text', e.target.value)} />
-              </div>
-              <div className="rebalance-input-item">
-                <label htmlFor="tx-filter-from">מתאריך</label>
-                <input id="tx-filter-from" className="monthly-select" type="date" value={filters.from} onChange={(e) => setFilter('from', e.target.value)} />
-              </div>
-              <div className="rebalance-input-item">
-                <label htmlFor="tx-filter-to">עד תאריך</label>
-                <input id="tx-filter-to" className="monthly-select" type="date" value={filters.to} onChange={(e) => setFilter('to', e.target.value)} />
-              </div>
-              {filtersActive && (
-                <button type="button" className="benchmark-toggle-button" onClick={() => setFilters(EMPTY_FILTERS)}>
-                  ניקוי סינון
-                </button>
-              )}
-            </div>
+            )}
 
             {message && (
               <p role="status" className={message.tone === 'ok' ? 'profit-positive' : 'profit-negative'}>
@@ -200,6 +359,34 @@ function TransactionsView({
               <p className="history-empty-note">עדיין לא נרשמו עסקאות. לחצו "+ רישום עסקה" כדי להתחיל.</p>
             ) : visible.length === 0 ? (
               <p className="history-empty-note">אין עסקאות שמתאימות לסינון.</p>
+            ) : isPhone ? (
+              <div className="tx-months" aria-label="עסקאות">
+                {groupByMonth(visible).map((group) => (
+                  <section className="tx-month" key={group.month} aria-label={formatMonthLabel(group.month)}>
+                    <h3 className="tx-month-title">{formatMonthLabel(group.month)}</h3>
+                    <ul className="tx-cards">
+                      {group.items.map((tx) => (
+                        <li className="tx-card" key={tx.id}>
+                          <div className="tx-card-row">
+                            <span className="tx-card-asset">
+                              <span className={`tx-type is-${String(tx.type).toLowerCase()}`}>{TYPE_LABELS[tx.type] || tx.type}</span>
+                              {describeAsset(tx, holdings)}
+                            </span>
+                            <span className="tx-card-amount">{amountText(tx)}</span>
+                          </div>
+                          <div className="tx-card-sub">
+                            {formatDate(tx.date)}
+                            {tx.units != null && tx.price != null ? ` · ${tx.units} × ${tx.price}` : ''}
+                            {tx.fees ? ` · עמלות ${tx.fees}` : ''}
+                          </div>
+                          {tx.note && <p className="tx-card-note">{tx.note}</p>}
+                          <div className="tx-card-actions">{rowActions(tx)}</div>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ))}
+              </div>
             ) : (
               <div className="stocks-table-container">
                 <table className="analysis-table" aria-label="עסקאות">
@@ -227,21 +414,7 @@ function TransactionsView({
                         <td>{tx.fees || ''}</td>
                         <td>{tx.amountILS !== null && tx.amountILS !== undefined ? formatPriceWithSign(tx.amountILS) : ''}</td>
                         <td>{tx.note || ''}</td>
-                        <td>
-                          {onEditTransaction && (
-                            <button
-                              type="button"
-                              className="benchmark-toggle-button"
-                              onClick={() => onEditTransaction(tx)}
-                              aria-label={`עריכת עסקה ${tx.date}`}
-                            >
-                              עריכה
-                            </button>
-                          )}
-                          <button type="button" className="benchmark-toggle-button" onClick={() => handleDelete(tx)} aria-label={`מחיקת עסקה ${tx.date}`}>
-                            מחיקה
-                          </button>
-                        </td>
+                        <td>{rowActions(tx)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -250,27 +423,7 @@ function TransactionsView({
             )}
           </div>
 
-          <div className="analysis-section">
-            <h2 className="section-title">רווח הון ממומש {currentYear}</h2>
-            <div className="distribution-grid">
-              <div className="distribution-card">
-                <h3>רווח ריאלי נטו</h3>
-                <div className={`distribution-value ${(yearTotals?.netRealGainILS || 0) >= 0 ? 'profit-positive' : 'profit-negative'}`}>
-                  {formatPriceWithSign(yearTotals?.netRealGainILS || 0)} ₪
-                </div>
-                <div className="distribution-percentage">{yearTotals?.count || 0} מנות שמומשו</div>
-              </div>
-              <div className="distribution-card">
-                <h3>הפסדים ממומשים לקיזוז</h3>
-                <div className="distribution-value profit-negative">{formatPriceWithSign(yearTotals?.realLossesILS || 0)} ₪</div>
-              </div>
-              <div className="distribution-card">
-                <h3>מס משוער (25%)</h3>
-                <div className="distribution-value">{formatPriceWithSign(yearTotals?.estimatedTaxILS || 0)} ₪</div>
-                <div className="distribution-percentage">הערכה בלבד, לא ייעוץ מס</div>
-              </div>
-            </div>
-          </div>
+          {!isPhone && realizedSection}
         </div>
       </div>
     </div>

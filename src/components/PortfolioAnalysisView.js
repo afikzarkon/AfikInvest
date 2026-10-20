@@ -1011,7 +1011,6 @@ function PortfolioAnalysisView({
   const activeFilterCount = [
     marketSegment !== DEFAULT_SEGMENT,
     showFxToggle && fxMode !== resolveFxMode(marketSegment, defaultFxModeForSegment(marketSegment)),
-    showBenchmark,
     // A typed range matches none of the period buttons.
     !activeReturnPeriod
   ].filter(Boolean).length;
@@ -1151,7 +1150,8 @@ function PortfolioAnalysisView({
 
   // THE BENCHMARK OVERLAY's switch and index choice: the same neutralized
   // growth for an index, based at 100 on the same first date, so the gap
-  // between the two lines is the relative performance.
+  // between the two lines is the relative performance. Wide screens only; a
+  // phone has the row of index buttons above the chart instead.
   const benchmarkControls = (
     <div className="chart-overlay-controls">
       <label className="overlay-toggle">
@@ -1202,7 +1202,7 @@ function PortfolioAnalysisView({
   );
 
   return (
-    <div className="App analysis-page">
+    <div className="App analysis-page phone-flat">
       <div className="analysis-container">
         <div className="analysis-content">
           {/* Not pinned on a phone: the tab bar below is, and two sticky
@@ -1446,7 +1446,6 @@ function PortfolioAnalysisView({
                   {marketControls}
                   {fxExplanation && <p className="overlay-hint">{fxExplanation.trim()}</p>}
                 </div>
-                {stats.hasHistory && <div className="perf-sheet-group">{benchmarkControls}</div>}
                 <div className="perf-sheet-group">
                   <span className="perf-sheet-label">טווח תאריכים</span>
                   {dateControls}
@@ -1526,8 +1525,48 @@ function PortfolioAnalysisView({
                   );
                 })()}
 
-                {/* In the filter sheet on a phone (see benchmarkControls). */}
-                {!isNarrowScreen && benchmarkControls}
+                {/* On a phone the indices are a row of buttons right above
+                    the chart: behind a switch inside the filter sheet they
+                    were two taps and a scroll away, and easy to miss. */}
+                {isNarrowScreen ? (
+                  <div className="phone-benchmark">
+                    <span className="phone-benchmark-label" id="phone-benchmark-label">
+                      השוואה למדד
+                    </span>
+                    <div className="phone-benchmark-chips" role="group" aria-labelledby="phone-benchmark-label">
+                      <button
+                        type="button"
+                        className={`period-toggle ${!showBenchmark ? 'active' : ''}`}
+                        aria-pressed={!showBenchmark}
+                        onClick={() => setShowBenchmark(false)}
+                      >
+                        ללא
+                      </button>
+                      {benchmarkOptions.map((option) => {
+                        const on = showBenchmark && selectedBenchmarkKey === option.key;
+                        return (
+                          <button
+                            key={option.key}
+                            type="button"
+                            className={`period-toggle ${on ? 'active' : ''}`}
+                            aria-pressed={on}
+                            onClick={() => {
+                              setBenchmarkKey(option.key);
+                              setShowBenchmark(true);
+                            }}
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {showBenchmark && selectedBenchmarkCurrency === 'USD' && (
+                      <p className="overlay-hint">מוצג בשקלים, לפי שער הדולר בכל תאריך.</p>
+                    )}
+                  </div>
+                ) : (
+                  benchmarkControls
+                )}
 
                 {benchmarkStatus && <p className="history-empty-note">{benchmarkStatus}</p>}
 

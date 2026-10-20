@@ -1011,6 +1011,39 @@ describe('PortfolioAnalysisView on a phone', () => {
     expect(screen.getByRole('button', { name: 'מפסידות' })).toHaveAttribute('aria-pressed', 'true');
   });
 
+  // The indices are buttons above the chart, one tap each - not behind a
+  // switch inside the filter sheet. They need a portfolio series to render,
+  // so the price fetch returns real closes.
+  test('every index of the market is one tap away above the chart', async () => {
+    global.fetch.mockImplementation((url) => {
+      const u = String(url);
+      const body = u.includes('israeli-stocks-history')
+        ? { history: { TEVA: [{ date: '2023-01-15', close: 10000 }, { date: '2024-01-01', close: 11000 }, { date: '2024-06-01', close: 12000 }] } }
+        : u.includes('american-stocks-history')
+        ? { history: { AAPL: [{ date: '2023-01-15', close: 150 }] } }
+        : u.includes('exchange-rate-history')
+        ? { history: [{ date: '2023-01-15', close: 3.6 }] }
+        : {};
+      return Promise.resolve({ ok: true, json: async () => body });
+    });
+    render(<PortfolioAnalysisView {...makeProps()} />);
+
+    const group = await screen.findByRole('group', { name: 'השוואה למדד' });
+    const labels = within(group)
+      .getAllByRole('button')
+      .map((b) => b.textContent);
+    expect(labels).toEqual(['ללא', 'S&P 500', 'תל אביב 125', 'NASDAQ Composite']);
+    expect(within(group).getByRole('button', { name: 'ללא' })).toHaveAttribute('aria-pressed', 'true');
+
+    fireEvent.click(within(group).getByRole('button', { name: 'תל אביב 125' }));
+    expect(within(group).getByRole('button', { name: 'תל אביב 125' })).toHaveAttribute('aria-pressed', 'true');
+    await waitFor(() => expect(useBenchmarkHistory).toHaveBeenLastCalledWith('ta125', expect.anything()));
+
+    // Nothing about the index is left in the sheet.
+    fireEvent.click(screen.getByRole('button', { name: 'סינון' }));
+    expect(within(screen.getByRole('dialog')).queryByText('השוואה מול מדד ייחוס')).toBeNull();
+  });
+
   test('sectors are bars rather than a second donut', () => {
     const { container } = render(<PortfolioAnalysisView {...makeProps()} />);
     fireEvent.click(screen.getByRole('tab', { name: 'פיזור' }));

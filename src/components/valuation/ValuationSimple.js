@@ -48,13 +48,48 @@ function CheckCard({ check }) {
   );
 }
 
-// Three futures on one line, with today's price marked among them.
-function Futures({ futures }) {
+// The scenario names as they fit on the line itself; the list above it
+// carries the full sentences.
+const FUTURE_SHORT_LABELS = { bear: 'פחות טוב', base: 'כצפוי', bull: 'מצוין' };
+
+// Labels nearer than this (in % of the line) go up to a second level
+// rather than printing over each other. About one "$156.09" at phone width.
+const LABEL_MIN_GAP = 22;
+
+// Each scenario label's level: 0 just above the line, 1 above that. Read in
+// order along the line, a label takes the first level where it clears the
+// last label on it - and when it clears neither, the one with more room.
+export function placeScaleLabels(points, minGap = LABEL_MIN_GAP) {
+  const lastAt = [-Infinity, -Infinity];
+  return [...points]
+    .sort((a, b) => a.at - b.at)
+    .map((p) => {
+      const gaps = lastAt.map((last) => p.at - last);
+      const free = gaps.findIndex((gap) => gap >= minGap);
+      const lane = free !== -1 ? free : gaps[0] >= gaps[1] ? 0 : 1;
+      lastAt[lane] = p.at;
+      return { ...p, lane };
+    });
+}
+
+// A label near an end of the line is anchored by that end, so it stays
+// inside the card instead of being centred half off it.
+const edgeClass = (at) => (at < 12 ? 'is-start' : at > 88 ? 'is-end' : '');
+
+// Three futures on one line, with today's price marked among them - each
+// with its price written on the line, so the gap can be read off it rather
+// than looked up in the list above.
+export function Futures({ futures }) {
   const values = futures.rows.map((r) => r.value).concat(futures.price);
   const lo = Math.min(...values);
   const hi = Math.max(...values);
+  // A little room past both ends so no mark sits on the card's edge.
+  const pad = (hi - lo) * 0.04;
   // A number line: low on the left, as on any scale.
-  const at = (v) => (hi > lo ? ((v - lo) / (hi - lo)) * 100 : 50);
+  const at = (v) => (hi > lo ? ((v - lo + pad) / (hi - lo + 2 * pad)) * 100 : 50);
+  const labels = placeScaleLabels(futures.rows.map((r) => ({ key: r.key, text: r.text, at: at(r.value) })));
+  const twoLevels = labels.some((l) => l.lane === 1);
+  const priceAt = at(futures.price);
   return (
     <section className="vs-block" aria-labelledby="vs-futures">
       <h3 id="vs-futures">ומה אם העתיד יהיה שונה?</h3>
@@ -68,14 +103,26 @@ function Futures({ futures }) {
           </li>
         ))}
       </ul>
+      {/* Hidden from screen readers: the list above says the same in full. */}
       <div className="vs-scale" aria-hidden="true">
+        <div className={`vs-scale-labels ${twoLevels ? 'has-two-levels' : ''}`}>
+          {labels.map((l) => (
+            <span key={l.key} className={`vs-scale-label is-lane-${l.lane} ${edgeClass(l.at)}`} style={{ left: `${l.at}%` }}>
+              <span className="vs-scale-label-name">{FUTURE_SHORT_LABELS[l.key]}</span>
+              <b>{l.text}</b>
+            </span>
+          ))}
+        </div>
         <div className="vs-scale-track">
           <span className="vs-scale-range" style={{ left: `${at(futures.rows[0].value)}%`, width: `${at(futures.rows[2].value) - at(futures.rows[0].value)}%` }} />
           {futures.rows.map((r) => (
             <span key={r.key} className="vs-scale-dot" style={{ left: `${at(r.value)}%` }} />
           ))}
-          <span className="vs-scale-price" style={{ left: `${at(futures.price)}%` }}>
-            <span>מחיר היום</span>
+          <span className="vs-scale-price" style={{ left: `${priceAt}%` }} />
+        </div>
+        <div className="vs-scale-today-row">
+          <span className={`vs-scale-today ${edgeClass(priceAt)}`} style={{ left: `${priceAt}%` }}>
+            מחיר היום <b>{futures.priceText}</b>
           </span>
         </div>
       </div>

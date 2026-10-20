@@ -11691,8 +11691,102 @@ select.auth-input[dir='ltr'] {
    today's price as a flag. */
 .vs-scale {
   direction: ltr;
-  /* Room at both ends for the price flag's label. */
-  margin: 26px 40px 8px;
+  margin: 14px 4px 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The scenario prices, written over their dots (ValuationSimple.js,
+   placeScaleLabels): one level, or two when neighbours would touch. */
+.vs-scale-labels {
+  position: relative;
+  height: 40px;
+}
+
+.vs-scale-labels.has-two-levels {
+  height: 76px;
+}
+
+.vs-scale-label {
+  position: absolute;
+  bottom: 6px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.2;
+  white-space: nowrap;
+  direction: rtl;
+}
+
+.vs-scale-label.is-lane-1 {
+  bottom: 42px;
+}
+
+/* A leader down to the line from the upper level, so its label is not
+   read as belonging to the dot beneath the lower one. */
+.vs-scale-label.is-lane-1::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  width: 1px;
+  height: 36px;
+  background: var(--sw-border-strong);
+}
+
+.vs-scale-label.is-start,
+.vs-scale-today.is-start {
+  transform: translateX(-6px);
+  align-items: flex-start;
+}
+
+.vs-scale-label.is-end,
+.vs-scale-today.is-end {
+  transform: translateX(calc(-100% + 6px));
+  align-items: flex-end;
+}
+
+.vs-scale-label.is-start::after {
+  left: 6px;
+}
+
+.vs-scale-label.is-end::after {
+  left: calc(100% - 6px);
+}
+
+.vs-scale-label-name {
+  font-size: 0.68rem;
+  color: var(--sw-text-muted);
+}
+
+.vs-scale-label b {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--sw-accent);
+}
+
+/* Today's price under the line, apart from the three estimates above it. */
+.vs-scale-today-row {
+  position: relative;
+  height: 30px;
+}
+
+.vs-scale-today {
+  position: absolute;
+  top: 8px;
+  transform: translateX(-50%);
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--sw-text);
+  color: var(--sw-bg);
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+  direction: rtl;
+}
+
+.vs-scale-today b {
+  font-weight: 800;
 }
 
 .vs-scale-track {
@@ -11722,28 +11816,14 @@ select.auth-input[dir='ltr'] {
   border: 2px solid var(--sw-surface);
 }
 
+/* Today's price: a mark across the line, down to its label below. */
 .vs-scale-price {
   position: absolute;
-  top: -22px;
-  bottom: -6px;
+  top: -6px;
+  bottom: -14px;
   width: 2px;
   margin-left: -1px;
   background: var(--sw-text);
-}
-
-.vs-scale-price span {
-  position: absolute;
-  bottom: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 1px 6px;
-  border-radius: 6px;
-  background: var(--sw-text);
-  color: var(--sw-bg);
-  font-size: 0.68rem;
-  font-weight: 700;
-  white-space: nowrap;
-  direction: rtl;
 }
 
 .vs-explain {
@@ -12911,14 +12991,17 @@ select.auth-input[dir='ltr'] {
    page background, and what is inside them is rows, not boxes.
 
    Everything is prefixed .analysis-page so it outranks the general phone
-   rules earlier in the file without !important. */
+   rules earlier in the file without !important.
+
+   The page frame itself (.phone-flat) is shared with the other pages laid
+   out this way - see also "PAGES IN ONE FRAME ON A PHONE" below. */
 @media (max-width: 768px) {
-  .App.analysis-page {
+  .App.phone-flat {
     padding: 0;
     display: block;
   }
 
-  .analysis-page .analysis-container {
+  .phone-flat .analysis-container {
     padding: 0;
     margin: 0;
     background: none;
@@ -12929,7 +13012,7 @@ select.auth-input[dir='ltr'] {
     backdrop-filter: none;
   }
 
-  .analysis-page .page-toolbar {
+  .phone-flat .page-toolbar {
     margin-bottom: 10px;
     padding: 12px 0 10px;
     border-bottom: none;
@@ -12938,7 +13021,7 @@ select.auth-input[dir='ltr'] {
 
   /* The subtitle describes the page to someone choosing it from a list;
      on the page itself, on a phone, it is a line of height. */
-  .analysis-page .page-toolbar-subtitle {
+  .phone-flat .page-toolbar-subtitle {
     display: none;
   }
 
@@ -13621,4 +13704,259 @@ select.auth-input[dir='ltr'] {
 .perf-filter-apply:focus-visible {
   outline: 2px solid var(--sw-text);
   outline-offset: 2px;
+}
+
+/* The index buttons above the analysis chart on a phone
+   (PortfolioAnalysisView.js): "ללא" and each index of the selected market,
+   in one row that scrolls sideways when the market offers four. */
+@media (max-width: 768px) {
+  .phone-benchmark {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 12px;
+  }
+
+  .phone-benchmark-label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--sw-text-secondary);
+  }
+
+  .phone-benchmark-chips {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .phone-benchmark-chips::-webkit-scrollbar {
+    display: none;
+  }
+
+  .phone-benchmark-chips .period-toggle {
+    flex: 0 0 auto;
+    padding: 6px 12px;
+    font-size: 0.8rem;
+  }
+
+  .phone-benchmark .overlay-hint {
+    margin: 0;
+    font-size: 0.72rem;
+  }
+}
+
+/* =============================================================
+   PAGES IN ONE FRAME ON A PHONE (.phone-flat)
+   =============================================================
+
+   The analysis page's phone frame for any page whose sections sit straight
+   in .analysis-content: each section a plain panel edge to edge, no card
+   around it. The page itself (.App.phone-flat, the container and the
+   toolbar) is set up in "THE ANALYSIS PAGE ON A PHONE" above. */
+@media (max-width: 768px) {
+  .phone-flat .analysis-content > .analysis-section {
+    margin: 0 -14px 8px;
+    padding: 16px;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    background: var(--sw-surface);
+  }
+
+  .phone-flat .analysis-content > .analysis-section > .section-title {
+    font-size: 1.02rem;
+  }
+}
+
+/* =============================================================
+   TRANSACTIONS ON A PHONE (TransactionsView.js)
+   ============================================================= */
+@media (max-width: 768px) {
+  /* The year's three totals side by side, labels only. !important for the
+     older blanket one-column rule, as on the analysis page. */
+  .tx-realized .distribution-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 6px;
+    margin-top: 10px;
+  }
+
+  .tx-realized .distribution-card {
+    padding: 10px 8px;
+    text-align: start;
+    box-shadow: none;
+  }
+
+  .tx-realized .distribution-card h3 {
+    font-size: 0.7rem;
+    line-height: 1.3;
+    margin-bottom: 4px;
+  }
+
+  .tx-realized .distribution-value {
+    font-size: 0.95rem;
+    white-space: nowrap;
+  }
+
+  .tx-realized .distribution-percentage {
+    font-size: 0.66rem;
+  }
+
+  .tx-phone-filters {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 10px 0 4px;
+  }
+
+  .tx-phone-search {
+    display: flex;
+    gap: 8px;
+  }
+
+  .tx-phone-search input {
+    flex: 1;
+    min-width: 0;
+    min-height: 38px;
+  }
+
+  .tx-type-chips {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .tx-type-chips::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tx-type-chips .period-toggle {
+    flex: 0 0 auto;
+    padding: 6px 12px;
+    font-size: 0.8rem;
+  }
+
+  .tx-months {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin-top: 6px;
+  }
+
+  .tx-month-title {
+    margin: 0 0 2px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--sw-text-muted);
+  }
+
+  .tx-cards {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .tx-card {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--sw-border);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .tx-card:last-child {
+    border-bottom: none;
+  }
+
+  .tx-card-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
+  }
+
+  .tx-card-asset {
+    min-width: 0;
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: var(--sw-text);
+  }
+
+  .tx-type {
+    display: inline-block;
+    margin-inline-end: 6px;
+    padding: 1px 7px;
+    border-radius: 6px;
+    background: var(--sw-surface-3);
+    color: var(--sw-text-secondary);
+    font-size: 0.7rem;
+    font-weight: 700;
+    vertical-align: 1px;
+  }
+
+  .tx-type.is-buy {
+    background: var(--sw-accent-soft);
+    color: var(--sw-accent);
+  }
+
+  .tx-type.is-sell,
+  .tx-type.is-withdrawal {
+    background: var(--sw-amber-soft);
+    color: var(--sw-amber);
+  }
+
+  .tx-type.is-dividend,
+  .tx-type.is-deposit {
+    background: var(--sw-green-soft);
+    color: var(--sw-green);
+  }
+
+  .tx-card-amount {
+    flex: 0 0 auto;
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: var(--sw-text);
+  }
+
+  .tx-card-sub {
+    font-size: 0.76rem;
+    color: var(--sw-text-secondary);
+  }
+
+  .tx-card-note {
+    margin: 0;
+    font-size: 0.76rem;
+    color: var(--sw-text-muted);
+  }
+
+  .tx-card-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 4px;
+  }
+
+  .tx-card-actions .benchmark-toggle-button {
+    min-height: 32px;
+    padding: 4px 12px;
+    font-size: 0.76rem;
+  }
+
+  .tx-sheet-dates {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .tx-sheet-dates .rebalance-input-item {
+    padding: 0;
+    border: none;
+    background: none;
+  }
+
+  .tx-sheet-dates input {
+    width: 100%;
+    min-width: 0;
+  }
 }
