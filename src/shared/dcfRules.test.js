@@ -244,17 +244,19 @@ const perShare = (e) => ['bear', 'base', 'bull'].map((k) => e.results[k].perShar
 // change, so neither may the numbers: a different number here means the
 // rules were changed, and this test is where that has to be said.
 describe('regression: the rules on recorded snapshots give these values, whenever they run', () => {
-  test('NOW: 61.27 / 91.40 / 107.14, WACC 9.33%, IRR 7.33%', () => {
+  // Both are technology companies, so half their SBC comes off the FCF.
+  test('NOW: 74.60 / 107.58 / 124.52, WACC 9.33%, IRR 7.96%', () => {
     const e = evaluateDcf({ mode: 'auto', snapshot: nowSnap, valuationDate: DATE });
-    [61.27, 91.4, 107.14].forEach((v, i) => within(perShare(e)[i], v, 0.01));
+    expect(e.model.base.sbcDeductShare).toBe(0.5);
+    [74.6, 107.58, 124.52].forEach((v, i) => within(perShare(e)[i], v, 0.01));
     within(e.main.wacc * 100, 9.33, 0.005);
-    within(e.irr * 100, 7.33, 0.005);
+    within(e.irr * 100, 7.96, 0.005);
   });
 
-  test('AVGO, the beta held at 1.25: 233.41 / 445.25 / 563.34, WACC 10.50%', () => {
+  test('AVGO, the beta held at 1.25: 251.22 / 474.76 / 598.55, WACC 10.50%', () => {
     const e = evaluateDcf({ mode: 'auto', snapshot: avgo, valuationDate: DATE });
     expect(e.model.base.beta).toBe(1.25);
-    [233.41, 445.25, 563.34].forEach((v, i) => within(perShare(e)[i], v, 0.01));
+    [251.22, 474.76, 598.55].forEach((v, i) => within(perShare(e)[i], v, 0.01));
     within(e.main.wacc * 100, 10.5, 0.005);
   });
 
@@ -328,6 +330,7 @@ describe('FCF margins: guidance first, the generic fade only as the fallback', (
     snap.profile.sector = 'Industrials';
     const e = evaluateDcf({ mode: 'auto', snapshot: snap, valuationDate: DATE });
     expect(e.derived.growth1.value).toBeGreaterThan(0.15);
+    expect(e.derived.techGrowth.value).toBe(true);
     expect(e.derived.flatMargin.value).toBe(true);
     expect(e.derived.flatMargin.basis).toMatch(/צמיחה בשנה הראשונה/);
   });
@@ -335,7 +338,7 @@ describe('FCF margins: guidance first, the generic fade only as the fallback', (
   test('neither: the generic rule, and the warning', () => {
     const snap = clone(nowSnap);
     snap.profile.sector = 'Industrials';
-    const slow = Object.assign({}, DEFAULT_RULES, { flatMargin: { sectors: ['Technology'], growthAbove: 0.5 } });
+    const slow = Object.assign({}, DEFAULT_RULES, { techGrowth: { sectors: ['Technology'], growthAbove: 0.5 } });
     const e = evaluateDcf({ mode: 'auto', snapshot: snap, rules: slow, valuationDate: DATE });
     closeAll(e.model.scenarios.find((s) => s.key === 'base').fcfMargin, marginSchedule(e.derived.fcfMarginTtm.value, 0.02, 5));
     expect(e.warnings).toContain('אין הנחיית שוליים, הדעיכה היא כלל גנרי');
@@ -437,7 +440,7 @@ describe('the input card, v2', () => {
   });
 });
 
-describe('the mega-cap beta cap', () => {
+describe('the beta caps by size', () => {
   test('a company under $1T keeps its adjusted beta', () => {
     const { derived: d } = deriveAuto(nowSnap, DEFAULT_RULES);
     expect(d.marketCap.value).toBeLessThan(1e12);
@@ -451,8 +454,8 @@ describe('the mega-cap beta cap', () => {
     expect(deriveAuto(snap, DEFAULT_RULES).derived.beta.value).toBeCloseTo(0.67 + 0.33, 12);
   });
 
-  test('switched off with megaCap: null; not applied to a price in another currency', () => {
-    expect(deriveAuto(avgo, Object.assign({}, DEFAULT_RULES, { megaCap: null })).derived.beta.value).toBeCloseTo(0.67 * 1.476 + 0.33, 12);
+  test('switched off with no tiers; not applied to a price in another currency', () => {
+    expect(deriveAuto(avgo, Object.assign({}, DEFAULT_RULES, { betaCaps: [] })).derived.beta.value).toBeCloseTo(0.67 * 1.476 + 0.33, 12);
     const snap = clone(avgo);
     snap.currency = 'EUR';
     expect(deriveAuto(snap, DEFAULT_RULES).derived.beta.capped).toBeUndefined();
@@ -460,7 +463,7 @@ describe('the mega-cap beta cap', () => {
 
   test('the cap lowers the discount rate the engine runs at', () => {
     const capped = evaluateDcf({ mode: 'auto', snapshot: avgo, valuationDate: DATE });
-    const uncapped = evaluateDcf({ mode: 'auto', snapshot: avgo, rules: Object.assign({}, DEFAULT_RULES, { megaCap: null }), valuationDate: DATE });
+    const uncapped = evaluateDcf({ mode: 'auto', snapshot: avgo, rules: Object.assign({}, DEFAULT_RULES, { betaCaps: [] }), valuationDate: DATE });
     expect(capped.model.base.beta).toBe(1.25);
     expect(capped.main.wacc).toBeLessThan(uncapped.main.wacc);
     expect(capped.main.perShare).toBeGreaterThan(uncapped.main.perShare);
@@ -496,5 +499,109 @@ describe('terminal value by an exit multiple', () => {
     delete card.inputs.terminalMethod;
     delete card.inputs.exitMultiple;
     expect(reproduceFromCard(card).fromInputs.main.perShare).toBe(e.main.perShare);
+  });
+});
+
+describe('the beta cap tiers', () => {
+  const { betaCapTier } = rules;
+
+  test('the largest threshold the value is above wins', () => {
+    expect(betaCapTier(DEFAULT_RULES.betaCaps, 5e12).betaCap).toBe(1.25);
+    expect(betaCapTier(DEFAULT_RULES.betaCaps, 3e11).betaCap).toBe(1.45);
+    expect(betaCapTier(DEFAULT_RULES.betaCaps, 1.5e11)).toBeNull();
+    expect(betaCapTier([], 5e12)).toBeNull();
+    expect(betaCapTier(DEFAULT_RULES.betaCaps, null)).toBeNull();
+  });
+
+  // NOW priced up to a ~$300B company with a raw beta of 2.4.
+  test('a $200B-$1T company with a high beta is held at 1.45, and says which tier', () => {
+    const snap = clone(nowSnap);
+    snap.price.value = 300;
+    snap.betaRaw.value = 2.4;
+    const { derived: d } = deriveAuto(snap, DEFAULT_RULES);
+    expect(d.marketCap.value).toBeGreaterThan(2e11);
+    expect(d.marketCap.value).toBeLessThan(1e12);
+    expect(d.beta.value).toBe(1.45);
+    expect(d.beta.uncapped).toBeCloseTo(0.67 * 2.4 + 0.33, 12);
+    expect(d.beta.basis).toMatch(/תקרת Large Cap: שווי שוק מעל \$200B/);
+  });
+});
+
+describe('the WACC band', () => {
+  // NOW with a raw beta of 0.2: CAPM gives well under 9%.
+  const lowBeta = () => {
+    const snap = clone(nowSnap);
+    snap.betaRaw.value = 0.2;
+    return snap;
+  };
+
+  test('a computed rate under the band runs at its floor, flagged, the computed one kept', () => {
+    const e = evaluateDcf({ mode: 'auto', snapshot: lowBeta(), valuationDate: DATE });
+    expect(e.waccBand.computed).toBeLessThan(0.09);
+    expect(e.waccBand.applied).toBe(0.09);
+    expect(e.main.wacc).toBe(0.09);
+    expect(e.flags.join(' ')).toMatch(/הוחזק על 9\.0%, בטווח 9\.0%-11\.5%/);
+  });
+
+  test('a computed rate over the band runs at its ceiling', () => {
+    const snap = clone(nowSnap);
+    snap.betaRaw.value = 2.4;
+    const e = evaluateDcf({ mode: 'auto', snapshot: snap, valuationDate: DATE });
+    expect(e.waccBand.computed).toBeGreaterThan(0.115);
+    expect(e.main.wacc).toBe(0.115);
+  });
+
+  test('inside the band nothing is overridden; null switches it off', () => {
+    const e = evaluateDcf({ mode: 'auto', snapshot: nowSnap, valuationDate: DATE });
+    expect(e.waccBand).toBeNull();
+    expect(e.main.waccOverridden).toBe(false);
+    const off = evaluateDcf({ mode: 'auto', snapshot: lowBeta(), rules: Object.assign({}, DEFAULT_RULES, { waccBand: null }), valuationDate: DATE });
+    expect(off.main.wacc).toBeLessThan(0.09);
+  });
+
+  test('the held rate is in the card, and reproduces offline', () => {
+    const snap = lowBeta();
+    const e = evaluateDcf({ mode: 'auto', snapshot: snap, valuationDate: DATE });
+    const card = buildInputCard(e, snap, 'NOW');
+    expect(card.inputs.waccOverride).toBe(0.09);
+    const { fromInputs, fromRaw } = reproduceFromCard(clone(card));
+    expect(fromInputs.main.perShare).toBe(e.main.perShare);
+    expect(fromRaw.main.perShare).toBe(e.main.perShare);
+  });
+});
+
+describe('SBC for technology and growth companies', () => {
+  test('half of it is taken off the FCF; the rest is left to the diluted shares', () => {
+    const e = evaluateDcf({ mode: 'auto', snapshot: nowSnap, valuationDate: DATE });
+    expect(e.model.base.sbcDeductShare).toBe(0.5);
+    expect(e.derived.sbcDeductShare.basis).toMatch(/50% מה-SBC/);
+    const y = e.main.years[0];
+    expect(y.adj).toBeCloseTo(y.fcf - y.sbc * 0.5, 6);
+  });
+
+  test('a company neither technology nor fast-growing has all of it taken off', () => {
+    const snap = clone(nowSnap);
+    snap.profile.sector = 'Industrials';
+    const slow = Object.assign({}, DEFAULT_RULES, { techGrowth: { sectors: ['Technology'], growthAbove: 0.5 } });
+    const e = evaluateDcf({ mode: 'auto', snapshot: snap, rules: slow, valuationDate: DATE });
+    expect(e.model.base.sbcDeductShare).toBe(1);
+    const y = e.main.years[0];
+    expect(y.adj).toBeCloseTo(y.fcf - y.sbc, 6);
+  });
+
+  test('the share is a rule: 1 deducts it all again, and the value falls', () => {
+    const half = evaluateDcf({ mode: 'auto', snapshot: nowSnap, valuationDate: DATE });
+    const all = evaluateDcf({ mode: 'auto', snapshot: nowSnap, rules: Object.assign({}, DEFAULT_RULES, { sbcShareTechGrowth: 1 }), valuationDate: DATE });
+    expect(all.model.base.sbcDeductShare).toBe(1);
+    expect(all.main.perShare).toBeLessThan(half.main.perShare);
+  });
+
+  test('the share is carried in the card; an older card deducts it all', () => {
+    const e = evaluateDcf({ mode: 'auto', snapshot: nowSnap, valuationDate: DATE });
+    const card = clone(buildInputCard(e, nowSnap, 'NOW'));
+    expect(card.inputs.sbcDeductShare).toBe(0.5);
+    expect(reproduceFromCard(card).fromInputs.main.perShare).toBe(e.main.perShare);
+    delete card.inputs.sbcDeductShare;
+    expect(reproduceFromCard(card).fromInputs.model.base.sbcDeductShare).toBe(1);
   });
 });

@@ -140,3 +140,21 @@ describe('properties', () => {
     expect(valueLabel(-0.288, 0.15)).toBe('OVERVALUED');
   });
 });
+
+describe('sbcDeductShare', () => {
+  const inputs = () => Object.assign({}, require('./dcfRules').AVGO_PRESET.base, require('./dcfRules').AVGO_PRESET.scenarios[1]);
+
+  test('1 by default: all of the SBC comes off; 0.5 takes off half', () => {
+    const all = runDcf(inputs());
+    expect(all.sbcDeductShare).toBe(1);
+    const half = runDcf(Object.assign(inputs(), { sbcDeductShare: 0.5 }));
+    half.years.forEach((y) => expect(y.adj).toBeCloseTo(y.fcf - y.sbc * 0.5, 6));
+    expect(half.perShare).toBeGreaterThan(all.perShare);
+  });
+
+  test('outside 0..1 is an error, not a number', () => {
+    const out = runDcf(Object.assign(inputs(), { sbcDeductShare: 1.5 }));
+    expect(out.ok).toBe(false);
+    expect(out.errors.join(' ')).toMatch(/בין 0 ל-1/);
+  });
+});

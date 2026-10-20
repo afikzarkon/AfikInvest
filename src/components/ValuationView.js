@@ -45,6 +45,40 @@ function SourceDiagnostics({ diagnostics }) {
   );
 }
 
+// One edit from the rules panel onto those made before it. The beta caps
+// (keyed by size) and the WACC band (min / max) are edited a field at a
+// time, so they merge; 'off' replaces.
+export function mergeRuleEdits(prev, patch) {
+  const next = Object.assign({}, prev, patch);
+  if (patch.betaCaps && prev.betaCaps) next.betaCaps = Object.assign({}, prev.betaCaps, patch.betaCaps);
+  if (patch.waccBand && patch.waccBand !== 'off' && prev.waccBand && prev.waccBand !== 'off') {
+    next.waccBand = Object.assign({}, prev.waccBand, patch.waccBand);
+  }
+  return next;
+}
+
+// The rules the page values on: the defaults with the panel's edits.
+export function rulesWithEdits(edits) {
+  const patch = {};
+  if (Number.isFinite(edits.fadeK)) patch.fadeK = edits.fadeK;
+  if (edits.betaCaps) {
+    patch.betaCaps = DEFAULT_RULES.betaCaps
+      .map((tier) => {
+        const e = edits.betaCaps[tier.above];
+        if (e === 'off') return null;
+        return Number.isFinite(e) ? Object.assign({}, tier, { betaCap: e }) : tier;
+      })
+      .filter(Boolean);
+  }
+  if (edits.waccBand === 'off') patch.waccBand = null;
+  else if (edits.waccBand) patch.waccBand = Object.assign({}, DEFAULT_RULES.waccBand, edits.waccBand);
+  if (typeof edits.flatMargin === 'boolean') patch.flatMargin = edits.flatMargin;
+  if (Number.isFinite(edits.sbcShareTechGrowth)) patch.sbcShareTechGrowth = Math.min(1, Math.max(0, edits.sbcShareTechGrowth));
+  if (edits.terminalMethod) patch.terminalMethod = edits.terminalMethod;
+  if (Number.isFinite(edits.exitMultiple)) patch.exitMultiple = edits.exitMultiple;
+  return Object.assign({}, DEFAULT_RULES, patch);
+}
+
 function ValuationResult({ data }) {
   const { snapshot, loading: dcfLoading, error: dcfError } = useDcfSnapshot(data.symbol);
   // What a person added to the auto model (consensus growth, guided
@@ -55,17 +89,7 @@ function ValuationResult({ data }) {
   // The rules as edited on the page, on top of the default set: k, the
   // mega-cap beta cap ('off' for none), flat margins on or off, and the
   // terminal method with its multiple.
-  const rules = useMemo(() => {
-    const patch = {};
-    if (Number.isFinite(ruleEdits.fadeK)) patch.fadeK = ruleEdits.fadeK;
-    if (ruleEdits.betaCap === 'off') patch.megaCap = null;
-    else if (Number.isFinite(ruleEdits.betaCap)) patch.megaCap = Object.assign({}, DEFAULT_RULES.megaCap, { betaCap: ruleEdits.betaCap });
-    if (ruleEdits.flatMargin === false) patch.flatMargin = null;
-    else if (ruleEdits.flatMargin === true) patch.flatMargin = DEFAULT_RULES.flatMargin;
-    if (ruleEdits.terminalMethod) patch.terminalMethod = ruleEdits.terminalMethod;
-    if (Number.isFinite(ruleEdits.exitMultiple)) patch.exitMultiple = ruleEdits.exitMultiple;
-    return Object.assign({}, DEFAULT_RULES, patch);
-  }, [ruleEdits]);
+  const rules = useMemo(() => rulesWithEdits(ruleEdits), [ruleEdits]);
   // The automatic model, on the day it is viewed. Pure: the same snapshot,
   // additions, rules and date always give the same numbers.
   const autoEvaluation = useMemo(
@@ -117,7 +141,7 @@ function ValuationResult({ data }) {
             autoEvaluation={autoEvaluation}
             overrides={overrides}
             onOverrides={setOverrides}
-            onRules={(patch) => setRuleEdits((r) => Object.assign({}, r, patch))}
+            onRules={(patch) => setRuleEdits((r) => mergeRuleEdits(r, patch))}
           />}
         <p className="section-subtitle">
           FCF = תזרים מפעילות שוטפת פחות השקעות הוניות, ובניכוי תגמול מבוסס מניות (SBC). ערך סופי בשיטת Gordon. אינו ייעוץ השקעות. אפשר לייצא את כל הקלטים לכרטיס JSON ולשחזר את החישוב מחוץ לאתר.

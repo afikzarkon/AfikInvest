@@ -408,7 +408,15 @@ function WaccPanel({ evaluation, editable, onBase, sourcesByField }) {
       </div>
       {main && main.ok && (
         <p className="muted-note">
-          {main.waccOverridden ? (
+          {main.waccOverridden && evaluation.waccBand ? (
+            <>
+              WACC מחושב <Num>{fmtRate(evaluation.waccBand.computed, 2)}</Num> - מחוץ לטווח{' '}
+              <Num>{`${fmtRate(evaluation.waccBand.min)}-${fmtRate(evaluation.waccBand.max)}`}</Num>, ולכן{' '}
+              <strong>
+                WACC <Num>{fmtRate(main.wacc, 2)}</Num>
+              </strong>
+            </>
+          ) : main.waccOverridden ? (
             <>
               WACC הוזן ידנית: <Num>{fmtRate(main.wacc, 2)}</Num>
             </>
@@ -486,8 +494,9 @@ function Sensitivity({ grid, currency, main }) {
 }
 
 // The terminal value by the other method, for comparison: the exit
-// multiples under Gordon, Gordon under an exit multiple.
-function ExitMethod({ inputs, currency }) {
+// multiples under Gordon (25x / 30x for a technology / growth company,
+// otherwise 15x / 20x / 25x), Gordon under an exit multiple.
+function ExitMethod({ inputs, currency, multiples }) {
   if (inputs.terminalMethod === 'exit') {
     const gordon = runDcf(Object.assign({}, inputs, { terminalMethod: 'gordon' }));
     return (
@@ -497,7 +506,7 @@ function ExitMethod({ inputs, currency }) {
       </p>
     );
   }
-  const values = [15, 20, 25].map((m) => ({ m, out: runDcf(Object.assign({}, inputs, { terminalMethod: 'exit', exitMultiple: m })) }));
+  const values = (Array.isArray(multiples) && multiples.length ? multiples : [15, 20, 25]).map((m) => ({ m, out: runDcf(Object.assign({}, inputs, { terminalMethod: 'exit', exitMultiple: m })) }));
   return (
     <p className="muted-note">
       שיטה חלופית - ערך סופי לפי מכפיל יציאה על ה-FCF (אחרי SBC) של השנה החמישית:{' '}
@@ -629,7 +638,23 @@ function SourcesPanel({ evaluation, snapshot, currency }) {
   );
 }
 
+// Who the technology / growth rules apply to, in words.
+function techGrowthText(R) {
+  const tg = R.techGrowth;
+  if (!tg) return null;
+  return (
+    <>
+      חברת טכנולוגיה (סקטור <Num>{tg.sectors.join(', ')}</Num>) או חברה שצומחת <Num>{fmtRate(tg.growthAbove)}</Num> ומעלה בשנה הראשונה
+    </>
+  );
+}
+
+const sizeLabel = (v) => (v >= 1e12 ? `$${v / 1e12}T` : `$${v / 1e9}B`);
+
 function RulesPanel({ rules: R, onRules }) {
+  const caps = Array.isArray(R.betaCaps) ? R.betaCaps : [];
+  const capAt = (above) => caps.find((t) => t.above === above);
+  const sbcShare = isNum(R.sbcShareTechGrowth) ? R.sbcShareTechGrowth : 1;
   return (
     <div>
       <ul className="val-steps">
@@ -641,27 +666,35 @@ function RulesPanel({ rules: R, onRules }) {
         </li>
         <li>
           שולי FCF: הנחיה / קונצנזוס כשהוזנו, והשיעור האחרון מוחזק אחריהם בלי דעיכה. בלי הנחיה:{' '}
-          {R.flatMargin ? (
-            <>
-              לחברת טכנולוגיה (סקטור <Num>{R.flatMargin.sectors.join(', ')}</Num>) או לחברה שצומחת <Num>{fmtRate(R.flatMargin.growthAbove)}</Num> ומעלה בשנה הראשונה - שולי
-              12 החודשים נשארים קבועים; לכל השאר -{' '}
-            </>
-          ) : null}
+          {R.flatMargin && R.techGrowth ? <>ל{techGrowthText(R)} - שולי 12 החודשים נשארים קבועים; לכל השאר - </> : null}
           כלל גנרי: שולי 12 החודשים × (1 - {R.marginStep} × שנה).
         </li>
         <li>
-          FCF = תזרים תפעולי פחות Capex (ברירת מחדל), או ה-FCF המנורמל של החברה כשהוזן ונבחר. SBC: אחוז 12 החודשים × (1 - <Num>{R.sbcStep}</Num> × שנה), ותמיד מופחת.
+          FCF = תזרים תפעולי פחות Capex (ברירת מחדל), או ה-FCF המנורמל של החברה כשהוזן ונבחר. SBC: אחוז 12 החודשים × (1 - <Num>{R.sbcStep}</Num> × שנה), מופחת
+          מהתזרים במלואו
+          {sbcShare < 1 && R.techGrowth ? (
+            <>
+              ; ב{techGrowthText(R)} רק <Num>{`${Math.round(sbcShare * 100)}%`}</Num> ממנו, כי שאר הדילול כבר נספר במספר המניות המדולל
+            </>
+          ) : null}
+          .
         </li>
         <li>מזומן = מזומן ושווי מזומן + השקעות לטווח קצר + ניירות ערך סחירים לטווח ארוך; בלי השקעות אסטרטגיות. חוב = קצר + ארוך, בלי חכירות.</li>
         <li>
           בטא: <Num>{`${R.betaWeight} × raw + ${R.betaConst}`}</Num>
-          {R.megaCap ? (
+          {caps.map((t) => (
+            <span key={t.above}>
+              ; מעל <Num>{sizeLabel(t.above)}</Num> שווי שוק - לכל היותר <Num>{t.betaCap}</Num>
+            </span>
+          ))}
+          . פרמיית סיכון <Num>{fmtRate(R.erp)}</Num>, עלות חוב <Num>{fmtRate(R.kd)}</Num>, מס <Num>{fmtRate(R.tax)}</Num>.
+          ריבית: אג&quot;ח ארה&quot;ב ל-10 שנים; חסרה - הערך האחרון שנשמר, ואם אין - צריך להזין אותה.
+          {R.waccBand ? (
             <>
-              , ולחברה ששווה מעל <Num>{`$${R.megaCap.above / 1e12}T`}</Num> - לכל היותר <Num>{R.megaCap.betaCap}</Num>
+              {' '}
+              WACC מחוץ לטווח <Num>{`${fmtRate(R.waccBand.min)}-${fmtRate(R.waccBand.max)}`}</Num> מוחזק על קצה הטווח, והמחושב מוצג לידו.
             </>
           ) : null}
-          . פרמיית סיכון <Num>{fmtRate(R.erp)}</Num>, עלות חוב <Num>{fmtRate(R.kd)}</Num>, מס <Num>{fmtRate(R.tax)}</Num>.
-          ריבית: אג"ח ארה"ב ל-10 שנים; חסרה - הערך האחרון שנשמר, ואם אין - צריך להזין אותה.
         </li>
         <li>
           תרחישים: שמרני - צמיחה × <Num>{R.scenarios.bear.growthMult}</Num> ושוליים <Num>{fmtRate(R.scenarios.bear.marginShift)}</Num>; אופטימי - צמיחה ×{' '}
@@ -677,6 +710,11 @@ function RulesPanel({ rules: R, onRules }) {
           ) : (
             <>Gordon עם הצמיחה הסופית</>
           )}
+          {R.techGrowth && Array.isArray(R.exitMultiplesTechGrowth) ? (
+            <>
+              ; ל{techGrowthText(R)} מוצג לצידו גם השווי לפי מכפיל יציאה של <Num>{R.exitMultiplesTechGrowth.map((m) => `${m}x`).join(' / ')}</Num>
+            </>
+          ) : null}
           . אין תקרות, רצפות או התאמות מעבר לכללים שכאן.
         </li>
         <li>
@@ -687,13 +725,42 @@ function RulesPanel({ rules: R, onRules }) {
       {onRules && (
         <div className="dcf-fields">
           <NumberField id="dcf-rule-k" label={`k - קצב הדעיכה של הצמיחה (ברירת מחדל ${DEFAULT_RULES.fadeK})`} value={R.fadeK} unit="plain" onChange={(v) => onRules({ fadeK: v })} />
+          {DEFAULT_RULES.betaCaps.map((t) => {
+            const current = capAt(t.above);
+            return (
+              <NumberField
+                key={t.above}
+                id={`dcf-rule-beta-cap-${t.above}`}
+                label={`תקרת בטא מעל ${sizeLabel(t.above)} (ריק = בלי, ברירת מחדל ${t.betaCap})`}
+                value={current ? current.betaCap : null}
+                unit="plain"
+                allowEmpty
+                onChange={(v) => onRules({ betaCaps: { [t.above]: v === null ? 'off' : v } })}
+              />
+            );
+          })}
           <NumberField
-            id="dcf-rule-beta-cap"
-            label={`תקרת בטא לחברה מעל $1T (ריק = בלי תקרה, ברירת מחדל ${DEFAULT_RULES.megaCap.betaCap})`}
-            value={R.megaCap ? R.megaCap.betaCap : null}
-            unit="plain"
+            id="dcf-rule-wacc-min"
+            label={`WACC מינימלי (ריק = בלי טווח, ברירת מחדל ${fmtRate(DEFAULT_RULES.waccBand.min)})`}
+            value={R.waccBand ? R.waccBand.min : null}
+            unit="pct"
             allowEmpty
-            onChange={(v) => onRules({ betaCap: v === null ? 'off' : v })}
+            onChange={(v) => onRules({ waccBand: v === null ? 'off' : { min: v } })}
+          />
+          <NumberField
+            id="dcf-rule-wacc-max"
+            label={`WACC מקסימלי (ריק = בלי טווח, ברירת מחדל ${fmtRate(DEFAULT_RULES.waccBand.max)})`}
+            value={R.waccBand ? R.waccBand.max : null}
+            unit="pct"
+            allowEmpty
+            onChange={(v) => onRules({ waccBand: v === null ? 'off' : { max: v } })}
+          />
+          <NumberField
+            id="dcf-rule-sbc-share"
+            label={`חלק ה-SBC שמופחת בטכנולוגיה וצמיחה (0-1, ברירת מחדל ${DEFAULT_RULES.sbcShareTechGrowth})`}
+            value={sbcShare}
+            unit="plain"
+            onChange={(v) => onRules({ sbcShareTechGrowth: v })}
           />
           <label className="dcf-check">
             <input type="checkbox" checked={!!R.flatMargin} onChange={(e) => onRules({ flatMargin: e.target.checked })} /> שוליים קבועים לטכנולוגיה וצמיחה (במקום דעיכה של{' '}
@@ -992,7 +1059,11 @@ export default function DcfCalculator({ ticker, snapshot, autoEvaluation, overri
         <details className="val-details">
           <summary>מה יוצא בהנחות אחרות?</summary>
           <Sensitivity grid={evaluation.sensitivity} currency={currency} main={main} />
-          <ExitMethod inputs={scenarioInputs} currency={currency} />
+          <ExitMethod
+            inputs={scenarioInputs}
+            currency={currency}
+            multiples={autoMode && evaluation.derived && evaluation.derived.techGrowth && evaluation.derived.techGrowth.value ? evaluation.rules.exitMultiplesTechGrowth : null}
+          />
         </details>
       )}
 

@@ -26,13 +26,15 @@
 //   fcfMargin[t]   a guidance / consensus margin for that year when entered;
 //                  after the last such year the last one is held, no fade;
 //                  with none at all: held flat at fcfMarginTTM for a
-//                  technology or growth company (flatMargin), else
-//                  fcfMarginTTM * (1 - marginStep * t), the generic rule -
-//                  either way with a warning
-//   sbcPct[t]      sbcPctTTM * (1 - sbcStep * t); always deducted
+//                  technology or growth company (techGrowth, flatMargin),
+//                  else fcfMarginTTM * (1 - marginStep * t), the generic
+//                  rule - either way with a warning
+//   sbcPct[t]      sbcPctTTM * (1 - sbcStep * t); deducted in full, or by
+//                  sbcShareTechGrowth for a technology / growth company
 //   beta           betaWeight * beta_raw + betaConst (raw shown too); held at
-//                  megaCap.betaCap when the market value (price x basic
-//                  shares, USD) is above megaCap.above
+//                  the first of betaCaps whose size the market value (price
+//                  x basic shares, USD) is above
+//   WACC           computed by CAPM; held inside waccBand, flagged
 //   rf             today's 10-year Treasury yield; missing -> the last one
 //                  saved, flagged; none saved -> no value until entered
 //   shares         diluted: weighted average, last quarter; basic: actual
@@ -75,19 +77,36 @@ const DEFAULT_RULES = {
   sbcStep: 0.1,
   betaWeight: 0.67,
   betaConst: 0.33,
-  // The adjusted beta of a company worth more than `above` (in USD) is held
-  // at `betaCap`. A raw beta of 2+ on a $1T+ company is mostly how its share
-  // price swung, not the risk of its cash flows, and put its WACC at 13%+.
-  // null switches the cap off.
-  megaCap: { above: 1e12, betaCap: 1.25 },
-  // With no margin guidance, the FCF margin is held at its trailing level for
-  // a company in one of these sectors or growing at least `growthAbove` in
-  // year one, instead of the generic marginStep fade. null switches it off.
-  flatMargin: { sectors: ['Technology'], growthAbove: 0.15 },
+  // Beta caps by size: the adjusted beta of a company worth more than
+  // `above` (USD) is held at `betaCap`, the first tier that applies. A raw
+  // beta of 2+ on a company this large is mostly how its share price swung,
+  // not the risk of its cash flows, and put a $1T company's WACC at 13%+.
+  // An empty list switches the caps off.
+  betaCaps: [
+    { above: 1e12, betaCap: 1.25, label: 'Mega Cap' },
+    { above: 2e11, betaCap: 1.45, label: 'Large Cap' }
+  ],
+  // The discount rate is held inside this band: a computed WACC below `min`
+  // or above `max` is replaced by the edge, flagged, with the computed one
+  // shown beside it. null switches it off.
+  waccBand: { min: 0.09, max: 0.115 },
+  // Who counts as a technology / growth company: one of these sectors, or
+  // year-one growth of at least `growthAbove`. Two rules follow from it.
+  techGrowth: { sectors: ['Technology'], growthAbove: 0.15 },
+  // With no margin guidance, such a company's trailing FCF margin is held
+  // flat instead of the generic marginStep fade.
+  flatMargin: true,
+  // Such a company has this share of its SBC taken off the FCF, the rest
+  // left to the diluted share count. SBC is how these companies pay a
+  // large part of their staff: taking all of it off the cash flow AND
+  // dividing by a share count that grows with it counts it twice. 1 = all.
+  sbcShareTechGrowth: 0.5,
   // Terminal value: 'gordon' (gT) or 'exit' (exitMultiple x year-5 FCF after
-  // SBC).
+  // SBC). For a technology / growth company the page also shows the value
+  // at exitMultiplesTechGrowth, beside Gordon.
   terminalMethod: 'gordon',
   exitMultiple: 25,
+  exitMultiplesTechGrowth: [25, 30],
   erp: 0.045,
   kd: 0.055,
   tax: 0.15,
@@ -142,6 +161,18 @@ function sbcSchedule(ttmSbcPct, step, years) {
 function adjustBeta(raw, weight, constant) {
   return weight * raw + constant;
 }
+
+// The beta cap tier for a market value: the largest threshold it is above.
+// null when none applies, the value is unknown, or there are no tiers.
+function betaCapTier(tiers, marketCap) {
+  if (!Array.isArray(tiers) || !isNum(marketCap)) return null;
+  const fits = tiers.filter((t) => t && isNum(t.above) && isNum(t.betaCap) && marketCap > t.above);
+  fits.sort((a, b) => b.above - a.above);
+  return fits[0] || null;
+}
+
+// "$1T", "$200B".
+const sizeText = (v) => (v >= 1e12 ? `$${v / 1e12}T` : `$${v / 1e9}B`);
 
 const entryAt = (list, i) => (Array.isArray(list) && list[i] && isNum(list[i].value) ? list[i] : null);
 const sourceText = (entry) => `${entry.source || 'הוזן ידנית'}${entry.asOf ? `, ${entry.asOf}` : ''}`;
@@ -373,23 +404,24 @@ function deriveAuto(snapshot, rules, overridesIn) {
     d.dilutedShares = { value: null, basis: 'חסר', fallback: true };
   }
 
-  // The market value the WACC weights by, and the mega-cap beta cap on it.
-  // The threshold is in dollars, so a price in another currency is not
-  // compared with it.
+  // The market value the WACC weights by, and the beta cap for its size.
+  // The thresholds are in dollars, so a price in another currency is not
+  // compared with them.
   const price = snapshot.price && isNum(snapshot.price.value) ? snapshot.price.value : null;
   d.marketCap = {
     value: isNum(price) && isNum(d.basicShares.value) ? price * d.basicShares.value : null,
     basis: 'מחיר × מניות בסיסי',
     fallback: d.basicShares.fallback
   };
-  const cap = R.megaCap;
-  if (cap && isNum(cap.betaCap) && snapshot.currency === 'USD' && isNum(d.marketCap.value) && d.marketCap.value > cap.above && d.beta.value > cap.betaCap) {
+  const tier = betaCapTier(R.betaCaps, snapshot.currency === 'USD' ? d.marketCap.value : null);
+  if (tier && d.beta.value > tier.betaCap) {
     d.beta = {
-      value: cap.betaCap,
-      basis: `תקרת Mega Cap: שווי שוק מעל $${cap.above / 1e12}T, ולכן ${cap.betaCap} במקום ${d.beta.value.toFixed(3)} (${R.betaWeight} × בטא גולמית + ${R.betaConst})`,
+      value: tier.betaCap,
+      basis: `תקרת ${tier.label || 'בטא'}: שווי שוק מעל ${sizeText(tier.above)}, ולכן ${tier.betaCap} במקום ${d.beta.value.toFixed(3)} (${R.betaWeight} × בטא גולמית + ${R.betaConst})`,
       fallback: d.beta.fallback,
       capped: true,
-      uncapped: d.beta.value
+      uncapped: d.beta.value,
+      tier
     };
   }
 
@@ -423,21 +455,31 @@ function deriveAuto(snapshot, rules, overridesIn) {
     };
   }
 
-  // Whether the margin is held flat when there is no guidance: a
-  // technology company, or one growing fast in year one.
-  const fm = R.flatMargin;
+  // A technology / growth company: one of the sectors, or growing fast in
+  // year one. Two rules follow from it - the flat margin and the SBC share.
+  const tg = R.techGrowth;
   const sector = (snapshot.profile && snapshot.profile.sector) || '';
-  const inSector = !!(fm && Array.isArray(fm.sectors) && fm.sectors.indexOf(sector) !== -1);
-  const fastGrowth = !!(fm && isNum(fm.growthAbove) && isNum(d.growth1.value) && d.growth1.value >= fm.growthAbove);
-  d.flatMargin = {
+  const inSector = !!(tg && Array.isArray(tg.sectors) && tg.sectors.indexOf(sector) !== -1);
+  const fastGrowth = !!(tg && isNum(tg.growthAbove) && isNum(d.growth1.value) && d.growth1.value >= tg.growthAbove);
+  d.techGrowth = {
     value: inSector || fastGrowth,
-    basis: !fm
-      ? 'כבוי'
+    basis: !tg
+      ? 'לא מוגדר'
       : inSector
         ? `סקטור ${sector}`
         : fastGrowth
-          ? `צמיחה בשנה הראשונה ${pctText(d.growth1.value)} (מ-${pctText(fm.growthAbove)} ומעלה)`
-          : `לא טכנולוגיה וצמיחה מתחת ל-${pctText(fm.growthAbove)}`,
+          ? `צמיחה בשנה הראשונה ${pctText(d.growth1.value)} (מ-${pctText(tg.growthAbove)} ומעלה)`
+          : `לא טכנולוגיה, וצמיחה מתחת ל-${pctText(tg.growthAbove)}`,
+    fallback: false
+  };
+  d.flatMargin = { value: !!R.flatMargin && d.techGrowth.value, basis: R.flatMargin ? d.techGrowth.basis : 'כבוי', fallback: false };
+  const share = d.techGrowth.value && isNum(R.sbcShareTechGrowth) ? R.sbcShareTechGrowth : 1;
+  d.sbcDeductShare = {
+    value: share,
+    basis:
+      share < 1
+        ? `${Math.round(share * 100)}% מה-SBC מופחת מהתזרים (${d.techGrowth.basis}); השאר נספר דרך המניות המדוללות`
+        : 'כל ה-SBC מופחת מהתזרים',
     fallback: false
   };
 
@@ -551,12 +593,26 @@ function evaluateDcf(args) {
         tax: R.tax,
         gT: R.gT,
         deductSbc: R.deductSbc,
+        sbcDeductShare: d.sbcDeductShare.value,
         terminalMethod: R.terminalMethod === 'exit' ? 'exit' : 'gordon',
         exitMultiple: R.exitMultiple
       },
       scenarios: autoScenarios(schedules, R),
       weights: R.weights
     };
+
+    // The WACC band: a computed rate outside it runs at the edge instead,
+    // as a stated override - the computed one stays beside it, and a flag
+    // says so.
+    const band = R.waccBand;
+    const computed = engine.computeWacc(model.base).wacc;
+    out.waccBand = null;
+    if (band && isNum(computed) && (computed < band.min || computed > band.max)) {
+      const held = computed < band.min ? band.min : band.max;
+      model.base.waccOverride = held;
+      out.waccBand = { computed, applied: held, min: band.min, max: band.max };
+      out.flags.push(`WACC מחושב ${pctText(computed)} - הוחזק על ${pctText(held)}, בטווח ${pctText(band.min)}-${pctText(band.max)}`);
+    }
   }
   out.model = model;
 
@@ -688,6 +744,7 @@ function buildInputCard(evaluation, snapshot, ticker) {
           rev0: m.base.rev0,
           price: m.base.price,
           deductSbc: m.base.deductSbc !== false,
+          sbcDeductShare: isNum(m.base.sbcDeductShare) ? m.base.sbcDeductShare : 1,
           scenarios: m.scenarios.map((s) => ({ key: s.key, label: s.label, growth: s.growth, fcfMargin: s.fcfMargin, sbcPct: s.sbcPct })),
           weights: m.weights
         }
@@ -731,6 +788,8 @@ function reproduceFromCard(card) {
       tax: i.tax,
       gT: i.gT,
       deductSbc: i.deductSbc,
+      // Cards from before the partial SBC rule deducted all of it.
+      sbcDeductShare: isNum(i.sbcDeductShare) ? i.sbcDeductShare : 1,
       waccOverride: i.waccOverride,
       // Cards from before the exit-multiple option have neither: Gordon.
       terminalMethod: i.terminalMethod === 'exit' ? 'exit' : 'gordon',
@@ -824,6 +883,7 @@ exports.fadeGrowth = fadeGrowth;
 exports.marginSchedule = marginSchedule;
 exports.sbcSchedule = sbcSchedule;
 exports.adjustBeta = adjustBeta;
+exports.betaCapTier = betaCapTier;
 exports.growthSchedule = growthSchedule;
 exports.marginScheduleWithGuidance = marginScheduleWithGuidance;
 exports.cashComponents = cashComponents;

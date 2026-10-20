@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
-import ValuationView from './ValuationView';
+import ValuationView, { mergeRuleEdits, rulesWithEdits } from './ValuationView';
 import { evaluateDcf, reproduceFromCard, DEFAULT_RULES } from '../shared/dcfRules';
 import avgoSnapshot from '../shared/fixtures/dcf-snapshot-avgo.json';
 
@@ -223,14 +223,14 @@ describe('NOW: added figures, the FCF basis, presets, peers', () => {
   test('the flat margin and the terminal method are controls, and each gives the rules\' own result', async () => {
     await renderNow();
     fireEvent.click(screen.getByRole('checkbox', { name: /שוליים קבועים לטכנולוגיה וצמיחה/ }));
-    const faded = auto(undefined, Object.assign({}, DEFAULT_RULES, { flatMargin: null }));
+    const faded = auto(undefined, Object.assign({}, DEFAULT_RULES, { flatMargin: false }));
     expect(screen.getByTestId('dcf-value-base')).toHaveTextContent(money(faded.results.base.perShare));
 
     fireEvent.change(screen.getByLabelText('שיטת הערך הסופי'), { target: { value: 'exit' } });
-    const exit = auto(undefined, Object.assign({}, DEFAULT_RULES, { flatMargin: null, terminalMethod: 'exit', exitMultiple: 25 }));
+    const exit = auto(undefined, Object.assign({}, DEFAULT_RULES, { flatMargin: false, terminalMethod: 'exit', exitMultiple: 25 }));
     expect(screen.getByTestId('dcf-value-base')).toHaveTextContent(money(exit.results.base.perShare));
     fireEvent.change(screen.getByLabelText('מכפיל יציאה (על ה-FCF של שנה 5)'), { target: { value: '20' } });
-    const exit20 = auto(undefined, Object.assign({}, DEFAULT_RULES, { flatMargin: null, terminalMethod: 'exit', exitMultiple: 20 }));
+    const exit20 = auto(undefined, Object.assign({}, DEFAULT_RULES, { flatMargin: false, terminalMethod: 'exit', exitMultiple: 20 }));
     expect(screen.getByTestId('dcf-value-base')).toHaveTextContent(money(exit20.results.base.perShare));
   });
 
@@ -281,5 +281,27 @@ describe('NOW: added figures, the FCF basis, presets, peers', () => {
     expect(card.cash.parts.shortTermInvestments).toBeCloseTo(2.161e9, 0);
     const { fromRaw } = reproduceFromCard(card);
     expect(fromRaw.results.base.perShare).toBe(card.results.scenarios.base.perShare);
+  });
+});
+
+// The rules panel's edits, field by field, onto the defaults.
+describe('rule edits', () => {
+  test('a beta cap edited or switched off per tier; the others stay', () => {
+    const one = rulesWithEdits(mergeRuleEdits({}, { betaCaps: { 200000000000: 1.6 } }));
+    expect(one.betaCaps.map((t) => t.betaCap)).toEqual([1.25, 1.6]);
+    const off = rulesWithEdits(mergeRuleEdits({ betaCaps: { 200000000000: 1.6 } }, { betaCaps: { 1000000000000: 'off' } }));
+    expect(off.betaCaps.map((t) => t.betaCap)).toEqual([1.6]);
+  });
+
+  test('the WACC band edited one edge at a time, or switched off', () => {
+    const min = mergeRuleEdits({}, { waccBand: { min: 0.08 } });
+    const both = mergeRuleEdits(min, { waccBand: { max: 0.12 } });
+    expect(rulesWithEdits(both).waccBand).toEqual({ min: 0.08, max: 0.12 });
+    expect(rulesWithEdits(mergeRuleEdits(both, { waccBand: 'off' })).waccBand).toBeNull();
+  });
+
+  test('the SBC share is kept inside 0..1; no edits is the defaults', () => {
+    expect(rulesWithEdits({ sbcShareTechGrowth: 3 }).sbcShareTechGrowth).toBe(1);
+    expect(rulesWithEdits({})).toEqual(DEFAULT_RULES);
   });
 });

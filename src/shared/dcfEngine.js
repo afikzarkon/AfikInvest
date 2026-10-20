@@ -6,7 +6,9 @@
 //   rev[t]   = rev[t-1] * (1 + growth[t])            rev[0] = base revenue
 //   fcf[t]   = rev[t] * fcfMargin[t]
 //   sbc[t]   = rev[t] * sbcPct[t]
-//   adj[t]   = fcf[t] - (deductSbc ? sbc[t] : 0)
+//   adj[t]   = fcf[t] - (deductSbc ? sbc[t] * sbcDeductShare : 0)
+//                                                     sbcDeductShare 1 = all
+//                                                     of it (the default)
 //   df[t]    = 1 / (1 + WACC)^t                      end-of-year discounting
 //   pv[t]    = adj[t] * df[t]
 //
@@ -28,7 +30,7 @@
 // untranspiled and the app's production build can import it (see
 // sharedModules.test.js).
 
-const ENGINE_VERSION = '1.0.0';
+const ENGINE_VERSION = '1.1.0';
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 const sum = (xs) => xs.reduce((s, x) => s + x, 0);
@@ -64,6 +66,9 @@ function validateInputs(inputs) {
     if (!Array.isArray(arr) || arr.length !== years || !arr.every(isNum)) errors.push(`${key}: נדרש ערך לכל אחת מ-${years || 5} השנים`);
   });
   if (inputs.terminalMethod === 'exit' && !isNum(inputs.exitMultiple)) errors.push('חסר מכפיל יציאה');
+  if (inputs.sbcDeductShare !== undefined && inputs.sbcDeductShare !== null && !(isNum(inputs.sbcDeductShare) && inputs.sbcDeductShare >= 0 && inputs.sbcDeductShare <= 1)) {
+    errors.push('חלק ה-SBC המופחת חייב להיות בין 0 ל-1');
+  }
   return errors;
 }
 
@@ -98,6 +103,9 @@ function runDcf(inputs) {
   }
 
   const deductSbc = inputs.deductSbc !== false;
+  // How much of the SBC is taken off the FCF: all of it unless the input
+  // says otherwise. Explicit, and echoed back below.
+  const sbcDeductShare = isNum(inputs.sbcDeductShare) ? inputs.sbcDeductShare : 1;
   const years = [];
   let rev = inputs.rev0;
   for (let i = 0; i < inputs.growth.length; i += 1) {
@@ -105,7 +113,7 @@ function runDcf(inputs) {
     rev *= 1 + inputs.growth[i];
     const fcf = rev * inputs.fcfMargin[i];
     const sbc = rev * inputs.sbcPct[i];
-    const adj = fcf - (deductSbc ? sbc : 0);
+    const adj = fcf - (deductSbc ? sbc * sbcDeductShare : 0);
     const df = 1 / Math.pow(1 + wacc, t);
     years.push({ t, growth: inputs.growth[i], rev, fcfMargin: inputs.fcfMargin[i], fcf, sbcPct: inputs.sbcPct[i], sbc, adj, df, pv: adj * df });
   }
@@ -129,6 +137,7 @@ function runDcf(inputs) {
     kdAfterTax: w.kdAfterTax,
     terminalMethod: method,
     deductSbc,
+    sbcDeductShare,
     years,
     sumPv,
     tv,
