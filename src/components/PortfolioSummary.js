@@ -185,7 +185,7 @@ export function NetInvestmentCard({ summary, formatPriceWithSign, present = ALL_
   const totalReturn = returnPercent(summary.totalProfitILS, summary.totalPurchaseILS);
   return (
     <SummaryCard>
-        <h3 className="summary-section-title">סיכום השקעות נטו (₪)</h3>
+        <h3 className="summary-section-title">רווח והפסד כולל (₪)</h3>
         <div className="summary-item"><span className="summary-label">סה"כ השקעה בש"ח:</span><span className="summary-value">{formatPriceWithSign(summary.totalPurchaseILS)} ₪</span></div>
         <div className="summary-item"><span className="summary-label">סה"כ שווי בש"ח:</span><span className="summary-value">{formatPriceWithSign(summary.totalCurrentValueILS)} ₪</span></div>
         <AmountPercentRow label='סה"כ רווח והפסד בש"ח' amount={summary.totalProfitILS} percent={totalReturn} formatPriceWithSign={formatPriceWithSign} />

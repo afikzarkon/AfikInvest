@@ -62,7 +62,7 @@ test('shows the summary cards for a populated portfolio, and no holdings tables'
   const { container, getByText } = render(<HomeView {...makeProps()} />);
   expect(container.querySelectorAll('table').length).toBe(0);
   expect(getByText('סיכום התיק')).toBeInTheDocument();
-  ['סה"כ מצב ההון', 'סיכום השקעות נטו (₪)'].forEach((title) => {
+  ['סה"כ מצב ההון', 'רווח והפסד כולל (₪)'].forEach((title) => {
     expect(getByText(title)).toBeInTheDocument();
   });
 });
@@ -454,15 +454,15 @@ describe('HomeView on a phone', () => {
   test('the total profit appears once, and its row opens the breakdown', () => {
     const { container, getByText, queryByText } = render(<HomeView {...makeProps()} />);
     const profitRows = Array.from(container.querySelectorAll('.home-kpi-row, .home-fold-head')).filter((el) =>
-      /רווח\/הפסד כולל|סיכום השקעות נטו/.test(el.textContent)
+      /רווח\/הפסד כולל|רווח והפסד כולל|סיכום השקעות נטו/.test(el.textContent)
     );
     expect(profitRows).toHaveLength(1);
-    expect(queryByText('סיכום השקעות נטו')).toBeNull();
+    expect(queryByText('רווח והפסד כולל')).toBeNull();
 
     const fold = container.querySelector('.home-kpi-fold');
     expect(fold.open).toBe(false);
     fireEvent.click(getByText('רווח/הפסד כולל'));
     expect(fold.open).toBe(true);
-    expect(fold).toHaveTextContent('סיכום השקעות נטו (₪)');
+    expect(fold).toHaveTextContent('רווח והפסד כולל (₪)');
   });
 });
