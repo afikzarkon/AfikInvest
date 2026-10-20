@@ -79,13 +79,6 @@ function blocksFor(selector) {
     const close = CSS.indexOf('}', i);
     if (close === -1) continue;
 
-    // The one deliberate exception: the phone layout's account column is
-    // pinned to the PHYSICAL left whatever the direction (a product
-    // requirement - see ACCOUNT RAIL in App.css), so the rules scoped to
-    // it place the bar and the content by physical sides on purpose.
-    const prelude = CSS.slice(Math.max(CSS.lastIndexOf('}', at), CSS.lastIndexOf('{', at)) + 1, i);
-    if (prelude.includes('.has-account-rail')) continue;
-
     out.push(CSS.slice(i + 1, close));
   }
   return out;

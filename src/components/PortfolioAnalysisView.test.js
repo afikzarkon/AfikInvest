@@ -905,3 +905,117 @@ function formatMonthLabelForTest(monthKey) {
   const [year, month] = monthKey.split('-').map(Number);
   return new Date(year, month - 1, 1).toLocaleDateString('he-IL', { month: 'long', year: 'numeric' });
 }
+
+// THE PHONE LAYOUT (PHONE_TABS in PortfolioAnalysisView.js). jsdom has no
+// matchMedia, which is why every test above renders the wide layout; here
+// it is stubbed to answer the phone widths.
+describe('PortfolioAnalysisView on a phone', () => {
+  let originalMatchMedia;
+
+  beforeEach(() => {
+    useBenchmarkHistory.mockReturnValue({ points: [], loading: false, error: '' });
+    useStockSectors.mockReturnValue({ sectorBySymbol: { AAPL: 'Technology' }, loading: false });
+    useAnalystRecommendations.mockReturnValue({
+      recommendationsBySymbol: {
+        AAPL: { recommendationKey: 'buy', numberOfAnalystOpinions: 30, targetMeanPrice: 209 }
+      },
+      loading: false
+    });
+    useDividendData.mockReturnValue({
+      dividendsBySymbol: { AAPL: { dividendRate: 1, dividendYieldPercent: 0.5, history: [] } },
+      loading: false
+    });
+    global.fetch = jest.fn().mockRejectedValue(new Error('network unavailable in test'));
+    originalMatchMedia = window.matchMedia;
+    window.matchMedia = (query) => ({
+      matches: /max-width:\s*(768|960)px/.test(query),
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {}
+    });
+  });
+
+  afterEach(() => {
+    window.matchMedia = originalMatchMedia;
+    delete global.fetch;
+  });
+
+  const sectionKeys = (container) =>
+    Array.from(container.querySelectorAll('[data-section-key]')).map((el) => el.dataset.sectionKey);
+
+  test('four tabs replace the ten-link strip, and the first holds performance', () => {
+    const { container } = render(<PortfolioAnalysisView {...makeProps()} />);
+    expect(container.querySelector('.analysis-tabs')).toBeNull();
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs.map((t) => t.textContent)).toEqual(['ביצועים', 'פיזור', 'מניות', 'כלים']);
+    expect(tabs[0]).toHaveAttribute('aria-selected', 'true');
+    expect(sectionKeys(container)).toEqual(['summary', 'performance']);
+  });
+
+  test('every section is reachable from some tab, except the two folded into the stock cards', () => {
+    const { container } = render(<PortfolioAnalysisView {...makeProps()} />);
+    const seen = new Set();
+    screen.getAllByRole('tab').forEach((tab) => {
+      fireEvent.click(tab);
+      expect(tab).toHaveAttribute('aria-selected', 'true');
+      sectionKeys(container).forEach((key) => seen.add(key));
+    });
+    expect([...seen].sort()).toEqual(['byDate', 'byStock', 'performance', 'pie', 'rebalancing', 'reports', 'sector', 'summary']);
+  });
+
+  test('a stock card carries its dividend and the analysts view, not three tables', () => {
+    const { container } = render(<PortfolioAnalysisView {...makeProps()} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'מניות' }));
+    expect(container.querySelector('.analysis-table')).toBeNull();
+    const cards = container.querySelectorAll('.stock-card');
+    expect(cards.length).toBe(analysis.stockDistribution.length);
+    const aapl = Array.from(cards).find((card) => card.textContent.includes('AAPL'));
+    // 209 against a current price of 190 is a 10% upside.
+    expect(aapl).toHaveTextContent('קנייה · יעד');
+    expect(aapl).toHaveTextContent('+10.0%');
+    expect(aapl).toHaveTextContent('דיבידנד 0.50% · $10.00 בשנה');
+    const teva = Array.from(cards).find((card) => card.textContent.includes('TEVA'));
+    expect(teva).not.toHaveTextContent('דיבידנד');
+  });
+
+  test('the market, currency and date controls are in the filter sheet, not above the chart', () => {
+    const { container } = render(<PortfolioAnalysisView {...makeProps()} />);
+    expect(container.querySelector('#performanceFrom')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'בורסה ישראלית' })).toBeNull();
+    expect(container.querySelector('.perf-filter-count')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'סינון' }));
+    const sheet = screen.getByRole('dialog', { name: 'סינון ביצועים' });
+    expect(within(sheet).getByLabelText('מתאריך')).toBeInTheDocument();
+    fireEvent.click(within(sheet).getByRole('button', { name: 'בורסה ישראלית' }));
+    fireEvent.click(within(sheet).getByRole('button', { name: 'הצגת תוצאות' }));
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    // The narrowed market shows on the button without reopening the sheet.
+    expect(container.querySelector('.perf-filter-count')).toHaveTextContent('1');
+  });
+
+  test('the sheet closes on Escape', () => {
+    render(<PortfolioAnalysisView {...makeProps()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'סינון' }));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  test('the reports are read one at a time', () => {
+    render(<PortfolioAnalysisView {...makeProps()} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'כלים' }));
+    expect(screen.getByText('אין כרגע מניות בהפסד')).not.toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'מפסידות' }));
+    expect(screen.getByText('אין כרגע מניות בהפסד')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'מפסידות' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test('sectors are bars rather than a second donut', () => {
+    const { container } = render(<PortfolioAnalysisView {...makeProps()} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'פיזור' }));
+    const sector = container.querySelector('[data-section-key="sector"]');
+    expect(sector.querySelectorAll('.sector-bar').length).toBeGreaterThan(0);
+    expect(sector.querySelector('.recharts-responsive-container')).toBeNull();
+  });
+});

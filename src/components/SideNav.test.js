@@ -144,36 +144,49 @@ describe('SideNav - flags and the phone layout', () => {
   });
 });
 
-describe('AccountRail', () => {
-  // eslint-disable-next-line global-require
-  const AccountRail = require('./AccountRail').default;
+describe('SideNav - the account controls on a phone', () => {
+  const openMore = () => fireEvent.click(screen.getByRole('button', { name: /עוד/ }));
 
-  test('holds profile, settings, theme and sign-out, each once', () => {
+  test('the bottom bar holds only pages; the account block is in "עוד"', () => {
+    render(<SideNav {...makeProps({ compact: true, showAccount: false })} />);
+    expect(screen.queryByText('התנתקות')).toBeNull();
+    openMore();
+    const sheet = screen.getByRole('dialog', { name: 'כל הדפים' });
+    expect(within(sheet).getByText('test@example.com')).toBeInTheDocument();
+  });
+
+  test('settings, theme and sign-out each work from the sheet, and close it', () => {
     const onLogout = jest.fn();
     const onNavigate = jest.fn();
     const onToggleTheme = jest.fn();
-    render(<AccountRail {...makeProps({ onLogout, onNavigate, onToggleTheme, displayName: 'אפיק' })} />);
-    fireEvent.click(screen.getByRole('button', { name: 'התנתקות' }));
-    fireEvent.click(screen.getByRole('button', { name: 'הגדרות' }));
+    render(<SideNav {...makeProps({ compact: true, onLogout, onNavigate, onToggleTheme })} />);
+    openMore();
     fireEvent.click(screen.getByRole('button', { name: 'עבור למצב בהיר' }));
-    expect(onLogout).toHaveBeenCalledTimes(1);
-    expect(onNavigate).toHaveBeenCalledWith('settings');
     expect(onToggleTheme).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'הגדרות' }));
+    expect(onNavigate).toHaveBeenCalledWith('settings');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    openMore();
+    fireEvent.click(screen.getByRole('button', { name: 'התנתקות' }));
+    expect(onLogout).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('button', { name: 'ניהול' })).toBeNull();
   });
 
-  test('the name shows on tapping the avatar, and closes on Escape', () => {
-    render(<AccountRail {...makeProps({ displayName: 'אפיק' })} />);
-    expect(screen.queryByText('test@example.com')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /פרופיל/ }));
-    expect(screen.getByText('אפיק')).toBeInTheDocument();
-    expect(screen.getByText('test@example.com')).toBeInTheDocument();
-    fireEvent.keyDown(document, { key: 'Escape' });
+  test('the admin link is offered to admins only', () => {
+    render(<SideNav {...makeProps({ compact: true, isAdmin: true })} />);
+    openMore();
+    expect(screen.getByRole('button', { name: 'ניהול' })).toBeInTheDocument();
+  });
+
+  test('the assets sheet has no account block', () => {
+    render(<SideNav {...makeProps({ compact: true })} />);
+    fireEvent.click(screen.getByRole('button', { name: 'נכסים' }));
     expect(screen.queryByText('test@example.com')).toBeNull();
   });
 
-  test('renders nothing signed out', () => {
-    const { container } = render(<AccountRail {...makeProps({ user: null })} />);
-    expect(container.firstChild).toBeNull();
+  test('signed out, the sheet lists pages only', () => {
+    render(<SideNav {...makeProps({ compact: true, user: null })} />);
+    openMore();
+    expect(screen.queryByText('התנתקות')).toBeNull();
   });
 });

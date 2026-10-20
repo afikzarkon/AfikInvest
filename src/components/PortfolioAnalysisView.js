@@ -67,6 +67,7 @@ import {
 import PageToolbar from './PageToolbar';
 import RebalancingSection from './RebalancingSection';
 import BetaBanner from './BetaBanner';
+import BottomSheet from './ui/BottomSheet';
 
 
 // In-page sidebar nav (same sectionRefs/scrollToSection mechanics as
@@ -168,6 +169,43 @@ const NAV_GROUPS = [
 // the page - used to resolve which tab is current.
 const NAV_KEYS = NAV_GROUPS.flatMap((group) => group.items.map((item) => item.key));
 
+// THE PAGE ON A PHONE: four tabs, one shown at a time.
+//
+// Stacked, the ten sections ran to about nine screens at 390px, and the
+// tab strip above could show three of its ten links. Four tabs fit across
+// the screen and each holds about one screen.
+//
+// Dividends and analysts have no tab of their own: on a phone they are
+// folded into each stock's card on the "מניות" tab, so one holding is read
+// in one place instead of across three tables of the same symbols.
+const PHONE_TABS = [
+  { key: 'performance', label: 'ביצועים', sections: ['performance', 'summary'] },
+  { key: 'mix', label: 'פיזור', sections: ['pie', 'sector', 'byDate'] },
+  { key: 'stocks', label: 'מניות', sections: ['byStock'] },
+  { key: 'tools', label: 'כלים', sections: ['reports', 'rebalancing'] }
+];
+
+const PHONE_TAB_BY_SECTION = PHONE_TABS.reduce((acc, tab) => {
+  tab.sections.forEach((key) => {
+    acc[key] = tab.key;
+  });
+  return acc;
+}, {});
+
+// The three detailed reports, which a phone shows one at a time.
+const REPORT_VIEWS = [
+  { key: 'topPerformers', label: 'הכי רווחיות' },
+  { key: 'worstPerformers', label: 'מפסידות' },
+  { key: 'largestPositions', label: 'הכי גדולות' }
+];
+
+// The orders the phone's stock list can be read in.
+const STOCK_SORTS = [
+  { key: 'value', label: 'לפי שווי', read: (s) => s.value },
+  { key: 'profit', label: 'לפי רווח', read: (s) => s.profit },
+  { key: 'annual', label: 'לפי תשואה שנתית', read: (s) => s.annualizedReturn }
+];
+
 const EMPTY_TRANSACTIONS = [];
 
 function PortfolioAnalysisView({
@@ -206,26 +244,27 @@ function PortfolioAnalysisView({
   const chartTooltip = useMemo(() => tooltipStyles(theme), [theme]);
   const SECTOR_COLORS = chart.categorical;
 
-  // THE DISTRIBUTION DONUTS ON A PHONE.
-  //
-  // The full callouts (name, amount, share) need ~116px of margin on each
-  // side, which on a phone leaves the ring a few dozen pixels across. So a
-  // narrow screen gets COMPACT callouts instead: name and share only, in
-  // smaller type, on a shorter leader. The amount is still in the legend
-  // card under each chart, whose swatch matches the slice colour.
+  // The phone layout (see PHONE_TABS). The same width the stylesheet's own
+  // phone rules use, so the markup and the CSS switch together.
   const isNarrowScreen = useMediaQuery('(max-width: 768px)');
+
+  // THE DISTRIBUTION DONUTS. On a wide screen each slice carries a callout
+  // (name, amount, share) in ~116px of margin either side. On a phone that
+  // margin left the ring a few dozen pixels across, so there the ring is
+  // drawn small with no callouts, beside a legend list that carries the
+  // same three facts (see .pie-chart-wrapper in App.css).
   const donutLayout = useMemo(
     () =>
       isNarrowScreen
         ? {
-            compact: true,
-            height: 300,
-            margin: { top: 16, right: 100, bottom: 16, left: 100 },
-            outerRadius: '90%',
-            innerRadius: '64%'
+            callouts: false,
+            height: 128,
+            margin: { top: 0, right: 0, bottom: 0, left: 0 },
+            outerRadius: '100%',
+            innerRadius: '68%'
           }
         : {
-            compact: false,
+            callouts: true,
             height: 360,
             margin: { top: 20, right: 116, bottom: 20, left: 116 },
             outerRadius: '58%',
@@ -766,14 +805,13 @@ function PortfolioAnalysisView({
   // just this one's, which is why this is a factory over the chart's values
   // rather than a plain renderer.
   //
-  // Long names wrap onto more lines instead of running off the chart: on a
-  // phone there is only ~90px beside the ring, and "קופת חיסכון בבנק" does
-  // not fit on one line in it. The wrap is measured, and every label's
-  // spacing follows the tallest one.
-  const measureCalloutName = useMemo(
-    () => makeTextMeasurer(donutLayout.compact ? 11 : 13, 700),
-    [donutLayout.compact]
-  );
+  // Long names wrap onto more lines instead of running off the chart: in a
+  // half-width card there is little room beside the ring, and "קופת חיסכון
+  // בבנק" does not always fit on one line in it. The wrap is measured, and
+  // every label's spacing follows the tallest one.
+  //
+  // Phones draw no callouts at all (see donutLayout).
+  const measureCalloutName = useMemo(() => makeTextMeasurer(13, 700), []);
   const measureCalloutValue = useMemo(() => makeTextMeasurer(12, 500), []);
   const makeSliceCallout = useCallback(
     (items) => ({ cx, cy, midAngle, outerRadius, percent, name, value, index }) => {
@@ -783,28 +821,26 @@ function PortfolioAnalysisView({
       const cos = Math.cos(angle);
       const sin = Math.sin(angle);
 
-      const { compact } = donutLayout;
       const plotHalf = (donutLayout.height - donutLayout.margin.top - donutLayout.margin.bottom) / 2;
-      const ELBOW_GAP = compact ? 8 : 12; // slice edge -> elbow
-      const RAIL_GAP = compact ? 16 : 34; // ring edge -> rail
-      const TEXT_GAP = compact ? 4 : 6; // rail -> first character
-      const LINE_HEIGHT = compact ? 14 : 17;
+      const ELBOW_GAP = 12; // slice edge -> elbow
+      const RAIL_GAP = 34; // ring edge -> rail
+      const TEXT_GAP = 6; // rail -> first character
+      const LINE_HEIGHT = 17;
 
       // The room beside the ring, the same on both sides: the margins are
       // symmetric, so the SVG is 2 * cx wide.
       const textRoom = cx - outerRadius - RAIL_GAP - TEXT_GAP - 4;
       const values = items.map((item) => item.value);
       const total = values.reduce((sum, v) => sum + (v > 0 ? v : 0), 0);
-      // Name lines (bold), then the figures: the share alone on a phone;
-      // amount and share on one line where they fit, or two where not.
+      // Name lines (bold), then the figures: amount and share on one line
+      // where they fit, or two where not.
       const linesFor = (label, amount, share) => {
         const pct = `${(share * 100).toFixed(1)}%`;
         const amountText = `${formatPriceWithSign(amount)} ₪`;
-        const figures = compact
-          ? [pct]
-          : measureCalloutValue(`${amountText} · ${pct}`) <= textRoom
-          ? [`${amountText} · ${pct}`]
-          : [amountText, pct];
+        const figures =
+          measureCalloutValue(`${amountText} · ${pct}`) <= textRoom
+            ? [`${amountText} · ${pct}`]
+            : [amountText, pct];
         return [
           ...wrapLabel(label, textRoom, measureCalloutName).map((text) => ({ text, bold: true })),
           ...figures.map((text) => ({ text, bold: false }))
@@ -898,7 +934,7 @@ function PortfolioAnalysisView({
               textAnchor={textAnchor}
               dominantBaseline="central"
               direction="rtl"
-              fontSize={compact ? 11 : line.bold ? 13 : 12}
+              fontSize={line.bold ? 13 : 12}
               fontWeight={line.bold ? 700 : 500}
             >
               {line.text}
@@ -924,7 +960,8 @@ function PortfolioAnalysisView({
   // wherever it is missing.
   const [activeSection, setActiveSection] = useState(NAV_KEYS[0]);
   useEffect(() => {
-    if (typeof IntersectionObserver === 'undefined') return undefined;
+    // The phone shows one tab at a time and has no strip to highlight.
+    if (isNarrowScreen || typeof IntersectionObserver === 'undefined') return undefined;
     const observer = new IntersectionObserver(
       (entries) => {
         const visible = entries
@@ -944,7 +981,60 @@ function PortfolioAnalysisView({
       if (element) observer.observe(element);
     });
     return () => observer.disconnect();
-  }, []);
+  }, [isNarrowScreen]);
+
+  // THE PHONE LAYOUT'S OWN STATE (see PHONE_TABS).
+  const [phoneTab, setPhoneTab] = useState(PHONE_TABS[0].key);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [reportView, setReportView] = useState(REPORT_VIEWS[0].key);
+  const [stockSort, setStockSort] = useState(STOCK_SORTS[0].key);
+  const closeFilters = useCallback(() => setFiltersOpen(false), []);
+  // On a phone a section is on the page only while its tab is open.
+  const showSection = (key) => !isNarrowScreen || PHONE_TAB_BY_SECTION[key] === phoneTab;
+
+  // A tab opens at its top. The tab bar is sticky, so after scrolling down
+  // one tab the next would otherwise open somewhere in its middle - the
+  // anchor sits just above the bar, and the page returns to it only when it
+  // has been scrolled past.
+  const phoneTabsAnchorRef = useRef(null);
+  const selectPhoneTab = (key) => {
+    setPhoneTab(key);
+    const anchor = phoneTabsAnchorRef.current;
+    if (anchor && anchor.getBoundingClientRect().top < 0 && anchor.scrollIntoView) {
+      anchor.scrollIntoView({ block: 'start' });
+    }
+  };
+
+  // How many of the controls inside the filter sheet are away from their
+  // defaults, shown on the button that opens it - so a narrowed view is
+  // visible without opening the sheet to check.
+  const activeFilterCount = [
+    marketSegment !== DEFAULT_SEGMENT,
+    showFxToggle && fxMode !== resolveFxMode(marketSegment, defaultFxModeForSegment(marketSegment)),
+    showBenchmark,
+    // A typed range matches none of the period buttons.
+    !activeReturnPeriod
+  ].filter(Boolean).length;
+
+  // One card per stock on a phone, carrying what the desktop spreads over
+  // three tables: the position, its dividend and the analysts' view. Only
+  // American symbols have the last two.
+  const stockCards = useMemo(() => {
+    const sort = STOCK_SORTS.find((s) => s.key === stockSort) || STOCK_SORTS[0];
+    return (analysis.stockDistribution || [])
+      .map((stock) => {
+        const symbol = stock.exchange === 'american' ? String(stock.name || '').trim().toUpperCase() : null;
+        const holding = symbol ? uniqueAmericanHoldings.find((h) => h.symbol === symbol) : null;
+        const rec = symbol ? recommendationsBySymbol[symbol] || null : null;
+        return {
+          ...stock,
+          rec,
+          upside: rec && holding ? computeUpsidePercent(holding.currentPrice, rec.targetMeanPrice) : null,
+          dividend: symbol ? dividendRows.find((row) => row.symbol === symbol) || null : null
+        };
+      })
+      .sort((a, b) => (sort.read(b) || 0) - (sort.read(a) || 0));
+  }, [analysis.stockDistribution, stockSort, uniqueAmericanHoldings, recommendationsBySymbol, dividendRows]);
 
   // The portfolio donut's slices, one per asset class, in the order of the
   // palette its legend reads its swatches from.
@@ -981,16 +1071,171 @@ function PortfolioAnalysisView({
     }
   ];
 
+  // THE PERFORMANCE CONTROLS, defined once and placed twice: in the strip
+  // above the chart on a wide screen, in the filter sheet on a phone.
+  const marketControls = (
+    <div className="segment-controls">
+      <div className="segment-group" role="group" aria-label="בחירת שוק">
+        <div className="segment-buttons">
+          {MARKET_SEGMENTS.map((option) => (
+            <button
+              key={option.key}
+              type="button"
+              className={`segment-button ${marketSegment === option.key ? 'active' : ''}`}
+              aria-pressed={marketSegment === option.key}
+              title={option.hint}
+              onClick={() => setMarketSegment(option.key)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Only where the selection holds American lots: on the Israeli view
+          no holding has an exchange rate in it. On the combined view,
+          switching it off and on shows how much of the return was the
+          dollar. */}
+      {showFxToggle && (
+        <div className="segment-group">
+          <label className="fx-toggle" title="כיבוי והדלקה מראים כמה מהתשואה נבע משער הדולר ולא מהמניות עצמן">
+            <input
+              type="checkbox"
+              checked={fxMode === FX_MODES.HISTORICAL}
+              onChange={(e) => setRequestedFxMode(e.target.checked ? FX_MODES.HISTORICAL : FX_MODES.PURE_USD)}
+            />
+            <span>כולל השפעת הדולר</span>
+          </label>
+        </div>
+      )}
+    </div>
+  );
+
+  // What the dollar switch means for the figures, said after the selection.
+  const fxExplanation = !showFxToggle
+    ? null
+    : fxMode === FX_MODES.PURE_USD
+    ? ` התשואה דולרית בלבד${
+        currentExchangeRate ? ` (שער אחיד של ${currentExchangeRate.toFixed(3)} ₪ לדולר)` : ''
+      }, כדי לראות רק את ביצועי המניות. הסכומים עצמם נשארים בשקלים.`
+    : ' התשואה כוללת גם את תנועת שער הדולר, כמו שמשקיע ישראלי מרגיש אותה. הסכומים נשארים בשקלים.';
+
+  // Layout lives in .date-range-controls, not an inline style: an inline
+  // align-items outranks the stylesheet, so the mobile rule that stacks
+  // these could never take effect.
+  const dateControls = (
+    <div className="date-range-controls">
+      <div className="form-group">
+        <label htmlFor="performanceFrom">מתאריך</label>
+        <input
+          type="date"
+          id="performanceFrom"
+          max={effectivePerformanceTo}
+          value={effectivePerformanceFrom}
+          onChange={(e) => handlePerformanceFromChange(e.target.value)}
+        />
+      </div>
+      <div className="form-group">
+        <label htmlFor="performanceTo">עד תאריך</label>
+        <input
+          type="date"
+          id="performanceTo"
+          min={effectivePerformanceFrom}
+          max={todayDate}
+          value={effectivePerformanceTo}
+          onChange={(e) => handlePerformanceToChange(e.target.value)}
+        />
+      </div>
+    </div>
+  );
+
+  // THE BENCHMARK OVERLAY's switch and index choice: the same neutralized
+  // growth for an index, based at 100 on the same first date, so the gap
+  // between the two lines is the relative performance.
+  const benchmarkControls = (
+    <div className="chart-overlay-controls">
+      <label className="overlay-toggle">
+        <input type="checkbox" checked={showBenchmark} onChange={(e) => setShowBenchmark(e.target.checked)} />
+        <span>השוואה מול מדד ייחוס</span>
+      </label>
+
+      {showBenchmark && (
+        <>
+          <div className="benchmark-toggle-row" role="group" aria-label="בחירת מדד ייחוס">
+            {benchmarkOptions.map((option) => (
+              <button
+                key={option.key}
+                type="button"
+                className={`benchmark-toggle-button ${selectedBenchmarkKey === option.key ? 'active' : ''}`}
+                aria-pressed={selectedBenchmarkKey === option.key}
+                onClick={() => setBenchmarkKey(option.key)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <p className="overlay-hint">
+            מדדים אמריקאיים מוצגים בשקלים, לפי שער הדולר בכל תאריך - כמו שמשקיע ישראלי היה מרוויח מהם בפועל.
+          </p>
+        </>
+      )}
+    </div>
+  );
+
+  // The two dividend totals: their own section on a wide screen, the head of
+  // the stock list on a phone.
+  const dividendTotals = (
+    <div className="distribution-grid">
+      <div className="distribution-card">
+        <h3>סה"כ דיבידנדים שהתקבלו</h3>
+        <div className="distribution-value profit-positive">${totalReceivedUSD.toFixed(2)}</div>
+        <div className="distribution-percentage">מצטבר, מאז תאריך הרכישה של כל פוזיציה</div>
+      </div>
+      <div className="distribution-card">
+        <h3>הכנסת דיבידנד שנתית צפויה</h3>
+        <div className="distribution-value">${totalProjectedAnnualUSD.toFixed(2)}</div>
+        <div className="distribution-percentage">
+          דיבידנד שנתי למניה (לפי הנתון הידוע היום) × כמות מוחזקת כרגע - תחזית, לא סכום שכבר התקבל
+        </div>
+      </div>
+    </div>
+  );
+
   return (
-    <div className="App">
+    <div className="App analysis-page">
       <div className="analysis-container">
         <div className="analysis-content">
+          {/* Not pinned on a phone: the tab bar below is, and two sticky
+              strips there cost a fifth of the screen. */}
           <PageToolbar
             title="ניתוח תיק"
             subtitle="ביצועים, פיזור והמלצות - תמונה מעמיקה של התיק"
+            sticky={!isNarrowScreen}
           />
 
           <BetaBanner tone="tax" />
+
+          {isNarrowScreen && (
+            <>
+              <div className="analysis-phone-tabs-anchor" ref={phoneTabsAnchorRef} aria-hidden="true" />
+              <div className="analysis-phone-tabs" role="tablist" aria-label="חלקי הניתוח">
+                {PHONE_TABS.map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    role="tab"
+                    id={`analysis-tab-${tab.key}`}
+                    aria-selected={phoneTab === tab.key}
+                    aria-controls="analysis-phone-panel"
+                    className={`analysis-phone-tab ${phoneTab === tab.key ? 'active' : ''}`}
+                    onClick={() => selectPhoneTab(tab.key)}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
 
           {/* Section navigation as a horizontal tab strip rather than a
               column beside the content. As a sidebar it took ~210px of the
@@ -1000,6 +1245,7 @@ function PortfolioAnalysisView({
               when it has to, and leaves the grid its full width.
               The groups survive as separators inside the strip, so the
               order still reads performance / composition / US / tools. */}
+          {!isNarrowScreen && (
           <nav className="analysis-tabs" aria-label="מעבר לסעיף">
             {NAV_GROUPS.map((group, groupIndex) => (
               <React.Fragment key={group.label}>
@@ -1021,8 +1267,15 @@ function PortfolioAnalysisView({
               </React.Fragment>
             ))}
           </nav>
+          )}
 
-          <div className="analysis-grid">
+          <div
+            className={`analysis-grid ${isNarrowScreen ? 'is-phone' : ''}`}
+            id={isNarrowScreen ? 'analysis-phone-panel' : undefined}
+            role={isNarrowScreen ? 'tabpanel' : undefined}
+            aria-labelledby={isNarrowScreen ? `analysis-tab-${phoneTab}` : undefined}
+          >
+          {showSection('summary') && (
           <div className="analysis-section" data-section-key="summary" ref={(el) => (sectionRefs.current.summary = el)}>
             <h2 className="section-title">התיק במבט מהיר</h2>
             {/* Three things the home page does not already say, each with
@@ -1117,7 +1370,9 @@ function PortfolioAnalysisView({
               })()}
             </div>
           </div>
+          )}
 
+          {showSection('performance') && (
           <div className="analysis-section" data-section-key="performance" ref={(el) => (sectionRefs.current.performance = el)}>
             <h2 className="section-title">ביצועי התיק לאורך זמן</h2>
             <p className="perf-intro">כמה ההשקעות שלך הרוויחו - בלי לספור כסף שהפקדת או משכת.</p>
@@ -1142,73 +1397,30 @@ function PortfolioAnalysisView({
                 ))}
               </div>
 
-              <div className="segment-controls">
-                <div className="segment-group" role="group" aria-label="בחירת שוק">
-                  <div className="segment-buttons">
-                    {MARKET_SEGMENTS.map((option) => (
-                      <button
-                        key={option.key}
-                        type="button"
-                        className={`segment-button ${marketSegment === option.key ? 'active' : ''}`}
-                        aria-pressed={marketSegment === option.key}
-                        title={option.hint}
-                        onClick={() => setMarketSegment(option.key)}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Only where the selection holds American lots: on the
-                    Israeli view no holding has an exchange rate in it. On
-                    the combined view, switching it off and on shows how
-                    much of the return was the dollar. */}
-                {showFxToggle && (
-                  <div className="segment-group">
-                    <label
-                      className="fx-toggle"
-                      title="כיבוי והדלקה מראים כמה מהתשואה נבע משער הדולר ולא מהמניות עצמן"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={fxMode === FX_MODES.HISTORICAL}
-                        onChange={(e) =>
-                          setRequestedFxMode(e.target.checked ? FX_MODES.HISTORICAL : FX_MODES.PURE_USD)
-                        }
-                      />
-                      <span>כולל השפעת הדולר</span>
-                    </label>
-                  </div>
-                )}
-              </div>
-
-              {/* Layout lives in .date-range-controls, not an inline style:
-                  an inline align-items outranks the stylesheet, so the
-                  mobile rule that stacks these could never take effect. */}
-              <div className="date-range-controls">
-                <div className="form-group">
-                  <label htmlFor="performanceFrom">מתאריך</label>
-                  <input
-                    type="date"
-                    id="performanceFrom"
-                    max={effectivePerformanceTo}
-                    value={effectivePerformanceFrom}
-                    onChange={(e) => handlePerformanceFromChange(e.target.value)}
-                  />
-                </div>
-                <div className="form-group">
-                  <label htmlFor="performanceTo">עד תאריך</label>
-                  <input
-                    type="date"
-                    id="performanceTo"
-                    min={effectivePerformanceFrom}
-                    max={todayDate}
-                    value={effectivePerformanceTo}
-                    onChange={(e) => handlePerformanceToChange(e.target.value)}
-                  />
-                </div>
-              </div>
+              {/* On a phone the rest of the strip is a sheet: the market,
+                  currency and date controls took a whole screen above the
+                  number they control. */}
+              {isNarrowScreen ? (
+                <button
+                  type="button"
+                  className="perf-filter-button"
+                  aria-haspopup="dialog"
+                  aria-expanded={filtersOpen}
+                  onClick={() => setFiltersOpen(true)}
+                >
+                  סינון
+                  {activeFilterCount > 0 && (
+                    <span className="perf-filter-count" aria-label={`${activeFilterCount} פעילים`}>
+                      {activeFilterCount}
+                    </span>
+                  )}
+                </button>
+              ) : (
+                <>
+                  {marketControls}
+                  {dateControls}
+                </>
+              )}
             </div>
 
             {/* What the curve covers, in words - two toggles read
@@ -1216,14 +1428,31 @@ function PortfolioAnalysisView({
                 why (cash accounts left out, the base of 100) is in the
                 explainer at the bottom of the section. */}
             <p className="section-subtitle segment-summary">
-              מוצג: <strong>{describeSelection(marketSegment, fxMode)}</strong>.
-              {showFxToggle &&
-                (fxMode === FX_MODES.PURE_USD
-                  ? ` התשואה דולרית בלבד${
-                      currentExchangeRate ? ` (שער אחיד של ${currentExchangeRate.toFixed(3)} ₪ לדולר)` : ''
-                    }, כדי לראות רק את ביצועי המניות. הסכומים עצמם נשארים בשקלים.`
-                  : ' התשואה כוללת גם את תנועת שער הדולר, כמו שמשקיע ישראלי מרגיש אותה. הסכומים נשארים בשקלים.')}
+              מוצג: <strong>{describeSelection(marketSegment, fxMode)}</strong>.{!isNarrowScreen && fxExplanation}
             </p>
+
+            {isNarrowScreen && filtersOpen && (
+              <BottomSheet
+                title="סינון ביצועים"
+                onClose={closeFilters}
+                footer={
+                  <button type="button" className="perf-filter-apply" onClick={closeFilters}>
+                    הצגת תוצאות
+                  </button>
+                }
+              >
+                <div className="perf-sheet-group">
+                  <span className="perf-sheet-label">שוק</span>
+                  {marketControls}
+                  {fxExplanation && <p className="overlay-hint">{fxExplanation.trim()}</p>}
+                </div>
+                {stats.hasHistory && <div className="perf-sheet-group">{benchmarkControls}</div>}
+                <div className="perf-sheet-group">
+                  <span className="perf-sheet-label">טווח תאריכים</span>
+                  {dateControls}
+                </div>
+              </BottomSheet>
+            )}
 
             {segmentIsEmpty ? (
               // Naming the filter that emptied the chart, rather than
@@ -1297,43 +1526,8 @@ function PortfolioAnalysisView({
                   );
                 })()}
 
-                {/* THE BENCHMARK OVERLAY: the same neutralized growth for an
-                    index, based at 100 on the same first date, so the gap
-                    between the two lines is the relative performance. */}
-                <div className="chart-overlay-controls">
-                  <label className="overlay-toggle">
-                    <input
-                      type="checkbox"
-                      checked={showBenchmark}
-                      onChange={(e) => setShowBenchmark(e.target.checked)}
-                    />
-                    <span>השוואה מול מדד ייחוס</span>
-                  </label>
-
-                  {showBenchmark && (
-                    <>
-                      <div className="benchmark-toggle-row" role="group" aria-label="בחירת מדד ייחוס">
-                        {benchmarkOptions.map((option) => (
-                          <button
-                            key={option.key}
-                            type="button"
-                            className={`benchmark-toggle-button ${
-                              selectedBenchmarkKey === option.key ? 'active' : ''
-                            }`}
-                            aria-pressed={selectedBenchmarkKey === option.key}
-                            onClick={() => setBenchmarkKey(option.key)}
-                          >
-                            {option.label}
-                          </button>
-                        ))}
-                      </div>
-                      <p className="overlay-hint">
-                        מדדים אמריקאיים מוצגים בשקלים, לפי שער הדולר בכל תאריך - כמו שמשקיע ישראלי היה מרוויח
-                        מהם בפועל.
-                      </p>
-                    </>
-                  )}
-                </div>
+                {/* In the filter sheet on a phone (see benchmarkControls). */}
+                {!isNarrowScreen && benchmarkControls}
 
                 {benchmarkStatus && <p className="history-empty-note">{benchmarkStatus}</p>}
 
@@ -1342,7 +1536,7 @@ function PortfolioAnalysisView({
                     a deposit lifts it without the holdings gaining anything
                     - so it is a figure in the hero above, not a curve. */}
                 <div className="equity-chart-container">
-                  <ResponsiveContainer width="100%" height={280}>
+                  <ResponsiveContainer width="100%" height={isNarrowScreen ? 220 : 280}>
                     <ComposedChart
                       data={performanceChartData}
                       margin={{ top: 10, right: 12, left: 4, bottom: 0 }}
@@ -1377,7 +1571,7 @@ function PortfolioAnalysisView({
                         stroke={chart.grid}
                         tickLine={false}
                         axisLine={false}
-                        width={52}
+                        width={isNarrowScreen ? 40 : 52}
                       />
                       <Tooltip
                         {...chartTooltip}
@@ -1573,7 +1767,9 @@ function PortfolioAnalysisView({
               </p>
             </details>
           </div>
+          )}
 
+          {showSection('pie') && (
           <div className="analysis-section analysis-section-half" data-section-key="pie" ref={(el) => (sectionRefs.current.pie = el)}>
             <h2 className="section-title">גרף עוגה - פיזור התיק</h2>
             <div className="pie-chart-container">
@@ -1592,7 +1788,7 @@ function PortfolioAnalysisView({
                       paddingAngle={1}
                       fill={chart.accent}
                       dataKey="value"
-                      label={makeSliceCallout(portfolioPieData)}
+                      label={donutLayout.callouts ? makeSliceCallout(portfolioPieData) : false}
                       labelLine={false}
                       isAnimationActive={false}
                     >
@@ -1656,7 +1852,9 @@ function PortfolioAnalysisView({
               </div>
             </div>
           </div>
+          )}
 
+          {showSection('sector') && (
           <div className="analysis-section analysis-section-half" data-section-key="sector" ref={(el) => (sectionRefs.current.sector = el)}>
             <h2 className="section-title">פיזור לפי סקטור</h2>
             {americanStocks.length === 0 && israeliStocks.length === 0 ? (
@@ -1667,6 +1865,32 @@ function PortfolioAnalysisView({
               <p className="history-empty-note">לא ניתן היה לטעון נתוני סקטור כרגע.</p>
             ) : (
               <>
+                {/* Bars on a phone: a second small donut beside the first
+                    would ask the reader to compare slice angles at 128px.
+                    Each bar is scaled to the largest sector, so the longest
+                    fills the track. */}
+                {isNarrowScreen ? (
+                  <ul className="sector-bars">
+                    {sectorDistribution.sectors.map((s, i) => (
+                      <li className="sector-bar" key={s.sectorKey}>
+                        <span className="sector-bar-name">
+                          {sectorLabelHe(s.sectorKey)}
+                          <span className="sector-bar-count"> · {s.symbolCount} מניות</span>
+                        </span>
+                        <span className="sector-bar-pct">{s.percentage.toFixed(1)}%</span>
+                        <span className="sector-bar-track" aria-hidden="true">
+                          <span
+                            className="sector-bar-fill"
+                            style={{
+                              width: `${(s.percentage / (sectorDistribution.sectors[0].percentage || 1)) * 100}%`,
+                              backgroundColor: SECTOR_COLORS[i % SECTOR_COLORS.length]
+                            }}
+                          />
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
                 <div className="pie-chart-container">
                   <div className="pie-chart-wrapper">
                     <ResponsiveContainer width="100%" height={donutLayout.height}>
@@ -1714,6 +1938,7 @@ function PortfolioAnalysisView({
                     </div>
                   </div>
                 </div>
+                )}
                 {sectorDistribution.topSectorPercent > 40 && (
                   <p className="section-subtitle" style={{ marginTop: 10 }}>
                     שימו לב: {sectorDistribution.topSectorPercent.toFixed(0)}% מהרכיב האמריקאי מרוכז בסקטור אחד (
@@ -1724,8 +1949,90 @@ function PortfolioAnalysisView({
               </>
             )}
           </div>
+          )}
 
+          {showSection('byStock') && (
           <div className="analysis-section" data-section-key="byStock" ref={(el) => (sectionRefs.current.byStock = el)}>
+            {isNarrowScreen ? (
+              <>
+                <div className="stock-list-head">
+                  <h2 className="section-title">המניות שלי</h2>
+                  <label className="stock-sort">
+                    <span className="visually-hidden">מיון המניות</span>
+                    <select value={stockSort} onChange={(e) => setStockSort(e.target.value)}>
+                      {STOCK_SORTS.map((sort) => (
+                        <option key={sort.key} value={sort.key}>
+                          {sort.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                {americanStocks.length > 0 && dividendTotals}
+                {americanStocks.length > 0 && (dividendsLoading || analystLoading) && (
+                  <p className="perf-footnote">טוען נתוני דיבידנד ואנליסטים…</p>
+                )}
+
+                {stockCards.length === 0 ? (
+                  <p className="history-empty-note">אין מניות בתיק כרגע.</p>
+                ) : (
+                  <ul className="stock-cards">
+                    {stockCards.map((stock) => {
+                      const dividend = stock.dividend;
+                      const rec = stock.rec;
+                      const sentiment = rec ? recommendationSentiment(rec.recommendationKey) : null;
+                      return (
+                        <li className="stock-card" key={`${stock.exchange}-${stock.name}`}>
+                          <div className="stock-card-row">
+                            <span className="stock-card-name">
+                              {stock.displayName || stock.name}
+                              <span className="stock-card-exchange">
+                                {stock.exchange === 'israeli' ? 'ת"א' : 'ארה"ב'}
+                              </span>
+                            </span>
+                            <span className="stock-card-value">{formatPriceWithSign(stock.value)} ₪</span>
+                          </div>
+                          <div className="stock-card-row stock-card-sub">
+                            <span>
+                              {stock.percentage.toFixed(1)}% מהתיק ·{' '}
+                              {stock.daysHeld > 365 ? `${stock.yearsHeld.toFixed(1)} שנים` : `${stock.daysHeld} ימים`}
+                            </span>
+                            <span className={stock.profit >= 0 ? 'profit-positive' : 'profit-negative'}>
+                              {formatPriceWithSign(stock.profit)} ₪ ({signedPercent(stock.profitPercentage)})
+                            </span>
+                          </div>
+                          <div className="stock-card-tags">
+                            <span className={`stock-tag ${stock.annualizedReturn >= 0 ? 'is-positive' : 'is-negative'}`}>
+                              {signedPercent(stock.annualizedReturn * 100)} בשנה
+                            </span>
+                            {rec && rec.numberOfAnalystOpinions > 0 && (
+                              <span className={`stock-tag ${sentiment ? `is-${sentiment}` : ''}`}>
+                                {recommendationLabelHe(rec.recommendationKey)}
+                                {stock.upside != null ? ` · יעד ${signedPercent(stock.upside)}` : ''}
+                              </span>
+                            )}
+                            {dividend && dividend.dividendYieldPercent != null && (
+                              <span className="stock-tag">
+                                דיבידנד {dividend.dividendYieldPercent.toFixed(2)}%
+                                {dividend.projectedAnnualUSD != null
+                                  ? ` · $${dividend.projectedAnnualUSD.toFixed(2)} בשנה`
+                                  : ''}
+                                {dividend.nextDate ? ` · הבא ${formatDate(dividend.nextDate)}` : ''}
+                              </span>
+                            )}
+                            {dividend && dividend.dividendYieldPercent == null && dividend.receivedUSD > 0 && (
+                              <span className="stock-tag">דיבידנד: התקבלו ${dividend.receivedUSD.toFixed(2)}</span>
+                            )}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </>
+            ) : (
+            <>
             <h2 className="section-title">פיזור לפי מניות</h2>
             <div className="stocks-table-container">
               <table className="analysis-table">
@@ -1763,8 +2070,12 @@ function PortfolioAnalysisView({
                 </tbody>
               </table>
             </div>
+            </>
+            )}
           </div>
+          )}
 
+          {showSection('byDate') && (
           <div className="analysis-section analysis-section-half" data-section-key="byDate" ref={(el) => (sectionRefs.current.byDate = el)}>
             <h2 className="section-title">פיזור לפי תאריכי קנייה והפקדה</h2>
             <p className="section-subtitle">
@@ -1823,11 +2134,30 @@ function PortfolioAnalysisView({
               </div>
             )}
           </div>
+          )}
 
+          {showSection('reports') && (
           <div className="analysis-section analysis-section-half" data-section-key="reports" ref={(el) => (sectionRefs.current.reports = el)}>
             <h2 className="section-title">דוחות מפורטים</h2>
+            {/* One list at a time on a phone, chosen here, rather than three
+                stacked cards of five rows each. */}
+            {isNarrowScreen && (
+              <div className="report-switch" role="group" aria-label="בחירת דוח">
+                {REPORT_VIEWS.map((view) => (
+                  <button
+                    key={view.key}
+                    type="button"
+                    className={`report-switch-button ${reportView === view.key ? 'active' : ''}`}
+                    aria-pressed={reportView === view.key}
+                    onClick={() => setReportView(view.key)}
+                  >
+                    {view.label}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="reports-grid">
-              <div className="report-card">
+              <div className="report-card" hidden={isNarrowScreen && reportView !== 'topPerformers'}>
                 <h3>המניות הכי רווחיות</h3>
                 <div className="report-list">
                   {analysis.reports.topPerformers.length === 0 ? (
@@ -1846,7 +2176,7 @@ function PortfolioAnalysisView({
                   )}
                 </div>
               </div>
-              <div className="report-card">
+              <div className="report-card" hidden={isNarrowScreen && reportView !== 'worstPerformers'}>
                 <h3>המניות הכי מפסידות</h3>
                 <div className="report-list">
                   {analysis.reports.worstPerformers.length === 0 ? (
@@ -1865,7 +2195,7 @@ function PortfolioAnalysisView({
                   )}
                 </div>
               </div>
-              <div className="report-card">
+              <div className="report-card" hidden={isNarrowScreen && reportView !== 'largestPositions'}>
                 <h3>הפוזיציות הכי גדולות</h3>
                 <div className="report-list">
                   {analysis.reports.largestPositions.map((stock, index) => (
@@ -1880,6 +2210,9 @@ function PortfolioAnalysisView({
               </div>
             </div>
           </div>
+          )}
+
+          {showSection('dividends') && (
           <div className="analysis-section" data-section-key="dividends" ref={(el) => (sectionRefs.current.dividends = el)}>
             <h2 className="section-title">מעקב דיבידנדים (מניות אמריקאיות)</h2>
             {americanStocks.length === 0 ? (
@@ -1888,20 +2221,7 @@ function PortfolioAnalysisView({
               <p className="history-empty-note">טוען נתוני דיבידנד…</p>
             ) : (
               <>
-                <div className="distribution-grid">
-                  <div className="distribution-card">
-                    <h3>סה"כ דיבידנדים שהתקבלו</h3>
-                    <div className="distribution-value profit-positive">${totalReceivedUSD.toFixed(2)}</div>
-                    <div className="distribution-percentage">מצטבר, מאז תאריך הרכישה של כל פוזיציה</div>
-                  </div>
-                  <div className="distribution-card">
-                    <h3>הכנסת דיבידנד שנתית צפויה</h3>
-                    <div className="distribution-value">${totalProjectedAnnualUSD.toFixed(2)}</div>
-                    <div className="distribution-percentage">
-                      דיבידנד שנתי למניה (לפי הנתון הידוע היום) × כמות מוחזקת כרגע - תחזית, לא סכום שכבר התקבל
-                    </div>
-                  </div>
-                </div>
+                {dividendTotals}
 
                 <div className="stocks-table-container" style={{ marginTop: 16 }}>
                   <table className="analysis-table">
@@ -1934,7 +2254,9 @@ function PortfolioAnalysisView({
               </>
             )}
           </div>
+          )}
 
+          {showSection('analysts') && (
           <div className="analysis-section" data-section-key="analysts" ref={(el) => (sectionRefs.current.analysts = el)}>
             <h2 className="section-title">המלצות אנליסטים (מניות אמריקאיות)</h2>
             {americanStocks.length === 0 ? (
@@ -1987,7 +2309,9 @@ function PortfolioAnalysisView({
               </div>
             )}
           </div>
+          )}
 
+          {showSection('rebalancing') && (
           <div className="analysis-section" data-section-key="rebalancing" ref={(el) => (sectionRefs.current.rebalancing = el)}>
             <h2 className="section-title">איזון מחדש (Rebalancing)</h2>
             <RebalancingSection
@@ -2000,6 +2324,7 @@ function PortfolioAnalysisView({
               onSaveTargets={onSaveRebalanceTargets}
             />
           </div>
+          )}
           </div>
         </div>
       </div>

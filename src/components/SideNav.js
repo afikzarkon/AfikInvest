@@ -121,7 +121,61 @@ export const NAV_ITEMS = ROUTES.filter((route) => !route.hidden);
 const PRIMARY_KEYS = ['home', 'analytics', 'transactions'];
 const ASSETS_GROUP = NAV_GROUPS.find((g) => g.label === 'נכסים');
 
-function NavSheet({ title, groups, activePage, badges, onNavigate, onClose }) {
+// The account block at the top of the "עוד" sheet on a phone: who is signed
+// in, settings, the admin panel for admins, the theme switch and sign-out.
+// The desktop sidebar carries the same controls in its footer.
+function SheetAccount({ account, activePage, onNavigate, onClose }) {
+  const { user, displayName, avatar, theme, onToggleTheme, onLogout, isAdmin } = account;
+  const go = (key) => {
+    onClose();
+    onNavigate(key);
+  };
+  const settingsActive = ['settings', 'security'].includes(activePage);
+  return (
+    <div className="nav-sheet-account">
+      <div className="nav-sheet-identity">
+        <Avatar src={avatar} name={displayName || user.email} size={36} />
+        <span className="nav-sheet-identity-text">
+          {displayName ? <span className="nav-sheet-identity-name">{displayName}</span> : null}
+          <span className="nav-sheet-identity-email">{user.email}</span>
+        </span>
+        <ThemeToggleButton theme={theme} onToggleTheme={onToggleTheme} />
+      </div>
+      <div className="nav-sheet-account-actions">
+        <button
+          type="button"
+          className={`nav-sheet-account-btn ${settingsActive ? 'active' : ''}`}
+          aria-current={settingsActive ? 'page' : undefined}
+          onClick={() => go('settings')}
+        >
+          הגדרות
+        </button>
+        {isAdmin && (
+          <button
+            type="button"
+            className={`nav-sheet-account-btn ${activePage === 'admin' ? 'active' : ''}`}
+            aria-current={activePage === 'admin' ? 'page' : undefined}
+            onClick={() => go('admin')}
+          >
+            ניהול
+          </button>
+        )}
+        <button
+          type="button"
+          className="nav-sheet-account-btn is-logout"
+          onClick={() => {
+            onClose();
+            onLogout();
+          }}
+        >
+          התנתקות
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function NavSheet({ title, groups, activePage, badges, onNavigate, onClose, account = null }) {
   const sheetRef = useRef(null);
   useEffect(() => {
     const onKey = (e) => {
@@ -146,6 +200,9 @@ function NavSheet({ title, groups, activePage, badges, onNavigate, onClose }) {
             ×
           </button>
         </div>
+        {account && account.user && (
+          <SheetAccount account={account} activePage={activePage} onNavigate={onNavigate} onClose={onClose} />
+        )}
         {groups.map((group) => (
           <div className="nav-sheet-group" key={group.label}>
             {groups.length > 1 && <div className="nav-sheet-group-label">{group.label}</div>}
@@ -179,7 +236,7 @@ function NavSheet({ title, groups, activePage, badges, onNavigate, onClose }) {
   );
 }
 
-function BottomNav({ activePage, onNavigate, badges, groups }) {
+function BottomNav({ activePage, onNavigate, badges, groups, account }) {
   const [sheet, setSheet] = useState(null); // null | 'assets' | 'more'
   const visibleKeys = new Set(groups.flatMap((g) => g.keys));
   const primary = PRIMARY_KEYS.filter((k) => visibleKeys.has(k));
@@ -230,6 +287,7 @@ function BottomNav({ activePage, onNavigate, badges, groups }) {
           badges={badges}
           onNavigate={onNavigate}
           onClose={close}
+          account={sheet === 'more' ? account : null}
         />
       )}
     </>
@@ -253,8 +311,8 @@ function BottomNav({ activePage, onNavigate, badges, groups }) {
 // displayName / avatar: from the account (hooks/useAccount.js), optional.
 // hiddenRoutes: route keys switched off by a feature flag - left out of the
 //   list entirely, not greyed (hooks/useFeatureFlags.js).
-// showAccount: false on a phone, where the theme switch and the account
-//   controls live in AccountRail.js instead of this footer.
+// showAccount: false drops the footer's account block. On a phone the same
+//   controls are at the top of the "עוד" sheet instead.
 // isAdmin: adds the link to the admin panel. Only a convenience - the panel
 //   and its API check the role on the server.
 function SideNav({
@@ -280,7 +338,13 @@ function SideNav({
   if (compact) {
     return (
       <nav className="side-nav bottom-nav" aria-label="ניווט ראשי">
-        <BottomNav activePage={activePage} onNavigate={onNavigate} badges={badges} groups={groups} />
+        <BottomNav
+          activePage={activePage}
+          onNavigate={onNavigate}
+          badges={badges}
+          groups={groups}
+          account={{ user, displayName, avatar, theme, onToggleTheme, onLogout, isAdmin }}
+        />
       </nav>
     );
   }

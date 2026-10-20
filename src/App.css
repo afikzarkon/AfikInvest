@@ -6658,228 +6658,6 @@ select {
 }
 
 /* =============================================================
-   ACCOUNT RAIL (phones and narrow tablets)
-   =============================================================
-
-   Below 960px the theme switch, profile, settings and sign-out leave the
-   bottom bar for a narrow column of their own (components/AccountRail.js),
-   so the bar holds only the pages and stops losing room to them.
-
-   The column sits on the PHYSICAL left - `left`, not inset-inline-start,
-   on purpose: under RTL the logical start is the right, where the reading
-   starts and the page's own content begins. The content and the bottom bar
-   both start after it, so nothing sits under it.
-
-   Its width carries the left safe-area inset (a phone held in landscape
-   with the notch on that side); the top and bottom insets pad it inside. */
-@media (max-width: 960px) {
-  .app-shell.has-account-rail {
-    --account-rail-w: calc(52px + env(safe-area-inset-left));
-    padding-left: var(--account-rail-w);
-  }
-
-  .app-shell.has-account-rail .side-nav {
-    left: var(--account-rail-w);
-    right: 0;
-    width: auto;
-    padding-left: 8px;
-    padding-right: calc(8px + env(safe-area-inset-right));
-  }
-
-  .app-shell.has-account-rail .app-main-inner {
-    padding-left: 10px;
-    padding-right: calc(10px + env(safe-area-inset-right));
-  }
-
-  .account-rail {
-    position: fixed;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    width: var(--account-rail-w);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 10px;
-    padding: calc(10px + env(safe-area-inset-top)) 0 calc(10px + env(safe-area-inset-bottom));
-    padding-left: env(safe-area-inset-left);
-    border-right: 1px solid var(--sw-border);
-    background: var(--sw-surface);
-    z-index: 21;
-  }
-
-  @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
-    .account-rail {
-      background: var(--sw-glass);
-      -webkit-backdrop-filter: blur(var(--sw-glass-blur)) saturate(180%);
-      backdrop-filter: blur(var(--sw-glass-blur)) saturate(180%);
-    }
-  }
-}
-
-@media (max-width: 520px) {
-  .app-shell.has-account-rail .app-main-inner {
-    padding-left: 8px;
-    padding-right: calc(8px + env(safe-area-inset-right));
-  }
-}
-
-@media (min-width: 961px) {
-  .account-rail {
-    display: none;
-  }
-}
-
-.account-rail-button {
-  width: 44px;
-  height: 44px;
-  flex-shrink: 0;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: var(--sw-radius-sm);
-  background: none;
-  color: var(--sw-text-secondary);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: background-color var(--sw-transition), color var(--sw-transition), border-color var(--sw-transition);
-}
-
-.account-rail-button:hover,
-.account-rail-button:focus-visible {
-  background: var(--sw-surface-2);
-  color: var(--sw-text);
-}
-
-.account-rail-button:focus-visible,
-.account-rail-theme:focus-visible {
-  outline: 2px solid var(--sw-accent);
-  outline-offset: 2px;
-}
-
-.account-rail-button.is-active {
-  background: var(--sw-accent-soft);
-  color: var(--sw-accent);
-}
-
-.account-rail-icon {
-  width: 22px;
-  height: 22px;
-}
-
-/* Sign-out sits apart at the foot of the column, in the warning color, so
-   it is not the button a thumb lands on by habit. */
-.account-rail-logout {
-  margin-top: auto;
-  color: var(--sw-red);
-}
-
-.account-rail-logout:hover,
-.account-rail-logout:focus-visible {
-  background: var(--sw-red-soft);
-  color: var(--sw-red);
-}
-
-.account-rail-profile {
-  position: relative;
-}
-
-.account-rail-avatar[aria-expanded='true'] {
-  border-color: var(--sw-accent);
-}
-
-/* The name card opens into the page, to the right of the column. */
-.account-rail-card {
-  position: absolute;
-  top: 0;
-  left: calc(100% + 10px);
-  min-width: 170px;
-  max-width: calc(100vw - 52px - env(safe-area-inset-left) - 28px);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 10px 12px;
-  border: 1px solid var(--sw-border-strong);
-  border-radius: var(--sw-radius-sm);
-  background: var(--sw-surface-3);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
-  text-align: start;
-  z-index: 40;
-}
-
-.account-rail-card-name {
-  font-weight: 600;
-  font-size: 0.92rem;
-  color: var(--sw-text);
-  overflow-wrap: anywhere;
-}
-
-.account-rail-card-email {
-  direction: ltr;
-  text-align: start;
-  font-size: 0.8rem;
-  color: var(--sw-text-muted);
-  overflow-wrap: anywhere;
-}
-
-/* The vertical theme switch: moon on top, sun below, the thumb resting on
-   the current one. 44px wide like every control in the column. */
-.account-rail-theme {
-  position: relative;
-  width: 44px;
-  height: 76px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: space-between;
-  padding: 5px 0;
-  border: 1px solid var(--sw-border);
-  border-radius: var(--sw-radius-pill);
-  background: var(--sw-surface-3);
-  color: var(--sw-text-secondary);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.account-rail-theme-thumb {
-  position: absolute;
-  top: 5px;
-  left: 5px;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, var(--sw-accent), var(--sw-accent-2));
-  box-shadow: 0 2px 8px var(--sw-accent-glow);
-  transition: transform var(--sw-transition);
-}
-
-.account-rail-theme[data-state='light'] .account-rail-theme-thumb {
-  transform: translateY(32px);
-}
-
-.account-rail-theme-icon {
-  position: relative;
-  width: 32px;
-  height: 32px;
-  padding: 7px;
-  transition: color var(--sw-transition);
-}
-
-.account-rail-theme[data-state='dark'] .account-rail-theme-icon:first-of-type,
-.account-rail-theme[data-state='light'] .account-rail-theme-icon:last-of-type {
-  color: #ffffff;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .account-rail-theme-thumb,
-  .account-rail-button {
-    transition: none;
-  }
-}
-
-/* =============================================================
    ANALYSIS PAGE - dashboard grid
    =============================================================
 
@@ -10653,6 +10431,83 @@ select.auth-input[dir='ltr'] {
   min-width: 0;
 }
 
+/* The account block at the top of "עוד" (SideNav.js, SheetAccount): who is
+   signed in with the theme switch beside the name, then settings and
+   sign-out as a row of their own. */
+.nav-sheet-account {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--sw-border);
+  border-radius: var(--sw-radius);
+  background: var(--sw-surface-2);
+}
+
+.nav-sheet-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.nav-sheet-identity-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.nav-sheet-identity-name {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--sw-text);
+  overflow-wrap: anywhere;
+}
+
+.nav-sheet-identity-email {
+  direction: ltr;
+  text-align: start;
+  font-size: 0.8rem;
+  color: var(--sw-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-sheet-account-actions {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 8px;
+}
+
+.nav-sheet-account-btn {
+  min-height: 44px;
+  border: 1px solid var(--sw-border);
+  border-radius: var(--sw-radius-sm);
+  background: var(--sw-surface);
+  color: var(--sw-text);
+  font-family: inherit;
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.nav-sheet-account-btn.active {
+  border-color: var(--sw-accent);
+  background: var(--sw-accent-soft);
+  color: var(--sw-accent);
+}
+
+.nav-sheet-account-btn.is-logout {
+  color: var(--sw-red);
+}
+
+.nav-sheet-account-btn:focus-visible {
+  outline: 2px solid var(--sw-accent);
+  outline-offset: 2px;
+}
+
 /* =============================================================
    THE ENTRY FORM ON A PHONE (AssetEntryModal.js)
    =============================================================
@@ -10811,6 +10666,54 @@ select.auth-input[dir='ltr'] {
   font-weight: 700;
   font-size: 0.98rem;
   white-space: nowrap;
+}
+
+/* The profit row, which opens to the net-investment breakdown. */
+.home-kpi-fold {
+  border-bottom: 1px solid var(--sw-border);
+}
+
+.home-kpi-fold > summary {
+  list-style: none;
+  cursor: pointer;
+  border-bottom: 0;
+}
+
+.home-kpi-fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+.home-kpi-fold > summary::after {
+  content: '▾';
+  align-self: center;
+  color: var(--sw-text-muted);
+  font-size: 0.8rem;
+  transition: transform var(--sw-transition);
+}
+
+.home-kpi-fold[open] > summary::after {
+  transform: rotate(180deg);
+}
+
+.home-kpi-fold > summary:focus-visible {
+  outline: 2px solid var(--sw-accent);
+  outline-offset: 2px;
+}
+
+/* The value takes the row's free space so the chevron sits at the end. */
+.home-kpi-fold .home-kpi-value {
+  margin-inline-start: auto;
+}
+
+.home-kpi-fold-body {
+  padding-bottom: 10px;
+}
+
+.home-kpi-fold-body .summary-section {
+  border: 0;
+  background: none;
+  padding: 0;
+  box-shadow: none;
 }
 
 .home-folds {
@@ -12994,4 +12897,728 @@ select.auth-input[dir='ltr'] {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--sw-text-secondary);
+}
+
+/* =============================================================
+   THE ANALYSIS PAGE ON A PHONE (PortfolioAnalysisView.js, PHONE_TABS)
+   =============================================================
+
+   Four tabs, one shown at a time, and one layer of frame. At 390px the
+   page used to sit inside the .App padding, the container's margin and
+   padding and each section's own padding, with cards inside the sections
+   and bordered rows inside the cards - about 260px left for the text.
+   Here the sections run edge to edge as plain panels separated by the
+   page background, and what is inside them is rows, not boxes.
+
+   Everything is prefixed .analysis-page so it outranks the general phone
+   rules earlier in the file without !important. */
+@media (max-width: 768px) {
+  .App.analysis-page {
+    padding: 0;
+    display: block;
+  }
+
+  .analysis-page .analysis-container {
+    padding: 0;
+    margin: 0;
+    background: none;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .analysis-page .page-toolbar {
+    margin-bottom: 10px;
+    padding: 12px 0 10px;
+    border-bottom: none;
+    background: none;
+  }
+
+  /* The subtitle describes the page to someone choosing it from a list;
+     on the page itself, on a phone, it is a line of height. */
+  .analysis-page .page-toolbar-subtitle {
+    display: none;
+  }
+
+  /* --- the tab bar ---------------------------------------------------- */
+  .analysis-phone-tabs-anchor {
+    height: 0;
+  }
+
+  .analysis-phone-tabs {
+    position: sticky;
+    top: env(safe-area-inset-top, 0px);
+    z-index: 12;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px;
+    margin: 10px -14px 8px;
+    padding: 8px 14px;
+    background: var(--sw-bg);
+    border-bottom: 1px solid var(--sw-border);
+  }
+
+  .analysis-phone-tab {
+    min-height: 40px;
+    border: none;
+    border-radius: var(--sw-radius-sm);
+    background: var(--sw-surface-2);
+    color: var(--sw-text-secondary);
+    font: inherit;
+    font-size: 0.86rem;
+    font-weight: 600;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .analysis-phone-tab.active {
+    background: var(--sw-accent-soft);
+    color: var(--sw-accent);
+    box-shadow: inset 0 0 0 1px var(--sw-accent);
+  }
+
+  .analysis-phone-tab:focus-visible {
+    outline: 2px solid var(--sw-accent);
+    outline-offset: 2px;
+  }
+
+  /* --- sections: edge to edge, one frame ------------------------------- */
+  .analysis-page .analysis-grid.is-phone {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .analysis-page .analysis-grid.is-phone > .analysis-section {
+    margin: 0 -14px;
+    padding: 16px;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    background: var(--sw-surface);
+  }
+
+  .analysis-page .analysis-grid.is-phone > .analysis-section > .section-title {
+    font-size: 1.02rem;
+    margin-bottom: 12px;
+  }
+
+  /* The answer before the context: the return, then the at-a-glance
+     tiles under it. */
+  .analysis-page .analysis-grid.is-phone > [data-section-key="summary"] {
+    order: 1;
+  }
+
+  /* --- at a glance: two small tiles, the concentration one under them -- */
+  .analysis-page .snap-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .analysis-page .snap-tile {
+    padding: 12px;
+    gap: 4px;
+  }
+
+  .analysis-page .snap-tile:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .analysis-page .snap-icon {
+    display: none;
+  }
+
+  .analysis-page .snap-label {
+    font-size: 0.78rem;
+  }
+
+  .analysis-page .snap-value {
+    font-size: 1.35rem;
+  }
+
+  .analysis-page .snap-value-unit {
+    font-size: 0.72rem;
+  }
+
+  .analysis-page .snap-note {
+    font-size: 0.74rem;
+    line-height: 1.45;
+  }
+
+  .analysis-page .snap-chips {
+    gap: 4px;
+  }
+
+  .analysis-page .snap-chip {
+    padding: 1px 7px;
+    font-size: 0.7rem;
+  }
+
+  /* --- performance ---------------------------------------------------- */
+  .analysis-page .perf-intro {
+    font-size: 0.82rem;
+    margin-bottom: 10px;
+  }
+
+  /* The period buttons scroll sideways in one row; the filter button
+     stays put at its end. */
+  .analysis-page .perf-controls {
+    flex-wrap: nowrap;
+    gap: 8px;
+    padding: 0;
+    border: none;
+    background: none;
+  }
+
+  .analysis-page .perf-controls .period-toggles {
+    flex: 1;
+    min-width: 0;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    margin: 0;
+  }
+
+  .analysis-page .perf-controls .period-toggles::-webkit-scrollbar {
+    display: none;
+  }
+
+  .analysis-page .period-toggle {
+    flex: 0 0 auto;
+    padding: 6px 12px;
+    font-size: 0.8rem;
+  }
+
+  .perf-filter-button {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 34px;
+    padding: 6px 12px;
+    border: 1px solid var(--sw-border-strong);
+    border-radius: var(--sw-radius-pill);
+    background: var(--sw-surface);
+    color: var(--sw-text);
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .perf-filter-count {
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: var(--sw-accent);
+    color: #ffffff;
+    font-size: 0.7rem;
+    line-height: 18px;
+    text-align: center;
+  }
+
+  .analysis-page .segment-summary {
+    margin: 8px 0 12px;
+    font-size: 0.78rem;
+  }
+
+  .analysis-page .perf-hero {
+    padding: 14px;
+    gap: 6px;
+    border-radius: var(--sw-radius);
+  }
+
+  .analysis-page .perf-hero-value {
+    font-size: 2.1rem;
+  }
+
+  .analysis-page .perf-hero-sentence {
+    font-size: 0.9rem;
+  }
+
+  .analysis-page .perf-hero-detail {
+    font-size: 0.76rem;
+  }
+
+  .analysis-page .equity-chart-container {
+    margin-inline: -6px;
+    padding: 8px 0 0;
+    border: none;
+    background: none;
+    box-shadow: none;
+  }
+
+  .analysis-page .perf-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  .analysis-page .perf-stat {
+    padding: 12px;
+  }
+
+  .analysis-page .perf-stat-label {
+    font-size: 0.76rem;
+  }
+
+  .analysis-page .perf-stat-value {
+    font-size: 1.25rem;
+  }
+
+  .analysis-page .perf-stat-note {
+    font-size: 0.72rem;
+  }
+
+  /* --- the distribution donut beside its legend ------------------------ */
+  .analysis-page .pie-chart-container {
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: none;
+    box-shadow: none;
+  }
+
+  .analysis-page .pie-chart-wrapper {
+    display: grid;
+    grid-template-columns: 128px minmax(0, 1fr);
+    align-items: center;
+    gap: 16px;
+  }
+
+  .analysis-page .pie-labels-side {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+  }
+
+  .analysis-page .pie-label-item {
+    padding: 4px 0;
+    background: none;
+    border-radius: 0;
+  }
+
+  /* Name over amount on the start side, the share at the end. */
+  .analysis-page .pie-label-item .label-content {
+    flex: 1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 8px;
+    align-items: center;
+  }
+
+  .analysis-page .pie-label-item .label-name {
+    grid-column: 1;
+    font-size: 0.8rem;
+  }
+
+  .analysis-page .pie-label-item .label-value {
+    grid-column: 1;
+    display: block;
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: var(--sw-text-muted);
+  }
+
+  .analysis-page .pie-label-item .label-percentage {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--sw-text);
+  }
+
+  .analysis-page .pie-label-item .label-percentage::before {
+    content: none;
+  }
+
+  /* --- sectors as bars ------------------------------------------------ */
+  .sector-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .sector-bar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px 10px;
+    font-size: 0.82rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .sector-bar-name {
+    font-weight: 600;
+    color: var(--sw-text);
+  }
+
+  .sector-bar-count {
+    font-weight: 400;
+    color: var(--sw-text-muted);
+  }
+
+  .sector-bar-pct {
+    font-weight: 700;
+    color: var(--sw-text);
+  }
+
+  .sector-bar-track {
+    grid-column: 1 / -1;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--sw-surface-3);
+    overflow: hidden;
+  }
+
+  .sector-bar-fill {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+  }
+
+  /* --- purchases by year ---------------------------------------------- */
+  /* One line per year at the full phone width: year, total, count. The
+     older pass wrapped the total under the year when there was ~260px. */
+  .analysis-page .year-accordion-header {
+    flex-wrap: nowrap;
+    padding: 12px;
+    gap: 8px;
+  }
+
+  .analysis-page .year-accordion-value {
+    width: auto;
+    margin-inline-start: auto;
+    font-size: 0.9rem;
+    white-space: nowrap;
+  }
+
+  .analysis-page .year-accordion-count {
+    font-size: 0.72rem;
+    white-space: nowrap;
+  }
+
+  /* --- the stock list ------------------------------------------------- */
+  .stock-list-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .analysis-page .stock-list-head .section-title {
+    margin: 0;
+  }
+
+  .stock-sort select {
+    min-height: 36px;
+    padding: 4px 10px;
+    border: 1px solid var(--sw-border-strong);
+    border-radius: var(--sw-radius-sm);
+    background: var(--sw-surface-2);
+    color: var(--sw-text);
+    font: inherit;
+    font-size: 0.8rem;
+  }
+
+  /* !important only to beat the blanket `.distribution-grid { 1fr
+     !important }` of the older phone pass: these are two short figures
+     that sit side by side even at 320px. */
+  .analysis-page [data-section-key="byStock"] .distribution-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px;
+    margin: 0 0 6px;
+  }
+
+  .analysis-page [data-section-key="byStock"] .distribution-card {
+    padding: 10px 12px;
+    text-align: start;
+    box-shadow: none;
+  }
+
+  .analysis-page [data-section-key="byStock"] .distribution-card h3 {
+    font-size: 0.74rem;
+    margin-bottom: 2px;
+  }
+
+  .analysis-page [data-section-key="byStock"] .distribution-value {
+    font-size: 1.15rem;
+  }
+
+  /* The explanations are on the desktop's dividend section; here the two
+     totals head a list and only need their labels. */
+  .analysis-page [data-section-key="byStock"] .distribution-percentage {
+    display: none;
+  }
+
+  .stock-cards {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .stock-card {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 11px 0;
+    border-bottom: 1px solid var(--sw-border);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .stock-card:last-child {
+    border-bottom: none;
+  }
+
+  .stock-card-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
+  }
+
+  .stock-card-name {
+    min-width: 0;
+    font-weight: 700;
+    font-size: 0.92rem;
+    color: var(--sw-text);
+  }
+
+  .stock-card-exchange {
+    display: inline-block;
+    margin-inline-start: 6px;
+    padding: 0 5px;
+    border: 1px solid var(--sw-border);
+    border-radius: 5px;
+    font-size: 0.66rem;
+    font-weight: 600;
+    color: var(--sw-text-muted);
+    vertical-align: 2px;
+  }
+
+  .stock-card-value {
+    flex: 0 0 auto;
+    font-weight: 700;
+    font-size: 0.92rem;
+    color: var(--sw-text);
+  }
+
+  .stock-card-sub {
+    font-size: 0.76rem;
+    color: var(--sw-text-secondary);
+  }
+
+  .stock-card-sub > :last-child {
+    flex: 0 0 auto;
+  }
+
+  .stock-card-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 4px;
+  }
+
+  .stock-tag {
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: var(--sw-surface-3);
+    color: var(--sw-text-secondary);
+    font-size: 0.7rem;
+    font-weight: 600;
+  }
+
+  .stock-tag.is-positive {
+    background: var(--sw-green-soft);
+    color: var(--sw-green);
+  }
+
+  .stock-tag.is-negative {
+    background: var(--sw-red-soft);
+    color: var(--sw-red);
+  }
+
+  /* --- reports: one list at a time ------------------------------------ */
+  .report-switch {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 2px;
+    padding: 3px;
+    margin-bottom: 8px;
+    border-radius: var(--sw-radius-sm);
+    background: var(--sw-surface-3);
+  }
+
+  .report-switch-button {
+    min-height: 36px;
+    border: none;
+    border-radius: calc(var(--sw-radius-sm) - 2px);
+    background: none;
+    color: var(--sw-text-secondary);
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .report-switch-button.active {
+    background: var(--sw-surface);
+    color: var(--sw-text);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  }
+
+  .analysis-page .reports-grid {
+    gap: 0;
+  }
+
+  .analysis-page .report-card {
+    padding: 0;
+    border: none;
+    background: none;
+    box-shadow: none;
+  }
+
+  .analysis-page .report-card h3 {
+    display: none;
+  }
+
+  .analysis-page .report-list {
+    gap: 0;
+  }
+
+  .analysis-page .report-item {
+    padding: 10px 0;
+    border: none;
+    border-bottom: 1px solid var(--sw-border);
+    border-radius: 0;
+    background: none;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .analysis-page .report-item:last-child {
+    border-bottom: none;
+  }
+
+  .analysis-page .report-name {
+    font-size: 0.86rem;
+  }
+
+  .analysis-page .report-profit,
+  .analysis-page .report-value {
+    white-space: nowrap;
+    font-size: 0.86rem;
+  }
+
+  /* --- rebalancing ---------------------------------------------------- */
+  .analysis-page .rebalance-inputs-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .analysis-page .rebalance-input-item {
+    padding: 8px 10px;
+    border-color: var(--sw-border);
+  }
+
+  .analysis-page [data-section-key="rebalancing"] .analysis-table th,
+  .analysis-page [data-section-key="rebalancing"] .analysis-table td {
+    padding: 8px 4px;
+    font-size: 0.74rem;
+  }
+}
+
+/* --- the filter sheet (components/ui/BottomSheet.js) ------------------ */
+.bottom-sheet-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* Pinned to the bottom of the sheet while its content scrolls, so the
+   button is reachable whatever the keyboard or the list has moved. */
+.bottom-sheet-footer {
+  position: sticky;
+  bottom: 0;
+  padding-top: 10px;
+  background: var(--sw-surface-3);
+}
+
+.perf-sheet-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.perf-sheet-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--sw-text-secondary);
+}
+
+.bottom-sheet .segment-controls {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.bottom-sheet .segment-buttons {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  width: 100%;
+  overflow: visible;
+  padding: 3px;
+}
+
+.bottom-sheet .segment-button {
+  padding-inline: 4px;
+  white-space: normal;
+}
+
+.bottom-sheet .date-range-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.bottom-sheet .date-range-controls .form-group {
+  width: auto;
+  margin: 0;
+  min-width: 0;
+}
+
+.bottom-sheet .date-range-controls input {
+  width: 100%;
+  min-width: 0;
+}
+
+.bottom-sheet .chart-overlay-controls {
+  margin: 0;
+}
+
+.perf-filter-apply {
+  width: 100%;
+  min-height: 46px;
+  border: none;
+  border-radius: var(--sw-radius-sm);
+  background: var(--sw-accent);
+  color: #ffffff;
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.perf-filter-apply:focus-visible {
+  outline: 2px solid var(--sw-text);
+  outline-offset: 2px;
 }
