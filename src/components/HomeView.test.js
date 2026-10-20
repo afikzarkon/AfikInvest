@@ -433,3 +433,36 @@ test('does not offer the sample portfolio once there is data, and marks a loaded
   expect(queryByRole('button', { name: 'טען תיק לדוגמה' })).toBeNull();
   expect(getByText(/זהו תיק לדוגמה/)).toBeInTheDocument();
 });
+
+// On a phone the total profit is said once - in the top card, whose row
+// opens to the breakdown - and not again as a fold further down.
+describe('HomeView on a phone', () => {
+  let originalMatchMedia;
+  beforeEach(() => {
+    originalMatchMedia = window.matchMedia;
+    window.matchMedia = (query) => ({
+      matches: /max-width:\s*960px/.test(query),
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {}
+    });
+  });
+  afterEach(() => {
+    window.matchMedia = originalMatchMedia;
+  });
+
+  test('the total profit appears once, and its row opens the breakdown', () => {
+    const { container, getByText, queryByText } = render(<HomeView {...makeProps()} />);
+    const profitRows = Array.from(container.querySelectorAll('.home-kpi-row, .home-fold-head')).filter((el) =>
+      /רווח\/הפסד כולל|סיכום השקעות נטו/.test(el.textContent)
+    );
+    expect(profitRows).toHaveLength(1);
+    expect(queryByText('סיכום השקעות נטו')).toBeNull();
+
+    const fold = container.querySelector('.home-kpi-fold');
+    expect(fold.open).toBe(false);
+    fireEvent.click(getByText('רווח/הפסד כולל'));
+    expect(fold.open).toBe(true);
+    expect(fold).toHaveTextContent('סיכום השקעות נטו (₪)');
+  });
+});

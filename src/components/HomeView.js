@@ -19,7 +19,11 @@ const toneClass = (v) => (v > 0 ? 'profit-positive' : v < 0 ? 'profit-negative' 
 
 // The phone's form of the four headline tiles: one card - the total, then
 // profit, daily change and tax as rows, each amount with its percent.
-function CompactKpis({ headlineValue, headlineSub, totalProfitPercent, summary, dailyChangeSub }) {
+//
+// The profit row opens to the net-investment breakdown (profitDetails).
+// That breakdown used to be a fold of its own in the list below, headed by
+// the same amount and percent - the one figure shown twice on one screen.
+function CompactKpis({ headlineValue, headlineSub, totalProfitPercent, summary, dailyChangeSub, profitDetails }) {
   const row = (label, amount, pct, sub) => (
     <div className="home-kpi-row">
       <span className="home-kpi-label">
@@ -38,7 +42,16 @@ function CompactKpis({ headlineValue, headlineSub, totalProfitPercent, summary, 
         <strong className="home-kpi-total">{headlineValue}</strong>
         <span className="home-kpi-sub">{headlineSub}</span>
       </div>
-      {row('רווח/הפסד כולל', summary.totalProfitILS, pctText(totalProfitPercent))}
+      <details className="home-kpi-fold">
+        <summary className="home-kpi-row">
+          <span className="home-kpi-label">רווח/הפסד כולל</span>
+          <span className={`home-kpi-value ${toneClass(summary.totalProfitILS)}`}>
+            {formatPriceWithSign(summary.totalProfitILS)} ₪
+            {pctText(totalProfitPercent) ? <span className="summary-pct">{pctText(totalProfitPercent)}</span> : null}
+          </span>
+        </summary>
+        <div className="home-kpi-fold-body">{profitDetails}</div>
+      </details>
       {row('שינוי יומי', summary.dailyProfitILS, pctText(summary.weightedDailyChange), dailyChangeSub)}
       <div className="home-kpi-row">
         <span className="home-kpi-label">
@@ -253,6 +266,7 @@ function HomeView({
               totalProfitPercent={totalProfitPercent}
               summary={summary}
               dailyChangeSub={dailyChangeSub}
+              profitDetails={<NetInvestmentCard {...cardProps} present={present} />}
             />
           )}
 
@@ -312,9 +326,6 @@ function HomeView({
               <h2 className="portfolio-summary-title">סיכום התיק</h2>
               <CompactSummaryItem title='סה"כ מצב ההון' value={ils(summary.capitalTotalILS)}>
                 <CapitalStateCard {...cardProps} present={present} />
-              </CompactSummaryItem>
-              <CompactSummaryItem title="סיכום השקעות נטו" value={ils(summary.totalProfitILS)} pct={pctText(totalProfitPercent)}>
-                <NetInvestmentCard {...cardProps} present={present} />
               </CompactSummaryItem>
               {categoryCards.map((c) => (
                 <CompactSummaryItem key={c.key} title={c.title} value={c.value} pct={c.pct}>
