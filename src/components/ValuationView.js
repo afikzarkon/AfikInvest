@@ -3,7 +3,7 @@ import PageToolbar from './PageToolbar';
 import BetaBanner from './BetaBanner';
 import { useValuation } from '../hooks/useValuation';
 import { useDcfSnapshot } from '../hooks/useDcfSnapshot';
-import { evaluateDcf, EMPTY_OVERRIDES, DEFAULT_RULES, LEGACY_RULES } from '../shared/dcfRules';
+import { evaluateDcf, EMPTY_OVERRIDES, DEFAULT_RULES } from '../shared/dcfRules';
 import ValuationSummary from './valuation/ValuationSummary';
 import ValuationSimple from './valuation/ValuationSimple';
 import MultiplesSection from './valuation/MultiplesSection';
@@ -49,10 +49,23 @@ function ValuationResult({ data }) {
   const { snapshot, loading: dcfLoading, error: dcfError } = useDcfSnapshot(data.symbol);
   // What a person added to the auto model (consensus growth, guided
   // margins, a normalized FCF, a missing rate - each with its source), and
-  // the two rule settings shown for editing: k and the legacy switch.
+  // the rule settings shown for editing (see the rules memo below).
   const [overrides, setOverrides] = useState(EMPTY_OVERRIDES);
   const [ruleEdits, setRuleEdits] = useState({});
-  const rules = useMemo(() => Object.assign({}, ruleEdits.legacy ? LEGACY_RULES : DEFAULT_RULES, Number.isFinite(ruleEdits.fadeK) ? { fadeK: ruleEdits.fadeK } : {}), [ruleEdits]);
+  // The rules as edited on the page, on top of the default set: k, the
+  // mega-cap beta cap ('off' for none), flat margins on or off, and the
+  // terminal method with its multiple.
+  const rules = useMemo(() => {
+    const patch = {};
+    if (Number.isFinite(ruleEdits.fadeK)) patch.fadeK = ruleEdits.fadeK;
+    if (ruleEdits.betaCap === 'off') patch.megaCap = null;
+    else if (Number.isFinite(ruleEdits.betaCap)) patch.megaCap = Object.assign({}, DEFAULT_RULES.megaCap, { betaCap: ruleEdits.betaCap });
+    if (ruleEdits.flatMargin === false) patch.flatMargin = null;
+    else if (ruleEdits.flatMargin === true) patch.flatMargin = DEFAULT_RULES.flatMargin;
+    if (ruleEdits.terminalMethod) patch.terminalMethod = ruleEdits.terminalMethod;
+    if (Number.isFinite(ruleEdits.exitMultiple)) patch.exitMultiple = ruleEdits.exitMultiple;
+    return Object.assign({}, DEFAULT_RULES, patch);
+  }, [ruleEdits]);
   // The automatic model, on the day it is viewed. Pure: the same snapshot,
   // additions, rules and date always give the same numbers.
   const autoEvaluation = useMemo(

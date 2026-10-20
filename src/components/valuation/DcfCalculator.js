@@ -390,7 +390,16 @@ function WaccPanel({ evaluation, editable, onBase, sourcesByField }) {
       <div className="dcf-fields">
         {f('rf', 'ריבית חסרת סיכון (rf)', 'pct')}
         {isNum(b.betaRaw) && f('betaRaw', 'בטא גולמית (מידע)', 'plain', 'Yahoo, 5 שנים חודשית; המודל משתמש בבטא המתואמת', true)}
-        {f('beta', 'בטא מתואמת', 'plain', isNum(b.betaRaw) ? `${DEFAULT_RULES.betaWeight} × ${b.betaRaw.toFixed(3)} + ${DEFAULT_RULES.betaConst}` : null)}
+        {f(
+          'beta',
+          'בטא מתואמת',
+          'plain',
+          evaluation.derived && evaluation.derived.beta && evaluation.derived.beta.capped
+            ? evaluation.derived.beta.basis
+            : isNum(b.betaRaw)
+              ? `${DEFAULT_RULES.betaWeight} × ${b.betaRaw.toFixed(3)} + ${DEFAULT_RULES.betaConst}`
+              : null
+        )}
         {f('erp', 'פרמיית סיכון שוק', 'pct')}
         {f('kd', 'עלות חוב לפני מס', 'pct')}
         {f('tax', 'שיעור מס', 'pct')}
@@ -434,12 +443,16 @@ function CompanyFields({ evaluation, editable, onBase, sourcesByField }) {
 
 function Sensitivity({ grid, currency, main }) {
   if (!grid) return null;
+  // Rows are the terminal growth under Gordon, the multiple under the exit
+  // method (dcfEngine.sensitivity).
+  const byExit = grid.rowKind === 'exitMultiple';
+  const rowText = (v) => (byExit ? `${v}x` : fmtRate(v, 1));
   return (
     <div className="stocks-table-container">
       <table className="analysis-table dcf-grid" aria-label="רגישות">
         <thead>
           <tr>
-            <th>gT \ WACC</th>
+            <th>{byExit ? 'מכפיל' : 'gT'} \ WACC</th>
             {grid.waccs.map((w) => (
               <th key={w}>
                 <Num>{fmtRate(w, 2)}</Num>
@@ -451,7 +464,7 @@ function Sensitivity({ grid, currency, main }) {
           {grid.values.map((row, i) => (
             <tr key={grid.rows[i]}>
               <th>
-                <Num>{fmtRate(grid.rows[i], 1)}</Num>
+                <Num>{rowText(grid.rows[i])}</Num>
               </th>
               {row.map((v, j) => {
                 const tone = v === null ? '' : v >= main.price ? 'cell-under' : 'cell-over';
@@ -466,13 +479,24 @@ function Sensitivity({ grid, currency, main }) {
         </tbody>
       </table>
       <p className="muted-note">
-        שווי למניה ({currency}) לפי WACC (עמודות) וצמיחה סופית (שורות). ירוק = מעל המחיר, אדום = מתחתיו. המסגרת = התוצאה הראשית.
+        שווי למניה ({currency}) לפי WACC (עמודות) ו{byExit ? 'מכפיל יציאה' : 'צמיחה סופית'} (שורות). ירוק = מעל המחיר, אדום = מתחתיו. המסגרת = התוצאה הראשית.
       </p>
     </div>
   );
 }
 
+// The terminal value by the other method, for comparison: the exit
+// multiples under Gordon, Gordon under an exit multiple.
 function ExitMethod({ inputs, currency }) {
+  if (inputs.terminalMethod === 'exit') {
+    const gordon = runDcf(Object.assign({}, inputs, { terminalMethod: 'gordon' }));
+    return (
+      <p className="muted-note">
+        שיטה חלופית - ערך סופי לפי Gordon עם צמיחה סופית של <Num>{fmtRate(inputs.gT)}</Num>:{' '}
+        <Num>{gordon.ok ? fmtMoney(gordon.perShare, currency) : '—'}</Num>
+      </p>
+    );
+  }
   const values = [15, 20, 25].map((m) => ({ m, out: runDcf(Object.assign({}, inputs, { terminalMethod: 'exit', exitMultiple: m })) }));
   return (
     <p className="muted-note">
@@ -615,13 +639,28 @@ function RulesPanel({ rules: R, onRules }) {
           צמיחה בשנים הבאות: ערך מקונצנזוס / הנחיה כשהוזן; אחרי השנה האחרונה שיש לה ערך - דעיכה לצמיחה הסופית:{' '}
           <Num>{`g[t] = ${fmtRate(R.gT)} + (g[t-1] - ${fmtRate(R.gT)}) × k`}</Num>.
         </li>
-        <li>שולי FCF: הנחיה / קונצנזוס כשהוזנו, והשיעור האחרון מוחזק אחריהם בלי דעיכה. בלי הנחיה - כלל גנרי: שולי 12 החודשים × (1 - {R.marginStep} × שנה).</li>
+        <li>
+          שולי FCF: הנחיה / קונצנזוס כשהוזנו, והשיעור האחרון מוחזק אחריהם בלי דעיכה. בלי הנחיה:{' '}
+          {R.flatMargin ? (
+            <>
+              לחברת טכנולוגיה (סקטור <Num>{R.flatMargin.sectors.join(', ')}</Num>) או לחברה שצומחת <Num>{fmtRate(R.flatMargin.growthAbove)}</Num> ומעלה בשנה הראשונה - שולי
+              12 החודשים נשארים קבועים; לכל השאר -{' '}
+            </>
+          ) : null}
+          כלל גנרי: שולי 12 החודשים × (1 - {R.marginStep} × שנה).
+        </li>
         <li>
           FCF = תזרים תפעולי פחות Capex (ברירת מחדל), או ה-FCF המנורמל של החברה כשהוזן ונבחר. SBC: אחוז 12 החודשים × (1 - <Num>{R.sbcStep}</Num> × שנה), ותמיד מופחת.
         </li>
         <li>מזומן = מזומן ושווי מזומן + השקעות לטווח קצר + ניירות ערך סחירים לטווח ארוך; בלי השקעות אסטרטגיות. חוב = קצר + ארוך, בלי חכירות.</li>
         <li>
-          בטא: <Num>{`${R.betaWeight} × raw + ${R.betaConst}`}</Num>. פרמיית סיכון <Num>{fmtRate(R.erp)}</Num>, עלות חוב <Num>{fmtRate(R.kd)}</Num>, מס <Num>{fmtRate(R.tax)}</Num>.
+          בטא: <Num>{`${R.betaWeight} × raw + ${R.betaConst}`}</Num>
+          {R.megaCap ? (
+            <>
+              , ולחברה ששווה מעל <Num>{`$${R.megaCap.above / 1e12}T`}</Num> - לכל היותר <Num>{R.megaCap.betaCap}</Num>
+            </>
+          ) : null}
+          . פרמיית סיכון <Num>{fmtRate(R.erp)}</Num>, עלות חוב <Num>{fmtRate(R.kd)}</Num>, מס <Num>{fmtRate(R.tax)}</Num>.
           ריבית: אג"ח ארה"ב ל-10 שנים; חסרה - הערך האחרון שנשמר, ואם אין - צריך להזין אותה.
         </li>
         <li>
@@ -629,7 +668,17 @@ function RulesPanel({ rules: R, onRules }) {
           <Num>{R.scenarios.bull.growthMult}</Num> ושוליים <Num>{`+${fmtRate(R.scenarios.bull.marginShift)}`}</Num>. משקלות{' '}
           <Num>{`${R.weights.bear * 100}/${R.weights.base * 100}/${R.weights.bull * 100}`}</Num>.
         </li>
-        <li>ערך סופי: Gordon עם הצמיחה הסופית. אין תקרות, רצפות או התאמות נוספות.</li>
+        <li>
+          ערך סופי:{' '}
+          {R.terminalMethod === 'exit' ? (
+            <>
+              מכפיל יציאה של <Num>{`${R.exitMultiple}x`}</Num> על ה-FCF (אחרי SBC) של השנה החמישית
+            </>
+          ) : (
+            <>Gordon עם הצמיחה הסופית</>
+          )}
+          . אין תקרות, רצפות או התאמות מעבר לכללים שכאן.
+        </li>
         <li>
           <strong>לא כלול, בשני המצבים:</strong> ה-FCF של החלק שנותר מהשנה הנוכחית. שנה 1 היא שנת הכספים המלאה הבאה, מהוונת שנה שלמה. לחברה עם תזרים גדול זה יכול להיות כמה
           דולרים למניה (ב-NOW כ-2 דולר למניה אחרי SBC).
@@ -637,10 +686,29 @@ function RulesPanel({ rules: R, onRules }) {
       </ul>
       {onRules && (
         <div className="dcf-fields">
-          <NumberField id="dcf-rule-k" label="k - קצב הדעיכה של הצמיחה (ברירת מחדל 0.5)" value={R.fadeK} unit="plain" onChange={(v) => onRules({ fadeK: v })} />
+          <NumberField id="dcf-rule-k" label={`k - קצב הדעיכה של הצמיחה (ברירת מחדל ${DEFAULT_RULES.fadeK})`} value={R.fadeK} unit="plain" onChange={(v) => onRules({ fadeK: v })} />
+          <NumberField
+            id="dcf-rule-beta-cap"
+            label={`תקרת בטא לחברה מעל $1T (ריק = בלי תקרה, ברירת מחדל ${DEFAULT_RULES.megaCap.betaCap})`}
+            value={R.megaCap ? R.megaCap.betaCap : null}
+            unit="plain"
+            allowEmpty
+            onChange={(v) => onRules({ betaCap: v === null ? 'off' : v })}
+          />
           <label className="dcf-check">
-            <input type="checkbox" checked={!!R.legacy} onChange={(e) => onRules({ legacy: e.target.checked })} /> כללי הגרסה הראשונה (legacy) - להשוואה
+            <input type="checkbox" checked={!!R.flatMargin} onChange={(e) => onRules({ flatMargin: e.target.checked })} /> שוליים קבועים לטכנולוגיה וצמיחה (במקום דעיכה של{' '}
+            {R.marginStep * 100}% בשנה)
           </label>
+          <div className="dcf-field">
+            <label htmlFor="dcf-rule-terminal">שיטת הערך הסופי</label>
+            <select id="dcf-rule-terminal" value={R.terminalMethod} onChange={(e) => onRules({ terminalMethod: e.target.value })}>
+              <option value="gordon">Gordon - צמיחה סופית</option>
+              <option value="exit">מכפיל יציאה על ה-FCF</option>
+            </select>
+          </div>
+          {R.terminalMethod === 'exit' && (
+            <NumberField id="dcf-rule-exit" label="מכפיל יציאה (על ה-FCF של שנה 5)" value={R.exitMultiple} unit="plain" onChange={(v) => onRules({ exitMultiple: v })} />
+          )}
         </div>
       )}
     </div>
@@ -817,7 +885,6 @@ export default function DcfCalculator({ ticker, snapshot, autoEvaluation, overri
           התוצאה מתעדכנת מיד.
         </p>
       )}
-      {autoMode && evaluation.rules.legacy && <p className="dcf-legacy-note">מוצגים כללי הגרסה הראשונה (legacy), להשוואה בלבד.</p>}
 
       <ScenarioCards evaluation={evaluation} currency={currency} priceCurrency={priceCurrency} active={activeKey} onSelect={setActive} />
 
@@ -893,10 +960,10 @@ export default function DcfCalculator({ ticker, snapshot, autoEvaluation, overri
           currency={currency}
           schedules={autoMode ? evaluation.schedules : null}
           overrides={ov}
-          onOverrides={autoMode && !evaluation.rules.legacy ? setYear : null}
+          onOverrides={autoMode ? setYear : null}
           isBase={activeKey === evaluation.baseKey}
         />
-        {autoMode && !evaluation.rules.legacy && (
+        {autoMode && (
           <>
             <p className="muted-note">
               אפשר להוסיף צמיחה מקונצנזוס או מהנחיית החברה (Yahoo נותן רק את השנה הנוכחית והבאה) ושולי FCF מהנחיה - עם המקור והתאריך. שנה עם ערך משתמשת בו; הצמיחה דועכת רק
@@ -908,7 +975,7 @@ export default function DcfCalculator({ ticker, snapshot, autoEvaluation, overri
         {mode === 'manual' ? null : <p className="muted-note">כדי לשנות הנחה שהכללים גוזרים, עברו ל"ידני": הערכים יועתקו ויסומנו כמותאמים אישית.</p>}
       </details>
 
-      {autoMode && evaluation.derived && !evaluation.rules.legacy && (
+      {autoMode && evaluation.derived && (
         <details className="val-details">
           <summary>בסיס ה-FCF</summary>
           <FcfBasis evaluation={evaluation} overrides={ov} onOverride={setOverride} currency={currency} />

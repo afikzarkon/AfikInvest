@@ -7,12 +7,11 @@
 // dated snapshot (server/dcfSnapshot.js), derive the inputs by the auto rules
 // and run the engine (shared/dcfRules.js), write the input card as JSON, and
 // reproduce the card offline - from its inputs and from its raw data -
-// failing if any number differs. Also prints the legacy rules' result next
-// to the current one, so a change is visibly the rules', not the engine's.
+// failing if any number differs.
 const fs = require('fs');
 const path = require('path');
 const { fetchDcfSnapshot } = require('../src/server/dcfSnapshot');
-const { evaluateDcf, buildInputCard, reproduceFromCard, PRESETS, LEGACY_RULES } = require('../src/shared/dcfRules');
+const { evaluateDcf, buildInputCard, reproduceFromCard, PRESETS } = require('../src/shared/dcfRules');
 
 const args = process.argv.slice(2);
 const flag = (name) => {
@@ -108,10 +107,6 @@ function report(label, e, card, file) {
     fs.writeFileSync(file, JSON.stringify(card, null, 2));
     console.log(`\n  sources: ${JSON.stringify(snapshot.diagnostics)}`);
     report(ticker, e, card, file);
-    const legacy = evaluateDcf({ mode: 'auto', snapshot, rules: LEGACY_RULES, valuationDate: date });
-    if (legacy.main && legacy.main.ok) {
-      console.log(`  legacy rules: ${legacy.model.scenarios.map((s) => usd(legacy.results[s.key].perShare)).join(' / ')} (cash ${b(legacy.model.base.cash)}, IRR ${pct(legacy.irr)})`);
-    }
   }
   console.log(`\ncards: ${out}`);
   process.exitCode = failures ? 1 : 0;

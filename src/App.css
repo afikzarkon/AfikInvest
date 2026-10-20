@@ -8718,8 +8718,8 @@ button.dcf-scenario-card:hover {
   min-width: 0;
 }
 
-/* Rules v2: figures added with their sources, the FCF basis, the legacy
-   switch, and the peers' outlier note. */
+/* Rules v2: figures added with their sources, the FCF basis, the rule
+   switches, and the peers' outlier note. */
 .dcf-text {
   width: 100%;
   min-width: 0;
@@ -8788,15 +8788,6 @@ button.dcf-scenario-card:hover {
 
 .dcf-check input {
   accent-color: var(--sw-accent);
-}
-
-.dcf-legacy-note {
-  margin: 0 0 12px;
-  padding: 8px 12px;
-  border-radius: var(--sw-radius-sm);
-  background: var(--sw-amber-soft);
-  color: var(--sw-text);
-  font-size: 13px;
 }
 
 .dcf-sub-row td:first-child {

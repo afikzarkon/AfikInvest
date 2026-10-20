@@ -1,6 +1,6 @@
 import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import ValuationView from './ValuationView';
-import { evaluateDcf, reproduceFromCard } from '../shared/dcfRules';
+import { evaluateDcf, reproduceFromCard, DEFAULT_RULES } from '../shared/dcfRules';
 import avgoSnapshot from '../shared/fixtures/dcf-snapshot-avgo.json';
 
 const payload = (overrides = {}) => ({
@@ -162,7 +162,8 @@ describe('NOW: added figures, the FCF basis, presets, peers', () => {
     const e = auto();
     expect(screen.getByTestId('dcf-value-base')).toHaveTextContent(money(e.results.base.perShare));
     expect(warnings()).toMatch(/צמיחה ב-FY\+2 אינה מקונצנזוס/);
-    expect(warnings()).toMatch(/אין הנחיית שוליים, הדעיכה היא כלל גנרי/);
+    // A technology company: the trailing margin held flat, and said so.
+    expect(warnings()).toMatch(/אין הנחיית שוליים - שולי 12 החודשים מוחזקים קבועים \(סקטור Technology\)/);
     expect(screen.getByTestId('dcf-implied-growth')).toHaveTextContent(`${(e.impliedGrowth * 100).toFixed(1)}%`);
     const sources = screen.getByRole('table', { name: 'נתוני מקור' });
     expect(within(sources).getByText('6.71B USD')).toBeInTheDocument();
@@ -210,10 +211,27 @@ describe('NOW: added figures, the FCF basis, presets, peers', () => {
     expect(screen.getByTestId('dcf-value-weighted')).toHaveTextContent('120.33 USD');
   });
 
-  test('legacy rules, for comparison: back to 67.85', async () => {
+  // One rule set: the first version is gone, not offered as a switch.
+  test('no legacy switch: the page always values on the current rules', async () => {
     await renderNow();
-    fireEvent.click(screen.getByRole('checkbox', { name: /legacy/ }));
-    expect(screen.getByTestId('dcf-value-base')).toHaveTextContent('67.85 USD');
+    expect(screen.queryByRole('checkbox', { name: /legacy/ })).toBeNull();
+    expect(screen.getByTestId('dcf-value-base')).toHaveTextContent(money(auto().results.base.perShare));
+  });
+
+  // Each new rule is a control on the page, and each one moves the number
+  // to exactly what the rules give with that setting.
+  test('the flat margin and the terminal method are controls, and each gives the rules\' own result', async () => {
+    await renderNow();
+    fireEvent.click(screen.getByRole('checkbox', { name: /שוליים קבועים לטכנולוגיה וצמיחה/ }));
+    const faded = auto(undefined, Object.assign({}, DEFAULT_RULES, { flatMargin: null }));
+    expect(screen.getByTestId('dcf-value-base')).toHaveTextContent(money(faded.results.base.perShare));
+
+    fireEvent.change(screen.getByLabelText('שיטת הערך הסופי'), { target: { value: 'exit' } });
+    const exit = auto(undefined, Object.assign({}, DEFAULT_RULES, { flatMargin: null, terminalMethod: 'exit', exitMultiple: 25 }));
+    expect(screen.getByTestId('dcf-value-base')).toHaveTextContent(money(exit.results.base.perShare));
+    fireEvent.change(screen.getByLabelText('מכפיל יציאה (על ה-FCF של שנה 5)'), { target: { value: '20' } });
+    const exit20 = auto(undefined, Object.assign({}, DEFAULT_RULES, { flatMargin: null, terminalMethod: 'exit', exitMultiple: 20 }));
+    expect(screen.getByTestId('dcf-value-base')).toHaveTextContent(money(exit20.results.base.perShare));
   });
 
   test('peers: all five listed, the median labelled as the one compared with, the mean beside it', async () => {

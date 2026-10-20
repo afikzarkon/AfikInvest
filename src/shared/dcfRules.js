@@ -25,10 +25,14 @@
 //                  a warning.
 //   fcfMargin[t]   a guidance / consensus margin for that year when entered;
 //                  after the last such year the last one is held, no fade;
-//                  with none at all: fcfMarginTTM * (1 - marginStep * t),
-//                  the generic rule, with a warning
+//                  with none at all: held flat at fcfMarginTTM for a
+//                  technology or growth company (flatMargin), else
+//                  fcfMarginTTM * (1 - marginStep * t), the generic rule -
+//                  either way with a warning
 //   sbcPct[t]      sbcPctTTM * (1 - sbcStep * t); always deducted
-//   beta           betaWeight * beta_raw + betaConst (raw shown too)
+//   beta           betaWeight * beta_raw + betaConst (raw shown too); held at
+//                  megaCap.betaCap when the market value (price x basic
+//                  shares, USD) is above megaCap.above
 //   rf             today's 10-year Treasury yield; missing -> the last one
 //                  saved, flagged; none saved -> no value until entered
 //   shares         diluted: weighted average, last quarter; basic: actual
@@ -39,12 +43,12 @@
 //                  the warning "cash without marketable securities".
 //   scenarios      bear: growth * 0.6, margins - 4 points; bull: growth *
 //                  1.15, margins + 2 points (DEFAULT_RULES.scenarios)
-//   terminal       Gordon with gT; WACC <= gT is an error, not a number
+//   terminal       Gordon with gT (WACC <= gT is an error, not a number), or
+//                  exitMultiple x year-5 FCF after SBC (terminalMethod)
 //
-// LEGACY (rules.legacy = true) is the first version of these rules, kept to
-// prove a change is the rules' and not the engine's: cash and equivalents
-// only, growth faded from FY+1, the generic margin rule, no overrides, and
-// a 4.5% rate when the yield is missing.
+// These are the only rules. The first version (k 0.5, no beta cap, margins
+// always faded, cash without marketable securities) is gone rather than
+// kept as an option, so a valuation never comes out on it.
 //
 // A missing figure is never filled in silently: the defined fallback is
 // used and a flag says so; with no fallback there is no value.
@@ -60,14 +64,30 @@ const engine = require('./dcfEngine');
 const CARD_VERSION = 2;
 
 const DEFAULT_RULES = {
-  legacy: false,
   years: 5,
-  fadeK: 0.5,
+  // 0.7 rather than the first version's 0.5: from a year-one consensus of
+  // 60%+ (a mega-cap in a growth phase), 0.5 halved the excess over gT every
+  // year and reached ~7% by year 5. 0.7 keeps years 3-5 near 20-35% there,
+  // and changes little for a company growing ~10% (10.4% -> 5.2% by year 5).
+  fadeK: 0.7,
   gT: 0.035,
   marginStep: 0.02,
   sbcStep: 0.1,
   betaWeight: 0.67,
   betaConst: 0.33,
+  // The adjusted beta of a company worth more than `above` (in USD) is held
+  // at `betaCap`. A raw beta of 2+ on a $1T+ company is mostly how its share
+  // price swung, not the risk of its cash flows, and put its WACC at 13%+.
+  // null switches the cap off.
+  megaCap: { above: 1e12, betaCap: 1.25 },
+  // With no margin guidance, the FCF margin is held at its trailing level for
+  // a company in one of these sectors or growing at least `growthAbove` in
+  // year one, instead of the generic marginStep fade. null switches it off.
+  flatMargin: { sectors: ['Technology'], growthAbove: 0.15 },
+  // Terminal value: 'gordon' (gT) or 'exit' (exitMultiple x year-5 FCF after
+  // SBC).
+  terminalMethod: 'gordon',
+  exitMultiple: 25,
   erp: 0.045,
   kd: 0.055,
   tax: 0.15,
@@ -85,7 +105,6 @@ const DEFAULT_RULES = {
   fallback: { betaRaw: 1 }
 };
 
-const LEGACY_RULES = Object.assign({}, DEFAULT_RULES, { legacy: true, fallback: { betaRaw: 1, rf: 0.045 } });
 
 const SCENARIO_LABELS = { bear: 'שמרני', base: 'בסיס', bull: 'אופטימי', conservative: 'שמרני', management: 'יעדי הנהלה' };
 
@@ -149,8 +168,10 @@ function growthSchedule(g1, g1Basis, overrides, gT, k, years) {
 }
 
 // FCF margin per year: a guidance / consensus figure where entered; after
-// the last one it is held, without fading; before any, the generic rule.
-function marginScheduleWithGuidance(ttmMargin, overrides, step, years) {
+// the last one it is held, without fading; before any, the trailing margin
+// held flat when `flat` (a technology / growth company), else the generic
+// fade.
+function marginScheduleWithGuidance(ttmMargin, overrides, step, years, flat) {
   const values = [];
   const sources = [];
   let held = null;
@@ -163,6 +184,9 @@ function marginScheduleWithGuidance(ttmMargin, overrides, step, years) {
     } else if (held !== null) {
       values.push(held);
       sources.push({ kind: 'held', text: 'השיעור האחרון מוחזק, בלי דעיכה' });
+    } else if (flat) {
+      values.push(ttmMargin);
+      sources.push({ kind: 'flat', text: 'שולי 12 החודשים מוחזקים קבועים (טכנולוגיה / צמיחה)' });
     } else {
       values.push(ttmMargin * (1 - step * (i + 1)));
       sources.push({ kind: 'rule', text: `כלל גנרי: שולי TTM × (1 - ${step} × ${i + 1})` });
@@ -234,7 +258,7 @@ function cashComponents(q) {
 // missing and the defined fallback was used (and `flags` says so).
 function deriveAuto(snapshot, rules, overridesIn) {
   const R = rules || DEFAULT_RULES;
-  const O = R.legacy ? EMPTY_OVERRIDES : merge(EMPTY_OVERRIDES, overridesIn || {});
+  const O = merge(EMPTY_OVERRIDES, overridesIn || {});
   const quarters = snapshot.quarters || [];
   const annual = snapshot.annual || [];
   const flags = [];
@@ -318,10 +342,7 @@ function deriveAuto(snapshot, rules, overridesIn) {
   }
   d.beta = { value: adjustBeta(d.betaRaw.value, R.betaWeight, R.betaConst), basis: `${R.betaWeight} × בטא גולמית + ${R.betaConst}`, fallback: d.betaRaw.fallback };
   if (snapshot.rf && isNum(snapshot.rf.value)) d.rf = { value: snapshot.rf.value, basis: `${snapshot.rf.source || 'אג"ח ארה"ב 10 שנים'}, ${snapshot.rf.asOf || ''}`, fallback: false };
-  else if (R.legacy && R.fallback && isNum(R.fallback.rf)) {
-    flags.push(`תשואת האג"ח ל-10 שנים חסרה - נעשה שימוש ב-${(R.fallback.rf * 100).toFixed(1)}%`);
-    d.rf = { value: R.fallback.rf, basis: 'חסר - ערך חלופי מההגדרות', fallback: true };
-  } else if (O.rf && isNum(O.rf.value)) {
+  else if (O.rf && isNum(O.rf.value)) {
     flags.push('תשואת האג"ח ל-10 שנים לא זמינה כרגע - נעשה שימוש בערך שהוזן ידנית');
     d.rf = { value: O.rf.value, basis: `הוזן ידנית: ${sourceText(O.rf)}`, fallback: true };
   } else if (snapshot.rfLastSaved && isNum(snapshot.rfLastSaved.value)) {
@@ -351,6 +372,27 @@ function deriveAuto(snapshot, rules, overridesIn) {
     missing.push('מספר מניות מדולל');
     d.dilutedShares = { value: null, basis: 'חסר', fallback: true };
   }
+
+  // The market value the WACC weights by, and the mega-cap beta cap on it.
+  // The threshold is in dollars, so a price in another currency is not
+  // compared with it.
+  const price = snapshot.price && isNum(snapshot.price.value) ? snapshot.price.value : null;
+  d.marketCap = {
+    value: isNum(price) && isNum(d.basicShares.value) ? price * d.basicShares.value : null,
+    basis: 'מחיר × מניות בסיסי',
+    fallback: d.basicShares.fallback
+  };
+  const cap = R.megaCap;
+  if (cap && isNum(cap.betaCap) && snapshot.currency === 'USD' && isNum(d.marketCap.value) && d.marketCap.value > cap.above && d.beta.value > cap.betaCap) {
+    d.beta = {
+      value: cap.betaCap,
+      basis: `תקרת Mega Cap: שווי שוק מעל $${cap.above / 1e12}T, ולכן ${cap.betaCap} במקום ${d.beta.value.toFixed(3)} (${R.betaWeight} × בטא גולמית + ${R.betaConst})`,
+      fallback: d.beta.fallback,
+      capped: true,
+      uncapped: d.beta.value
+    };
+  }
+
   const debtPart = (field, label) => {
     if (lastQ && isNum(lastQ[field])) return { value: lastQ[field], fallback: false };
     flags.push(`${label} לא דווח ברבעון האחרון - נספר כ-0`);
@@ -365,8 +407,6 @@ function deriveAuto(snapshot, rules, overridesIn) {
   if (!comp.cash) {
     flags.push('מזומן לא דווח ברבעון האחרון - נספר כ-0');
     d.cash = { value: 0, basis: 'חסר - 0', fallback: true, parts: { cash: 0, shortTermInvestments: 0, longTermMarketable: 0 } };
-  } else if (R.legacy) {
-    d.cash = { value: comp.cash.value, basis: `מזומן ושווי מזומן בלבד, ${lastQ.periodEnd} (legacy)`, fallback: false, parts: { cash: comp.cash.value, shortTermInvestments: null, longTermMarketable: null } };
   } else {
     const notReported = [];
     if (!comp.shortTerm) notReported.push('השקעות לטווח קצר');
@@ -383,6 +423,24 @@ function deriveAuto(snapshot, rules, overridesIn) {
     };
   }
 
+  // Whether the margin is held flat when there is no guidance: a
+  // technology company, or one growing fast in year one.
+  const fm = R.flatMargin;
+  const sector = (snapshot.profile && snapshot.profile.sector) || '';
+  const inSector = !!(fm && Array.isArray(fm.sectors) && fm.sectors.indexOf(sector) !== -1);
+  const fastGrowth = !!(fm && isNum(fm.growthAbove) && isNum(d.growth1.value) && d.growth1.value >= fm.growthAbove);
+  d.flatMargin = {
+    value: inSector || fastGrowth,
+    basis: !fm
+      ? 'כבוי'
+      : inSector
+        ? `סקטור ${sector}`
+        : fastGrowth
+          ? `צמיחה בשנה הראשונה ${pctText(d.growth1.value)} (מ-${pctText(fm.growthAbove)} ומעלה)`
+          : `לא טכנולוגיה וצמיחה מתחת ל-${pctText(fm.growthAbove)}`,
+    fallback: false
+  };
+
   return { derived: d, flags, warnings, missing, overrides: O };
 }
 
@@ -390,16 +448,16 @@ function deriveAuto(snapshot, rules, overridesIn) {
 function baseSchedules(derived, rules, overrides) {
   const R = rules || DEFAULT_RULES;
   const warnings = [];
-  let growth;
-  let margin;
-  if (R.legacy) {
-    growth = { values: fadeGrowth(derived.growth1.value, R.gT, R.fadeK, R.years), sources: range(R.years).map((t) => ({ kind: 'rule', text: t === 1 ? derived.growth1.basis : `דעיכה לכיוון ${pctText(R.gT)} (k = ${R.fadeK})` })) };
-    margin = { values: marginSchedule(derived.fcfMarginTtm.value, R.marginStep, R.years), sources: range(R.years).map((t) => ({ kind: 'rule', text: `כלל גנרי: שולי TTM × (1 - ${R.marginStep} × ${t})` })) };
-  } else {
-    growth = growthSchedule(derived.growth1.value, derived.growth1.basis, overrides, R.gT, R.fadeK, R.years);
-    margin = marginScheduleWithGuidance(derived.fcfMarginTtm.value, overrides, R.marginStep, R.years);
-    if (R.years > 1 && !entryAt(overrides && overrides.growth, 1)) warnings.push('צמיחה ב-FY+2 אינה מקונצנזוס - היא נגזרת מכלל הדעיכה');
-    if (!margin.sources.some((s) => s.kind === 'guidance')) warnings.push('אין הנחיית שוליים, הדעיכה היא כלל גנרי');
+  const flat = !!(derived.flatMargin && derived.flatMargin.value);
+  const growth = growthSchedule(derived.growth1.value, derived.growth1.basis, overrides, R.gT, R.fadeK, R.years);
+  const margin = marginScheduleWithGuidance(derived.fcfMarginTtm.value, overrides, R.marginStep, R.years, flat);
+  if (R.years > 1 && !entryAt(overrides && overrides.growth, 1)) warnings.push('צמיחה ב-FY+2 אינה מקונצנזוס - היא נגזרת מכלל הדעיכה');
+  if (!margin.sources.some((s) => s.kind === 'guidance')) {
+    warnings.push(
+      flat
+        ? `אין הנחיית שוליים - שולי 12 החודשים מוחזקים קבועים (${derived.flatMargin.basis})`
+        : 'אין הנחיית שוליים, הדעיכה היא כלל גנרי'
+    );
   }
   const sbc = sbcSchedule(derived.sbcPctTtm.value, R.sbcStep, R.years);
   return { growth: growth.values, growthSources: growth.sources, fcfMargin: margin.values, marginSources: margin.sources, sbcPct: sbc, warnings };
@@ -492,7 +550,9 @@ function evaluateDcf(args) {
         kd: R.kd,
         tax: R.tax,
         gT: R.gT,
-        deductSbc: R.deductSbc
+        deductSbc: R.deductSbc,
+        terminalMethod: R.terminalMethod === 'exit' ? 'exit' : 'gordon',
+        exitMultiple: R.exitMultiple
       },
       scenarios: autoScenarios(schedules, R),
       weights: R.weights
@@ -614,6 +674,8 @@ function buildInputCard(evaluation, snapshot, ticker) {
           kd: m.base.kd,
           tax: m.base.tax,
           gT: m.base.gT,
+          terminalMethod: m.base.terminalMethod === 'exit' ? 'exit' : 'gordon',
+          exitMultiple: isNum(m.base.exitMultiple) ? m.base.exitMultiple : null,
           waccOverride: isNum(m.base.waccOverride) ? m.base.waccOverride : null,
           basicShares: m.base.basicShares,
           dilutedShares: m.base.dilutedShares,
@@ -669,7 +731,10 @@ function reproduceFromCard(card) {
       tax: i.tax,
       gT: i.gT,
       deductSbc: i.deductSbc,
-      waccOverride: i.waccOverride
+      waccOverride: i.waccOverride,
+      // Cards from before the exit-multiple option have neither: Gordon.
+      terminalMethod: i.terminalMethod === 'exit' ? 'exit' : 'gordon',
+      exitMultiple: isNum(i.exitMultiple) ? i.exitMultiple : undefined
     },
     scenarios: i.scenarios,
     weights: i.weights
@@ -750,7 +815,6 @@ const PRESETS = { AVGO: AVGO_PRESET, NOW: NOW_PRESET };
 
 exports.CARD_VERSION = CARD_VERSION;
 exports.DEFAULT_RULES = DEFAULT_RULES;
-exports.LEGACY_RULES = LEGACY_RULES;
 exports.EMPTY_OVERRIDES = EMPTY_OVERRIDES;
 exports.SCENARIO_LABELS = SCENARIO_LABELS;
 exports.AVGO_PRESET = AVGO_PRESET;

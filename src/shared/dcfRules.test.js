@@ -45,9 +45,15 @@ describe('deriving AVGO from its snapshot', () => {
     expect(d.rev0.fallback || d.growth1.fallback).toBe(false);
   });
 
-  test('beta adjusted from the raw beta; rf dated', () => {
+  // AVGO is worth ~$1.6T, so its adjusted beta (1.319) is held at the
+  // mega-cap cap, and the uncapped figure is kept beside it.
+  test('beta adjusted from the raw beta, then held at the mega-cap cap; rf dated', () => {
     expect(d.betaRaw.value).toBe(1.476);
-    expect(d.beta.value).toBeCloseTo(0.67 * 1.476 + 0.33, 12);
+    expect(d.marketCap.value).toBeGreaterThan(1e12);
+    expect(d.beta.value).toBe(1.25);
+    expect(d.beta.capped).toBe(true);
+    expect(d.beta.uncapped).toBeCloseTo(0.67 * 1.476 + 0.33, 12);
+    expect(d.beta.basis).toMatch(/תקרת Mega Cap/);
     expect(d.rf.value).toBe(avgo.rf.value);
     expect(d.rf.basis).toMatch(avgo.rf.asOf);
   });
@@ -67,7 +73,7 @@ describe('deriving AVGO from its snapshot', () => {
 
   test('scenarios: bear growth x0.6 and margins -4 points, bull x1.15 and +2 points, SBC unchanged', () => {
     const [bear, base, bull] = rules.autoScenarios(rules.baseSchedules(d, DEFAULT_RULES, rules.EMPTY_OVERRIDES), DEFAULT_RULES);
-    closeAll(base.growth, fadeGrowth(d.growth1.value, 0.035, 0.5, 5));
+    closeAll(base.growth, fadeGrowth(d.growth1.value, 0.035, DEFAULT_RULES.fadeK, 5));
     closeAll(bear.growth, base.growth.map((g) => g * 0.6));
     closeAll(bull.growth, base.growth.map((g) => g * 1.15));
     closeAll(bear.fcfMargin, base.fcfMargin.map((m) => m - 0.04));
@@ -229,30 +235,38 @@ describe('the input card', () => {
 // ---------------------------------------------------------------------------
 // Rules v2, on NOW (fixtures/dcf-snapshot-now.json, 18.10.2026).
 const nowSnap = require('./fixtures/dcf-snapshot-now.json');
-const { LEGACY_RULES, NOW_PRESET, impliedConstantGrowth } = rules;
+const { NOW_PRESET, impliedConstantGrowth } = rules;
 const { impliedReturn, sensitivity } = require('./dcfEngine');
 const within = (actual, expected, tolerance) => expect(Math.abs(actual - expected)).toBeLessThanOrEqual(tolerance);
 const perShare = (e) => ['bear', 'base', 'bull'].map((k) => e.results[k].perShare);
 
-describe('regression: the legacy rules reproduce the first version, the engine untouched', () => {
-  const legacy = evaluateDcf({ mode: 'auto', snapshot: nowSnap, rules: LEGACY_RULES, valuationDate: DATE });
-
-  test('NOW, cash 2.503: 44.65 / 67.85 / 79.95, IRR 6.43%, terminal value 78.5%', () => {
-    expect(legacy.model.base.cash / B).toBeCloseTo(2.503, 6);
-    [44.65, 67.85, 79.95].forEach((v, i) => within(perShare(legacy)[i], v, 0.05));
-    within(legacy.irr * 100, 6.43, 0.005);
-    within(legacy.main.tvShare * 100, 78.5, 0.05);
+// The rules' result on two recorded snapshots, pinned. The data does not
+// change, so neither may the numbers: a different number here means the
+// rules were changed, and this test is where that has to be said.
+describe('regression: the rules on recorded snapshots give these values, whenever they run', () => {
+  test('NOW: 61.27 / 91.40 / 107.14, WACC 9.33%, IRR 7.33%', () => {
+    const e = evaluateDcf({ mode: 'auto', snapshot: nowSnap, valuationDate: DATE });
+    [61.27, 91.4, 107.14].forEach((v, i) => within(perShare(e)[i], v, 0.01));
+    within(e.main.wacc * 100, 9.33, 0.005);
+    within(e.irr * 100, 7.33, 0.005);
   });
 
-  test('the same with cash 6.707 alone: 71.9', () => {
-    const base = legacy.model.scenarios.find((s) => s.key === 'base');
-    within(runDcf(Object.assign({}, legacy.model.base, base, { cash: 6.707 * B })).perShare, 71.9, 0.05);
+  test('AVGO, the beta held at 1.25: 233.41 / 445.25 / 563.34, WACC 10.50%', () => {
+    const e = evaluateDcf({ mode: 'auto', snapshot: avgo, valuationDate: DATE });
+    expect(e.model.base.beta).toBe(1.25);
+    [233.41, 445.25, 563.34].forEach((v, i) => within(perShare(e)[i], v, 0.01));
+    within(e.main.wacc * 100, 10.5, 0.005);
   });
 
-  test('the new rules without added figures differ from legacy only by the cash: 71.9 again', () => {
-    const v2 = evaluateDcf({ mode: 'auto', snapshot: nowSnap, valuationDate: DATE });
-    within(v2.main.perShare, 71.9, 0.05);
-    expect(v2.model.scenarios.map((s) => s.growth)).toEqual(legacy.model.scenarios.map((s) => s.growth));
+  test('a later valuation date changes nothing but the staleness warnings', () => {
+    const now = evaluateDcf({ mode: 'auto', snapshot: nowSnap, valuationDate: DATE });
+    const later = evaluateDcf({ mode: 'auto', snapshot: nowSnap, valuationDate: '2027-06-30' });
+    expect(perShare(later)).toEqual(perShare(now));
+  });
+
+  test('there is one rule set: no legacy rules left to come out on', () => {
+    expect(rules.LEGACY_RULES).toBeUndefined();
+    expect(DEFAULT_RULES.legacy).toBeUndefined();
   });
 });
 
@@ -298,8 +312,31 @@ describe('FCF margins: guidance first, the generic fade only as the fallback', (
     closeAll(e.model.scenarios.find((s) => s.key === 'bear').fcfMargin, [0.32, 0.33, 0.33, 0.33, 0.33]);
   });
 
-  test('without any: the generic rule, and the warning', () => {
+  // NOW is a technology company: with no guidance its trailing margin is
+  // held flat rather than faded 2% a year.
+  test('without any, a technology company: the trailing margin held flat, and the warning says why', () => {
     const e = evaluateDcf({ mode: 'auto', snapshot: nowSnap, valuationDate: DATE });
+    expect(nowSnap.profile.sector).toBe('Technology');
+    const ttm = e.derived.fcfMarginTtm.value;
+    closeAll(e.model.scenarios.find((s) => s.key === 'base').fcfMargin, [ttm, ttm, ttm, ttm, ttm]);
+    expect(e.schedules.marginSources.every((s) => s.kind === 'flat')).toBe(true);
+    expect(e.warnings.join(' ')).toMatch(/שולי 12 החודשים מוחזקים קבועים \(סקטור Technology\)/);
+  });
+
+  test('outside technology, growth of 15%+ in year one also holds the margin flat', () => {
+    const snap = clone(nowSnap);
+    snap.profile.sector = 'Industrials';
+    const e = evaluateDcf({ mode: 'auto', snapshot: snap, valuationDate: DATE });
+    expect(e.derived.growth1.value).toBeGreaterThan(0.15);
+    expect(e.derived.flatMargin.value).toBe(true);
+    expect(e.derived.flatMargin.basis).toMatch(/צמיחה בשנה הראשונה/);
+  });
+
+  test('neither: the generic rule, and the warning', () => {
+    const snap = clone(nowSnap);
+    snap.profile.sector = 'Industrials';
+    const slow = Object.assign({}, DEFAULT_RULES, { flatMargin: { sectors: ['Technology'], growthAbove: 0.5 } });
+    const e = evaluateDcf({ mode: 'auto', snapshot: snap, rules: slow, valuationDate: DATE });
     closeAll(e.model.scenarios.find((s) => s.key === 'base').fcfMargin, marginSchedule(e.derived.fcfMarginTtm.value, 0.02, 5));
     expect(e.warnings).toContain('אין הנחיית שוליים, הדעיכה היא כלל גנרי');
   });
@@ -326,16 +363,16 @@ describe('growth: consensus years first, the fade after them', () => {
     expect(g[0]).toBeCloseTo(e.derived.growth1.value, 12);
     expect(g[1]).toBe(0.186);
     expect(g[2]).toBe(0.165);
-    expect(g[3]).toBeCloseTo(0.035 + (0.165 - 0.035) * 0.5, 12);
-    expect(g[4]).toBeCloseTo(0.035 + (g[3] - 0.035) * 0.5, 12);
+    expect(g[3]).toBeCloseTo(0.035 + (0.165 - 0.035) * DEFAULT_RULES.fadeK, 12);
+    expect(g[4]).toBeCloseTo(0.035 + (g[3] - 0.035) * DEFAULT_RULES.fadeK, 12);
     expect(e.schedules.growthSources.map((s) => s.kind)).toEqual(['consensus', 'consensus', 'consensus', 'rule', 'rule']);
     expect(e.warnings.join(' ')).not.toMatch(/FY\+2 אינה מקונצנזוס/);
   });
 
-  test('no FY+2 figure: the warning; k is a visible rule, 0.5 by default', () => {
+  test('no FY+2 figure: the warning; k is a visible rule, 0.7 by default', () => {
     const e = evaluateDcf({ mode: 'auto', snapshot: nowSnap, valuationDate: DATE });
     expect(e.warnings).toContain('צמיחה ב-FY+2 אינה מקונצנזוס - היא נגזרת מכלל הדעיכה');
-    expect(DEFAULT_RULES.fadeK).toBe(0.5);
+    expect(DEFAULT_RULES.fadeK).toBe(0.7);
     const slower = evaluateDcf({ mode: 'auto', snapshot: nowSnap, rules: Object.assign({}, DEFAULT_RULES, { fadeK: 0.8 }), valuationDate: DATE });
     expect(slower.model.scenarios[1].growth[1]).toBeCloseTo(0.035 + (e.derived.growth1.value - 0.035) * 0.8, 12);
   });
@@ -397,5 +434,67 @@ describe('the input card, v2', () => {
       expect(fromInputs.results[k].perShare).toBe(card.results.scenarios[k].perShare);
       expect(fromRaw.results[k].perShare).toBe(card.results.scenarios[k].perShare);
     });
+  });
+});
+
+describe('the mega-cap beta cap', () => {
+  test('a company under $1T keeps its adjusted beta', () => {
+    const { derived: d } = deriveAuto(nowSnap, DEFAULT_RULES);
+    expect(d.marketCap.value).toBeLessThan(1e12);
+    expect(d.beta.capped).toBeUndefined();
+    expect(d.beta.value).toBeCloseTo(0.67 * d.betaRaw.value + 0.33, 12);
+  });
+
+  test('a beta already under the cap is left alone, even above $1T', () => {
+    const snap = clone(avgo);
+    snap.betaRaw.value = 1.0;
+    expect(deriveAuto(snap, DEFAULT_RULES).derived.beta.value).toBeCloseTo(0.67 + 0.33, 12);
+  });
+
+  test('switched off with megaCap: null; not applied to a price in another currency', () => {
+    expect(deriveAuto(avgo, Object.assign({}, DEFAULT_RULES, { megaCap: null })).derived.beta.value).toBeCloseTo(0.67 * 1.476 + 0.33, 12);
+    const snap = clone(avgo);
+    snap.currency = 'EUR';
+    expect(deriveAuto(snap, DEFAULT_RULES).derived.beta.capped).toBeUndefined();
+  });
+
+  test('the cap lowers the discount rate the engine runs at', () => {
+    const capped = evaluateDcf({ mode: 'auto', snapshot: avgo, valuationDate: DATE });
+    const uncapped = evaluateDcf({ mode: 'auto', snapshot: avgo, rules: Object.assign({}, DEFAULT_RULES, { megaCap: null }), valuationDate: DATE });
+    expect(capped.model.base.beta).toBe(1.25);
+    expect(capped.main.wacc).toBeLessThan(uncapped.main.wacc);
+    expect(capped.main.perShare).toBeGreaterThan(uncapped.main.perShare);
+  });
+});
+
+describe('terminal value by an exit multiple', () => {
+  const exitRules = Object.assign({}, DEFAULT_RULES, { terminalMethod: 'exit', exitMultiple: 25 });
+
+  test('Gordon by default; the exit method is 25 x year-5 FCF after SBC', () => {
+    expect(DEFAULT_RULES.terminalMethod).toBe('gordon');
+    const e = evaluateDcf({ mode: 'auto', snapshot: avgo, rules: exitRules, valuationDate: DATE });
+    expect(e.main.terminalMethod).toBe('exit');
+    const last = e.main.years[e.main.years.length - 1];
+    expect(e.main.tv).toBeCloseTo(last.adj * 25, 0);
+    expect(e.main.impliedExit).toBeCloseTo(25, 9);
+    expect(e.sensitivity.rowKind).toBe('exitMultiple');
+  });
+
+  test('the card carries the method, and reproduces offline', () => {
+    const e = evaluateDcf({ mode: 'auto', snapshot: avgo, rules: exitRules, valuationDate: DATE });
+    const card = buildInputCard(e, avgo, 'AVGO');
+    expect(card.inputs.terminalMethod).toBe('exit');
+    expect(card.inputs.exitMultiple).toBe(25);
+    const { fromInputs, fromRaw } = reproduceFromCard(clone(card));
+    expect(fromInputs.main.perShare).toBe(e.main.perShare);
+    expect(fromRaw.main.perShare).toBe(e.main.perShare);
+  });
+
+  test('a card from before the option reproduces under Gordon', () => {
+    const e = evaluateDcf({ mode: 'auto', snapshot: avgo, valuationDate: DATE });
+    const card = clone(buildInputCard(e, avgo, 'AVGO'));
+    delete card.inputs.terminalMethod;
+    delete card.inputs.exitMultiple;
+    expect(reproduceFromCard(card).fromInputs.main.perShare).toBe(e.main.perShare);
   });
 });
