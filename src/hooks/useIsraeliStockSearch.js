@@ -4,7 +4,7 @@
 // per keystroke. Mirrors useStockSearch.js's structure exactly.
 
 import { useEffect, useState } from 'react';
-import { apiUrl } from '../apiBase';
+import { marketFetch } from '../api/marketFetch';
 
 const DEBOUNCE_MS = 300;
 
@@ -24,7 +24,7 @@ export function useIsraeliStockSearch(query) {
       setLoading(true);
       (async () => {
         try {
-          const r = await fetch(apiUrl(`/api/israeli-stock-search?q=${encodeURIComponent(trimmed)}`));
+          const r = await marketFetch(`/api/israeli-stock-search?q=${encodeURIComponent(trimmed)}`);
           if (!r.ok) throw new Error('search failed');
           const d = await r.json();
           if (!cancelled) setResults(Array.isArray(d.results) ? d.results : []);

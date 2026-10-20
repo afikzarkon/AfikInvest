@@ -389,7 +389,7 @@ function WaccPanel({ evaluation, editable, onBase, sourcesByField }) {
     <div className="dcf-wacc">
       <div className="dcf-fields">
         {f('rf', 'ריבית חסרת סיכון (rf)', 'pct')}
-        {isNum(b.betaRaw) && f('betaRaw', 'בטא גולמית (מידע)', 'plain', 'Yahoo, 5 שנים חודשית; המודל משתמש בבטא המתואמת', true)}
+        {isNum(b.betaRaw) && f('betaRaw', 'בטא גולמית (מידע)', 'plain', '5 שנים, חודשית, ממקורות ציבוריים; המודל משתמש בבטא המתואמת', true)}
         {f(
           'beta',
           'בטא מתואמת',
@@ -1032,7 +1032,7 @@ export default function DcfCalculator({ ticker, snapshot, autoEvaluation, overri
         {autoMode && (
           <>
             <p className="muted-note">
-              אפשר להוסיף צמיחה מקונצנזוס או מהנחיית החברה (Yahoo נותן רק את השנה הנוכחית והבאה) ושולי FCF מהנחיה - עם המקור והתאריך. שנה עם ערך משתמשת בו; הצמיחה דועכת רק
+              אפשר להוסיף צמיחה מקונצנזוס או מהנחיית החברה (המקורות הציבוריים נותנים רק את השנה הנוכחית והבאה) ושולי FCF מהנחיה - עם המקור והתאריך. שנה עם ערך משתמשת בו; הצמיחה דועכת רק
               אחרי השנה האחרונה שיש לה ערך, והשוליים נשארים קבועים אחריה. התרחישים השמרני והאופטימי מוחלים על הערכים האלה.
             </p>
             <GuidanceSources overrides={ov} onSource={setRowSource} />

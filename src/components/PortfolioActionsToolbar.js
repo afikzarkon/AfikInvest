@@ -215,6 +215,9 @@ function PortfolioActionsToolbar({
             : 'מוצגים מחירים אחרונים שנשמרו'}
         </span>
       )}
+      {/* Where the prices come from and what they are not for - next to the
+          prices themselves, not only in the terms (section 5). */}
+      {hasAnyData && <ToolbarStatus>מחירים ממקורות ציבוריים, ייתכן עיכוב · למידע בלבד, לא לצורכי מסחר</ToolbarStatus>}
       {lastSavedAt && !compact && (
         <ToolbarStatus>נשמר לאחרונה: {lastSavedAt.toLocaleTimeString('he-IL')}</ToolbarStatus>
       )}

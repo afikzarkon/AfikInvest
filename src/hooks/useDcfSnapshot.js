@@ -1,7 +1,7 @@
 // The raw, dated data the automatic DCF is derived from (see
 // server/dcfSnapshot.js), cached per symbol for the session.
 import { useEffect, useRef, useState } from 'react';
-import { apiUrl } from '../apiBase';
+import { marketFetch } from '../api/marketFetch';
 
 export function useDcfSnapshot(symbol) {
   const cache = useRef(new Map());
@@ -21,7 +21,7 @@ export function useDcfSnapshot(symbol) {
     setState({ snapshot: null, loading: true, error: '' });
     (async () => {
       try {
-        const r = await fetch(apiUrl(`/api/valuation/${encodeURIComponent(s)}/dcf`), { credentials: 'include' });
+        const r = await marketFetch(`/api/valuation/${encodeURIComponent(s)}/dcf`);
         const d = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(d.error || 'הטעינה נכשלה');
         cache.current.set(s, d);

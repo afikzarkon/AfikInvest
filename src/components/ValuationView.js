@@ -11,11 +11,14 @@ import DcfCalculator from './valuation/DcfCalculator';
 import { fmtMoney } from './valuation/shared';
 
 // Where the current multiples came from (server/marketDataFallbacks.js):
-// Finnhub first, then FMP, then Yahoo.
+// Finnhub first, then FMP, then Yahoo. The two keyed providers are credited
+// by name, as their plans ask; Yahoo's data is read without any agreement,
+// so it is not named as if it were a partner - it is "public sources".
+const PUBLIC_SOURCES = 'מקורות ציבוריים';
 const SUMMARY_SOURCE_LABELS = {
   finnhub: 'Finnhub',
   fmp: 'Financial Modeling Prep',
-  'yahoo-summary': 'Yahoo Finance'
+  'yahoo-summary': PUBLIC_SOURCES
 };
 
 // /valuation - is this stock cheap or expensive? Written for someone who has
@@ -107,7 +110,7 @@ function ValuationResult({ data }) {
           {data.name || data.symbol} ({data.symbol})
         </h2>
         <p className="section-subtitle">
-          {[data.sector, data.industry].filter(Boolean).join(' · ')} · מחיר {fmtMoney(data.price, data.currency)} · שווי שוק {fmtMoney(data.marketCap, data.currency)} · נתונים: {data.sources.statements === 'fmp' ? 'Financial Modeling Prep' : 'Yahoo Finance'}
+          {[data.sector, data.industry].filter(Boolean).join(' · ')} · מחיר {fmtMoney(data.price, data.currency)} · שווי שוק {fmtMoney(data.marketCap, data.currency)} · נתונים: {data.sources.statements === 'fmp' ? 'Financial Modeling Prep' : PUBLIC_SOURCES}
           {data.sources.summary && SUMMARY_SOURCE_LABELS[data.sources.summary] ? ` · מכפילים נוכחיים: ${SUMMARY_SOURCE_LABELS[data.sources.summary]}` : ''}
           {data.partial ? ' (חלקיים)' : ''}, {String(data.asOf).slice(0, 10)}
         </p>

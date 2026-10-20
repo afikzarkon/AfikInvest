@@ -35,7 +35,11 @@ describe('useIsraeliStockSearch', () => {
     await waitFor(() => expect(result.current.results).toHaveLength(1));
 
     expect(global.fetch).toHaveBeenCalledTimes(1);
-    expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining(encodeURIComponent('טבע')));
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining(encodeURIComponent('טבע')),
+      // Market data is for signed-in users: the session goes with it.
+      expect.objectContaining({ credentials: 'include' })
+    );
     expect(result.current.results).toEqual([{ securityId: '629014', officialName: 'טבע', symbol: 'TEVA' }]);
   });
 

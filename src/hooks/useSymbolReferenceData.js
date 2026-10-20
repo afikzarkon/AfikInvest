@@ -22,7 +22,7 @@
 // the tables they may never scroll to.
 
 import { useEffect, useRef, useState } from 'react';
-import { apiUrl } from '../apiBase';
+import { marketFetch } from '../api/marketFetch';
 
 // Long enough that moving around the app is free, short enough that a
 // session left open all day still refreshes. None of this data moves
@@ -61,7 +61,7 @@ export function createSymbolStore({ endpoint, responseKey }) {
   };
 
   const request = async (symbols, extraBody) => {
-    const r = await fetch(apiUrl(endpoint), {
+    const r = await marketFetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ symbols, ...(extraBody || {}) })

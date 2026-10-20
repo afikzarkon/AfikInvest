@@ -24,8 +24,9 @@
 const { sourceHealth } = require('./sourceHealth');
 
 // Refusals that made no request: a spent free-plan budget, Yahoo's
-// cooldown, an FMP endpoint already known to be outside the key's plan.
-const NO_REQUEST_CODES = new Set(['FINNHUB_BUDGET', 'FMP_BUDGET', 'FMP_PLAN', 'TIINGO_BUDGET', 'YAHOO_COOLDOWN']);
+// cooldown, an FMP endpoint already known to be outside the key's plan, a
+// provider an admin switched off (sourceSwitch.js).
+const NO_REQUEST_CODES = new Set(['FINNHUB_BUDGET', 'FMP_BUDGET', 'FMP_PLAN', 'TIINGO_BUDGET', 'YAHOO_COOLDOWN', 'SOURCE_DISABLED']);
 
 function reasonOf(err) {
   if (!err) return 'unknown error';

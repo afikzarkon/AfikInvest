@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { clearErrors, listErrors, listJobs, listSources } from '../../adminApi';
+import { clearErrors, listErrors, listJobs, listSources, saveDisabledSources } from '../../adminApi';
 import { ErrorNote, Loading, formatWhen, useAction, useLoad } from './shared';
 
 // The outside data sources, server errors (captured from the server's
@@ -16,8 +16,59 @@ const SOURCE_STATUS = {
 // whether it is answering, and if not since when and why. Counted since
 // the server last started, which on a sleeping host may be recently.
 function SourcesSection() {
-  const sources = useLoad(listSources);
+  const loaded = useLoad(listSources);
+  const sources = { ...loaded, data: loaded.data ? loaded.data.sources : null };
 
+  return (
+    <>
+      {loaded.data ? <SourceSwitchSection providers={loaded.data.providers || []} onSaved={loaded.reload} /> : null}
+      <SourcesHealthList sources={sources} />
+    </>
+  );
+}
+
+// The off switch for each outside provider (server/sourceSwitch.js): if a
+// provider asks us to stop or blocks us, every request to it stops at once
+// and the app falls back to its other sources or the last known values.
+// Saved to the database and written to the audit log.
+function SourceSwitchSection({ providers, onSaved }) {
+  const action = useAction();
+
+  const toggle = async (provider) => {
+    const turningOff = !provider.disabled;
+    if (turningOff && !window.confirm(`לכבות את ${provider.label}? כל הבקשות אליו ייעצרו מיד.`)) return;
+    const next = providers.filter((p) => (p.name === provider.name ? turningOff : p.disabled)).map((p) => p.name);
+    if (await action.run(() => saveDisabledSources(next))) onSaved();
+  };
+
+  return (
+    <section className="analysis-section">
+      <h3 className="section-title">כיבוי מקורות נתונים</h3>
+      <p className="section-subtitle">
+        מקור כבוי לא מקבל אף בקשה מהשרת. הנתונים שלו יגיעו ממקור הגיבוי הבא, או יוצג הערך האחרון הידוע. כל שינוי נרשם ביומן הפעולות.
+      </p>
+      <ErrorNote>{action.error}</ErrorNote>
+      <ul className="admin-log-list">
+        {providers.map((p) => (
+          <li key={p.name} className="admin-log-entry admin-job">
+            <div className="admin-job-head">
+              <span>{p.label}</span>
+              <span className={`admin-badge is-${p.disabled ? 'danger' : 'good'}`}>{p.disabled ? 'כבוי' : 'פעיל'}</span>
+              <button type="button" className={p.disabled ? 'benchmark-toggle-button' : 'admin-danger-button'} disabled={action.busy} onClick={() => toggle(p)}>
+                {p.disabled ? 'הפעלה' : 'כיבוי'}
+              </button>
+            </div>
+            <p className="admin-flag-meta" dir="ltr">
+              {p.hosts.join(', ')}
+            </p>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function SourcesHealthList({ sources }) {
   return (
     <section className="analysis-section">
       <h3 className="section-title">מקורות נתונים חיצוניים</h3>
@@ -41,6 +92,7 @@ function SourcesSection() {
                 <div className="admin-job-head">
                   <span>{s.label}</span>
                   <span className={`admin-badge is-${status.tone}`}>{status.label}</span>
+                  {s.disabled ? <span className="admin-badge is-danger">כבוי ע"י מנהל</span> : null}
                   {s.cooldownUntil ? <span className="admin-badge is-warning">מושהה עד {formatWhen(s.cooldownUntil)}</span> : null}
                 </div>
                 <p className="admin-flag-meta">

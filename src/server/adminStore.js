@@ -76,7 +76,9 @@ const isoOf = (v) => (v instanceof Date ? v.toISOString() : v ? String(v).replac
 
 const SETTING_DEFAULTS = {
   banner: { active: false, text: '', level: 'info', expiresAt: null },
-  maintenance: { enabled: false, message: '' }
+  maintenance: { enabled: false, message: '' },
+  // Outside data providers an admin has switched off (sourceSwitch.js).
+  disabled_sources: { disabled: [] }
 };
 const SETTINGS_CACHE_MS = 5 * 1000;
 const ERROR_RETENTION_DAYS = 30;

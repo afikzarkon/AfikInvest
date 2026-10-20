@@ -70,6 +70,9 @@ function createSourceHealth({ logger = console, now = () => Date.now() } = {}) {
     },
 
     failure(name, err) {
+      // Refused before any request because an admin switched the provider
+      // off (sourceSwitch.js) - says nothing about the source's health.
+      if (err && err.code === 'SOURCE_DISABLED') return;
       const e = entry(name);
       e.lastFailureAt = now();
       e.lastError = errorText(err);

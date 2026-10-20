@@ -1,7 +1,7 @@
 // Valuation data for one symbol (see server/valuationRoutes.js), cached per
 // symbol for the session so switching back and forth does not refetch.
 import { useEffect, useRef, useState } from 'react';
-import { apiUrl } from '../apiBase';
+import { marketFetch } from '../api/marketFetch';
 
 export function useValuation(symbol) {
   const cache = useRef(new Map());
@@ -21,7 +21,7 @@ export function useValuation(symbol) {
     setState({ data: null, loading: true, error: '' });
     (async () => {
       try {
-        const r = await fetch(apiUrl(`/api/valuation/${encodeURIComponent(s)}`), { credentials: 'include' });
+        const r = await marketFetch(`/api/valuation/${encodeURIComponent(s)}`);
         const d = await r.json().catch(() => ({}));
         if (!r.ok) {
           const err = new Error(d.error || 'הטעינה נכשלה');
