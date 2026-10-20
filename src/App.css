@@ -10516,9 +10516,20 @@ select.auth-input[dir='ltr'] {
    screen, and save/cancel stay pinned at the bottom - reachable whatever
    field the keyboard has scrolled to. */
 @media (max-width: 720px) {
+  /* A block, not the flex row it is elsewhere: stretched in a flex row the
+     pane was held at exactly one screen's height, and every field below
+     the first screen was drawn outside it - over the overlay's translucent
+     black instead of the pane's own background. As a block the pane grows
+     with the form and the overlay scrolls it.
+
+     The overlay takes the pane's colour too, so nothing translucent shows
+     when the page is pulled past either end. */
   .asset-entry-overlay {
+    display: block;
     padding: 0;
-    align-items: stretch;
+    background: var(--sw-bg-elevated);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
 
   .asset-entry-modal {
