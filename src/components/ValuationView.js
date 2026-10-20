@@ -46,14 +46,12 @@ function SourceDiagnostics({ diagnostics }) {
 }
 
 // One edit from the rules panel onto those made before it. The beta caps
-// (keyed by size) and the WACC band (min / max) are edited a field at a
-// time, so they merge; 'off' replaces.
+// (keyed by size) and the WACC band (min / max, null = no edge on that
+// side) are edited a field at a time, so they merge.
 export function mergeRuleEdits(prev, patch) {
   const next = Object.assign({}, prev, patch);
   if (patch.betaCaps && prev.betaCaps) next.betaCaps = Object.assign({}, prev.betaCaps, patch.betaCaps);
-  if (patch.waccBand && patch.waccBand !== 'off' && prev.waccBand && prev.waccBand !== 'off') {
-    next.waccBand = Object.assign({}, prev.waccBand, patch.waccBand);
-  }
+  if (patch.waccBand && prev.waccBand) next.waccBand = Object.assign({}, prev.waccBand, patch.waccBand);
   return next;
 }
 
@@ -70,8 +68,7 @@ export function rulesWithEdits(edits) {
       })
       .filter(Boolean);
   }
-  if (edits.waccBand === 'off') patch.waccBand = null;
-  else if (edits.waccBand) patch.waccBand = Object.assign({}, DEFAULT_RULES.waccBand, edits.waccBand);
+  if (edits.waccBand) patch.waccBand = Object.assign({}, DEFAULT_RULES.waccBand, edits.waccBand);
   if (typeof edits.flatMargin === 'boolean') patch.flatMargin = edits.flatMargin;
   if (Number.isFinite(edits.sbcShareTechGrowth)) patch.sbcShareTechGrowth = Math.min(1, Math.max(0, edits.sbcShareTechGrowth));
   if (edits.terminalMethod) patch.terminalMethod = edits.terminalMethod;

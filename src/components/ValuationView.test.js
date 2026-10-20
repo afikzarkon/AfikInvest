@@ -293,11 +293,12 @@ describe('rule edits', () => {
     expect(off.betaCaps.map((t) => t.betaCap)).toEqual([1.6]);
   });
 
-  test('the WACC band edited one edge at a time, or switched off', () => {
+  test('the WACC band edited one edge at a time; empty is no edge on that side', () => {
+    expect(rulesWithEdits({}).waccBand).toEqual({ min: null, max: 0.115 });
     const min = mergeRuleEdits({}, { waccBand: { min: 0.08 } });
     const both = mergeRuleEdits(min, { waccBand: { max: 0.12 } });
     expect(rulesWithEdits(both).waccBand).toEqual({ min: 0.08, max: 0.12 });
-    expect(rulesWithEdits(mergeRuleEdits(both, { waccBand: 'off' })).waccBand).toBeNull();
+    expect(rulesWithEdits(mergeRuleEdits(both, { waccBand: { max: null } })).waccBand).toEqual({ min: 0.08, max: null });
   });
 
   test('the SBC share is kept inside 0..1; no edits is the defaults', () => {

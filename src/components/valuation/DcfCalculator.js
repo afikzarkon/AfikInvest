@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { evaluateDcf, buildInputCard, PRESETS, DEFAULT_RULES } from '../../shared/dcfRules';
+import { evaluateDcf, buildInputCard, PRESETS, DEFAULT_RULES, waccBandText } from '../../shared/dcfRules';
 import { runDcf } from '../../shared/dcfEngine';
 import { DCF_VERDICT_TONE } from '../../utils/valuationInsights';
 import { Num, ToneBadge, fmtMoney, fmtRate } from './shared';
@@ -410,8 +410,7 @@ function WaccPanel({ evaluation, editable, onBase, sourcesByField }) {
         <p className="muted-note">
           {main.waccOverridden && evaluation.waccBand ? (
             <>
-              WACC מחושב <Num>{fmtRate(evaluation.waccBand.computed, 2)}</Num> - מחוץ לטווח{' '}
-              <Num>{`${fmtRate(evaluation.waccBand.min)}-${fmtRate(evaluation.waccBand.max)}`}</Num>, ולכן{' '}
+              WACC מחושב <Num>{fmtRate(evaluation.waccBand.computed, 2)}</Num> ({waccBandText(evaluation.waccBand.min, evaluation.waccBand.max)}), ולכן{' '}
               <strong>
                 WACC <Num>{fmtRate(main.wacc, 2)}</Num>
               </strong>
@@ -689,10 +688,10 @@ function RulesPanel({ rules: R, onRules }) {
           ))}
           . פרמיית סיכון <Num>{fmtRate(R.erp)}</Num>, עלות חוב <Num>{fmtRate(R.kd)}</Num>, מס <Num>{fmtRate(R.tax)}</Num>.
           ריבית: אג&quot;ח ארה&quot;ב ל-10 שנים; חסרה - הערך האחרון שנשמר, ואם אין - צריך להזין אותה.
-          {R.waccBand ? (
+          {R.waccBand && (isNum(R.waccBand.min) || isNum(R.waccBand.max)) ? (
             <>
               {' '}
-              WACC מחוץ לטווח <Num>{`${fmtRate(R.waccBand.min)}-${fmtRate(R.waccBand.max)}`}</Num> מוחזק על קצה הטווח, והמחושב מוצג לידו.
+              WACC, {waccBandText(R.waccBand.min, R.waccBand.max)}: חישוב שחורג ממנה מוחזק עליה, והמחושב מוצג לידו.
             </>
           ) : null}
         </li>
@@ -741,19 +740,19 @@ function RulesPanel({ rules: R, onRules }) {
           })}
           <NumberField
             id="dcf-rule-wacc-min"
-            label={`WACC מינימלי (ריק = בלי טווח, ברירת מחדל ${fmtRate(DEFAULT_RULES.waccBand.min)})`}
-            value={R.waccBand ? R.waccBand.min : null}
+            label="רצפת WACC (ריק = בלי רצפה, ברירת המחדל)"
+            value={R.waccBand && isNum(R.waccBand.min) ? R.waccBand.min : null}
             unit="pct"
             allowEmpty
-            onChange={(v) => onRules({ waccBand: v === null ? 'off' : { min: v } })}
+            onChange={(v) => onRules({ waccBand: { min: v } })}
           />
           <NumberField
             id="dcf-rule-wacc-max"
-            label={`WACC מקסימלי (ריק = בלי טווח, ברירת מחדל ${fmtRate(DEFAULT_RULES.waccBand.max)})`}
-            value={R.waccBand ? R.waccBand.max : null}
+            label={`תקרת WACC (ריק = בלי תקרה, ברירת מחדל ${fmtRate(DEFAULT_RULES.waccBand.max)})`}
+            value={R.waccBand && isNum(R.waccBand.max) ? R.waccBand.max : null}
             unit="pct"
             allowEmpty
-            onChange={(v) => onRules({ waccBand: v === null ? 'off' : { max: v } })}
+            onChange={(v) => onRules({ waccBand: { max: v } })}
           />
           <NumberField
             id="dcf-rule-sbc-share"

@@ -527,43 +527,52 @@ describe('the beta cap tiers', () => {
   });
 });
 
-describe('the WACC band', () => {
-  // NOW with a raw beta of 0.2: CAPM gives well under 9%.
-  const lowBeta = () => {
+describe('the WACC band: a ceiling of 11.5%, no floor', () => {
+  // NOW with a raw beta of 0.2: CAPM gives well under 9%; with 2.4, over 11.5%.
+  const withBeta = (raw) => {
     const snap = clone(nowSnap);
-    snap.betaRaw.value = 0.2;
+    snap.betaRaw.value = raw;
     return snap;
   };
 
-  test('a computed rate under the band runs at its floor, flagged, the computed one kept', () => {
-    const e = evaluateDcf({ mode: 'auto', snapshot: lowBeta(), valuationDate: DATE });
-    expect(e.waccBand.computed).toBeLessThan(0.09);
-    expect(e.waccBand.applied).toBe(0.09);
-    expect(e.main.wacc).toBe(0.09);
-    expect(e.flags.join(' ')).toMatch(/הוחזק על 9\.0%, בטווח 9\.0%-11\.5%/);
+  // A floor raised a defensive company's rate above its own CAPM rate
+  // (KO 7.3% -> 9.0%, value -34%), so there is none by default.
+  test('no floor by default: a low computed rate stands', () => {
+    expect(DEFAULT_RULES.waccBand.min).toBeNull();
+    const e = evaluateDcf({ mode: 'auto', snapshot: withBeta(0.2), valuationDate: DATE });
+    expect(e.main.wacc).toBeLessThan(0.09);
+    expect(e.main.waccOverridden).toBe(false);
+    expect(e.waccBand).toBeNull();
   });
 
-  test('a computed rate over the band runs at its ceiling', () => {
-    const snap = clone(nowSnap);
-    snap.betaRaw.value = 2.4;
-    const e = evaluateDcf({ mode: 'auto', snapshot: snap, valuationDate: DATE });
+  test('a floor set on purpose still holds, flagged, the computed rate kept', () => {
+    const floored = Object.assign({}, DEFAULT_RULES, { waccBand: { min: 0.09, max: 0.115 } });
+    const e = evaluateDcf({ mode: 'auto', snapshot: withBeta(0.2), rules: floored, valuationDate: DATE });
+    expect(e.waccBand.computed).toBeLessThan(0.09);
+    expect(e.main.wacc).toBe(0.09);
+    expect(e.flags.join(' ')).toMatch(/הוחזק על 9\.0% \(טווח 9\.0%-11\.5%\)/);
+  });
+
+  test('a computed rate over the ceiling runs at it, flagged', () => {
+    const e = evaluateDcf({ mode: 'auto', snapshot: withBeta(2.4), valuationDate: DATE });
     expect(e.waccBand.computed).toBeGreaterThan(0.115);
     expect(e.main.wacc).toBe(0.115);
+    expect(e.flags.join(' ')).toMatch(/הוחזק על 11\.5% \(תקרה 11\.5%\)/);
   });
 
-  test('inside the band nothing is overridden; null switches it off', () => {
+  test('under the ceiling nothing is overridden; null switches it off', () => {
     const e = evaluateDcf({ mode: 'auto', snapshot: nowSnap, valuationDate: DATE });
     expect(e.waccBand).toBeNull();
     expect(e.main.waccOverridden).toBe(false);
-    const off = evaluateDcf({ mode: 'auto', snapshot: lowBeta(), rules: Object.assign({}, DEFAULT_RULES, { waccBand: null }), valuationDate: DATE });
-    expect(off.main.wacc).toBeLessThan(0.09);
+    const off = evaluateDcf({ mode: 'auto', snapshot: withBeta(2.4), rules: Object.assign({}, DEFAULT_RULES, { waccBand: null }), valuationDate: DATE });
+    expect(off.main.wacc).toBeGreaterThan(0.115);
   });
 
   test('the held rate is in the card, and reproduces offline', () => {
-    const snap = lowBeta();
+    const snap = withBeta(2.4);
     const e = evaluateDcf({ mode: 'auto', snapshot: snap, valuationDate: DATE });
     const card = buildInputCard(e, snap, 'NOW');
-    expect(card.inputs.waccOverride).toBe(0.09);
+    expect(card.inputs.waccOverride).toBe(0.115);
     const { fromInputs, fromRaw } = reproduceFromCard(clone(card));
     expect(fromInputs.main.perShare).toBe(e.main.perShare);
     expect(fromRaw.main.perShare).toBe(e.main.perShare);

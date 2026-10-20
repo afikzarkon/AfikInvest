@@ -34,7 +34,8 @@
 //   beta           betaWeight * beta_raw + betaConst (raw shown too); held at
 //                  the first of betaCaps whose size the market value (price
 //                  x basic shares, USD) is above
-//   WACC           computed by CAPM; held inside waccBand, flagged
+//   WACC           computed by CAPM; held at waccBand.max (and min, when
+//                  one is set), flagged
 //   rf             today's 10-year Treasury yield; missing -> the last one
 //                  saved, flagged; none saved -> no value until entered
 //   shares         diluted: weighted average, last quarter; basic: actual
@@ -86,10 +87,13 @@ const DEFAULT_RULES = {
     { above: 1e12, betaCap: 1.25, label: 'Mega Cap' },
     { above: 2e11, betaCap: 1.45, label: 'Large Cap' }
   ],
-  // The discount rate is held inside this band: a computed WACC below `min`
-  // or above `max` is replaced by the edge, flagged, with the computed one
-  // shown beside it. null switches it off.
-  waccBand: { min: 0.09, max: 0.115 },
+  // The discount rate is held inside this band: a computed WACC above `max`
+  // (or below `min`, when one is set) is replaced by the edge, flagged, with
+  // the computed one shown beside it. Each edge is optional; null switches
+  // the band off. No floor by default: a floor raised the rate of a
+  // low-beta, defensive company above its own CAPM rate (KO: 7.3% -> 9.0%,
+  // value -34%), which is the conservatism the band exists to avoid.
+  waccBand: { min: null, max: 0.115 },
   // Who counts as a technology / growth company: one of these sectors, or
   // year-one growth of at least `growthAbove`. Two rules follow from it.
   techGrowth: { sectors: ['Technology'], growthAbove: 0.15 },
@@ -169,6 +173,12 @@ function betaCapTier(tiers, marketCap) {
   const fits = tiers.filter((t) => t && isNum(t.above) && isNum(t.betaCap) && marketCap > t.above);
   fits.sort((a, b) => b.above - a.above);
   return fits[0] || null;
+}
+
+// The band in words: "תקרה 11.5%", "רצפה 9.0%", or "טווח 9.0%-11.5%".
+function waccBandText(min, max) {
+  if (isNum(min) && isNum(max)) return `טווח ${pctText(min)}-${pctText(max)}`;
+  return isNum(max) ? `תקרה ${pctText(max)}` : `רצפה ${pctText(min)}`;
 }
 
 // "$1T", "$200B".
@@ -606,12 +616,14 @@ function evaluateDcf(args) {
     // says so.
     const band = R.waccBand;
     const computed = engine.computeWacc(model.base).wacc;
+    const min = band && isNum(band.min) ? band.min : null;
+    const max = band && isNum(band.max) ? band.max : null;
     out.waccBand = null;
-    if (band && isNum(computed) && (computed < band.min || computed > band.max)) {
-      const held = computed < band.min ? band.min : band.max;
+    if (isNum(computed) && ((min !== null && computed < min) || (max !== null && computed > max))) {
+      const held = min !== null && computed < min ? min : max;
       model.base.waccOverride = held;
-      out.waccBand = { computed, applied: held, min: band.min, max: band.max };
-      out.flags.push(`WACC מחושב ${pctText(computed)} - הוחזק על ${pctText(held)}, בטווח ${pctText(band.min)}-${pctText(band.max)}`);
+      out.waccBand = { computed, applied: held, min, max };
+      out.flags.push(`WACC מחושב ${pctText(computed)} - הוחזק על ${pctText(held)} (${waccBandText(min, max)})`);
     }
   }
   out.model = model;
@@ -884,6 +896,7 @@ exports.marginSchedule = marginSchedule;
 exports.sbcSchedule = sbcSchedule;
 exports.adjustBeta = adjustBeta;
 exports.betaCapTier = betaCapTier;
+exports.waccBandText = waccBandText;
 exports.growthSchedule = growthSchedule;
 exports.marginScheduleWithGuidance = marginScheduleWithGuidance;
 exports.cashComponents = cashComponents;
