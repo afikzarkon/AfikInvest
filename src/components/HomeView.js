@@ -313,7 +313,7 @@ function HomeView({
               <CompactSummaryItem title='סה"כ מצב ההון' value={ils(summary.capitalTotalILS)}>
                 <CapitalStateCard {...cardProps} present={present} />
               </CompactSummaryItem>
-              <CompactSummaryItem title="סיכום השקעות נטו" value={ils(summary.totalProfitILS)} pct={pctText(totalProfitPercent)}>
+              <CompactSummaryItem title="רווח והפסד כולל" value={ils(summary.totalProfitILS)} pct={pctText(totalProfitPercent)}>
                 <NetInvestmentCard {...cardProps} present={present} />
               </CompactSummaryItem>
               {categoryCards.map((c) => (

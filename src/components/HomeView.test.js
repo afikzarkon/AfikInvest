@@ -62,7 +62,7 @@ test('shows the summary cards for a populated portfolio, and no holdings tables'
   const { container, getByText } = render(<HomeView {...makeProps()} />);
   expect(container.querySelectorAll('table').length).toBe(0);
   expect(getByText('סיכום התיק')).toBeInTheDocument();
-  ['סה"כ מצב ההון', 'סיכום השקעות נטו (₪)'].forEach((title) => {
+  ['סה"כ מצב ההון', 'רווח והפסד כולל (₪)'].forEach((title) => {
     expect(getByText(title)).toBeInTheDocument();
   });
 });
