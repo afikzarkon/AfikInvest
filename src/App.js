@@ -68,6 +68,7 @@ const BankSavingsPage = lazy(() => import('./components/pages/BankSavingsPage'))
 const TransactionsView = lazy(() => import('./components/TransactionsView'));
 const AlertsView = lazy(() => import('./components/AlertsView'));
 const RecommendationsView = lazy(() => import('./components/RecommendationsView'));
+const PortfolioReviewView = lazy(() => import('./components/PortfolioReviewView'));
 const ValuationView = lazy(() => import('./components/ValuationView'));
 const SettingsView = lazy(() => import('./components/settings/SettingsView'));
 const AdminView = lazy(() => import('./components/admin/AdminView'));
@@ -579,6 +580,8 @@ function App() {
   } = useAlerts(featureFlags.isEnabled('alerts') ? user : null, authHeader);
 
   const { value: recommendationPrefs, save: saveRecommendationPrefs } = usePreferences(user, authHeader, 'recommendations');
+  // The portfolio review's goal (an amount by a date); {} when cleared.
+  const { value: reviewGoal, save: saveReviewGoal } = usePreferences(user, authHeader, 'goals');
 
   const adoptServerPortfolio = (portfolio) => {
     if (!portfolio) return;
@@ -1065,6 +1068,19 @@ function App() {
             savedPrefs={recommendationPrefs}
             onSavePrefs={saveRecommendationPrefs}
             formatPriceWithSign={formatPriceWithSign}
+          />
+        );
+
+      case 'portfolio-review':
+        return (
+          <PortfolioReviewView
+            {...holdings}
+            transactions={transactions}
+            analysis={analysis}
+            cpi={cpi}
+            theme={theme}
+            goal={reviewGoal}
+            onSaveGoal={saveReviewGoal}
           />
         );
 

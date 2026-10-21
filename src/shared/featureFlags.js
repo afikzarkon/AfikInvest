@@ -25,7 +25,10 @@ const FLAG_DEFINITIONS = [
   { key: 'alerts', route: 'alerts', defaultState: 'all', description: 'דף ההתראות ולוח האירועים (כולל ה-API שלו)' },
   { key: 'recommendations', route: 'recommendations', defaultState: 'all', description: 'דף ההמלצות - איזון, מימוש וקיזוז' },
   { key: 'tax-offset', route: 'tax-offset', defaultState: 'all', description: 'דף הזדמנות לקיזוז מס' },
-  { key: 'analytics', route: 'analytics', defaultState: 'all', description: 'דף ניתוח התיק' }
+  { key: 'analytics', route: 'analytics', defaultState: 'all', description: 'דף ניתוח התיק' },
+  // Admins first: the review words judgements about the user's own
+  // investing, so it is tried on the live site before it is released.
+  { key: 'portfolio-review', route: 'portfolio-review', defaultState: 'admin', description: 'דף ביקורת התיק - ציון חודשי, ביקורת ופרופיל משקיע' }
 ];
 
 function isFlagState(value) {

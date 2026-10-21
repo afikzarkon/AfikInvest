@@ -38,6 +38,17 @@ describe.each(STORE_FACTORIES)('preferences API (%s)', (_name, makeStore) => {
     expect((await request(baseUrl, 'GET', '/api/preferences/recommendations', { token })).body.value).toEqual(put.body.value);
   });
 
+  test('round-trips and clears the review goal', async () => {
+    const put = await request(baseUrl, 'PUT', '/api/preferences/goals', {
+      token,
+      body: { targetAmount: '500000', targetDate: '2030-01-01', label: 'דירה', junk: 1 }
+    });
+    expect(put.body.value).toEqual({ targetAmount: 500000, targetDate: '2030-01-01', label: 'דירה' });
+    expect((await request(baseUrl, 'PUT', '/api/preferences/goals', { token, body: {} })).body.value).toEqual({});
+    expect((await request(baseUrl, 'PUT', '/api/preferences/goals', { token, body: { targetAmount: 0, targetDate: '2030-01-01' } })).status).toBe(400);
+    expect((await request(baseUrl, 'PUT', '/api/preferences/goals', { token, body: { targetAmount: 100, targetDate: '2030-13-45' } })).status).toBe(400);
+  });
+
   test('rejects bad values, unknown namespaces and anonymous users', async () => {
     expect((await request(baseUrl, 'PUT', '/api/preferences/recommendations', { token, body: { lotMethod: 'RANDOM' } })).status).toBe(400);
     expect((await request(baseUrl, 'PUT', '/api/preferences/recommendations', { token, body: { enabledRules: ['nope'] } })).status).toBe(400);

@@ -13962,3 +13962,548 @@ select.auth-input[dir='ltr'] {
     min-width: 0;
   }
 }
+
+/* --- Portfolio review (/review) ------------------------------------------
+   The monthly review: overall score, the one thing to work on, the review
+   in words, the score trend, and a card per category. Built from the
+   shared tokens only, so both themes come for free. */
+
+.review-page h2 {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--sw-text);
+  margin: 0 0 10px;
+}
+
+.review-section-title {
+  margin: 8px 0 12px;
+}
+
+.review-muted {
+  color: var(--sw-text-secondary);
+  font-size: 0.88rem;
+  line-height: 1.6;
+  margin: 4px 0 0;
+}
+
+/* Fixed and visible on every view of the page, but quiet: a hairline strip
+   rather than a banner competing with the score. */
+.review-disclaimer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 8px 14px;
+  border-radius: var(--sw-radius-sm);
+  border: 1px solid var(--sw-border-strong);
+  background: var(--sw-surface-2);
+  color: var(--sw-text-secondary);
+  font-size: 0.85rem;
+}
+
+.review-disclaimer::before {
+  content: '\24D8';
+  color: var(--sw-accent);
+  font-weight: 700;
+}
+
+.review-disclaimer-foot {
+  margin-top: 8px;
+}
+
+.review-loading {
+  margin: 0 0 12px;
+  color: var(--sw-text-secondary);
+  font-size: 0.85rem;
+}
+
+.review-month-picker select {
+  min-height: 38px;
+  padding: 6px 12px;
+  border-radius: var(--sw-radius-pill);
+  border: 1px solid var(--sw-border-strong);
+  background: var(--sw-surface-3);
+  color: var(--sw-text);
+  font: inherit;
+  font-size: 0.9rem;
+}
+
+/* Hero */
+
+.review-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 18px 28px;
+  align-items: center;
+}
+
+.review-hero-score {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.review-hero-rating {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: var(--sw-text);
+  margin: 0;
+}
+
+.review-ring-track {
+  fill: none;
+  stroke: var(--sw-border-strong);
+  stroke-width: 10;
+}
+
+.review-ring-fill {
+  fill: none;
+  stroke: var(--sw-accent);
+  stroke-width: 10;
+  stroke-linecap: round;
+  transition: stroke-dasharray var(--sw-transition);
+}
+
+.review-ring.tone-good .review-ring-fill { stroke: var(--sw-green); }
+.review-ring.tone-mid .review-ring-fill { stroke: var(--sw-amber); }
+.review-ring.tone-low .review-ring-fill { stroke: var(--sw-red); }
+
+.review-ring-value {
+  fill: var(--sw-text);
+  font-size: 2.1rem;
+  font-weight: 800;
+  font-family: var(--sw-font);
+}
+
+.review-profile {
+  padding: 14px 16px;
+  border-radius: var(--sw-radius);
+  background: var(--sw-accent-soft);
+  border: 1px solid var(--sw-border);
+}
+
+.review-profile strong {
+  display: block;
+  font-size: 1.2rem;
+  color: var(--sw-text);
+}
+
+.review-profile-label {
+  font-size: 0.78rem;
+  color: var(--sw-text-secondary);
+}
+
+.review-badges {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.review-badges li {
+  padding: 6px 12px;
+  border-radius: var(--sw-radius-pill);
+  background: var(--sw-surface-2);
+  border: 1px solid var(--sw-border-strong);
+  color: var(--sw-text);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+/* The one thing */
+
+.review-one-thing {
+  margin-bottom: 24px;
+  padding: 18px 20px;
+  border-radius: var(--sw-radius-lg);
+  border: 1px solid var(--sw-accent-glow);
+  border-inline-start: 4px solid var(--sw-accent);
+  background: var(--sw-accent-soft);
+}
+
+.review-one-thing h2 {
+  font-size: 0.95rem;
+  color: var(--sw-accent);
+  margin-bottom: 6px;
+}
+
+.review-one-thing-text {
+  margin: 0;
+  font-size: 1.12rem;
+  font-weight: 700;
+  color: var(--sw-text);
+  line-height: 1.55;
+}
+
+/* The review in words */
+
+.review-notes-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.review-notes {
+  padding: 14px 16px;
+  border-radius: var(--sw-radius);
+  background: var(--sw-surface-2);
+  border: 1px solid var(--sw-border);
+  border-top: 3px solid var(--sw-border-strong);
+}
+
+.review-notes-good { border-top-color: var(--sw-green); }
+.review-notes-attention { border-top-color: var(--sw-amber); }
+.review-notes-thought { border-top-color: var(--sw-accent); }
+
+.review-notes h3 {
+  font-size: 0.98rem;
+  margin: 0 0 8px;
+  color: var(--sw-text);
+}
+
+.review-notes ul {
+  margin: 0;
+  padding-inline-start: 18px;
+  display: grid;
+  gap: 8px;
+}
+
+.review-notes li {
+  color: var(--sw-text);
+  font-size: 0.92rem;
+  line-height: 1.6;
+}
+
+.review-chart {
+  width: 100%;
+  min-width: 0;
+}
+
+/* Where the money went */
+
+.review-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.review-kpis > div {
+  padding: 10px 12px;
+  border-radius: var(--sw-radius-sm);
+  background: var(--sw-surface-2);
+  border: 1px solid var(--sw-border);
+}
+
+.review-kpis span {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--sw-text-secondary);
+}
+
+.review-kpis strong {
+  font-size: 1.1rem;
+  color: var(--sw-text);
+}
+
+.review-split-tabs {
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.review-split {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.review-split-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.9rem;
+  margin-bottom: 4px;
+}
+
+.review-split-label {
+  color: var(--sw-text);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.review-split-figure {
+  color: var(--sw-text-secondary);
+  white-space: nowrap;
+}
+
+.review-split-track {
+  height: 8px;
+  border-radius: var(--sw-radius-pill);
+  background: var(--sw-surface-3);
+  overflow: hidden;
+}
+
+.review-split-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--sw-accent), var(--sw-accent-2));
+}
+
+/* Tables */
+
+.review-table-wrap {
+  overflow-x: auto;
+}
+
+.review-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.review-table th,
+.review-table td {
+  padding: 8px 10px;
+  text-align: start;
+  border-bottom: 1px solid var(--sw-border);
+  color: var(--sw-text);
+  white-space: nowrap;
+}
+
+.review-table thead th {
+  color: var(--sw-text-secondary);
+  font-weight: 600;
+  font-size: 0.82rem;
+}
+
+.review-table tfoot th,
+.review-table tfoot td {
+  font-weight: 700;
+  border-bottom: none;
+}
+
+.review-table tr.is-skipped th,
+.review-table tr.is-skipped td {
+  color: var(--sw-text-muted);
+}
+
+/* This month's investments */
+
+.review-positions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.review-positions li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 12px;
+  align-items: baseline;
+  padding: 8px 12px;
+  border-radius: var(--sw-radius-sm);
+  background: var(--sw-surface-2);
+  border-inline-start: 3px solid var(--sw-green);
+}
+
+.review-positions li.is-down {
+  border-inline-start-color: var(--sw-red);
+}
+
+.review-position-name {
+  color: var(--sw-text);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.review-position-name small {
+  color: var(--sw-text-secondary);
+  font-weight: 400;
+}
+
+/* Category cards */
+
+.review-category-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+.review-category {
+  padding: 16px;
+  border-radius: var(--sw-radius-lg);
+  border: 1px solid var(--sw-border);
+  background: var(--sw-surface);
+  box-shadow: var(--sw-shadow-sm);
+  min-width: 0;
+}
+
+.review-category.status-noData,
+.review-category.status-noGoal {
+  border-style: dashed;
+}
+
+.review-category-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.review-category-head h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--sw-text);
+}
+
+.review-category-summary {
+  margin: 8px 0 0;
+  color: var(--sw-text-secondary);
+  font-size: 0.88rem;
+  line-height: 1.6;
+}
+
+.review-partial-note {
+  margin: 6px 0 0;
+  font-size: 0.78rem;
+  color: var(--sw-amber);
+}
+
+.review-chip {
+  flex-shrink: 0;
+  min-width: 42px;
+  padding: 3px 10px;
+  border-radius: var(--sw-radius-pill);
+  text-align: center;
+  font-weight: 800;
+  font-size: 0.92rem;
+  border: 1px solid transparent;
+}
+
+.review-chip.tone-good { background: var(--sw-green-soft); color: var(--sw-green); border-color: var(--sw-green-border); }
+.review-chip.tone-mid { background: var(--sw-amber-soft); color: var(--sw-amber); }
+.review-chip.tone-low { background: var(--sw-red-soft); color: var(--sw-red); border-color: var(--sw-red-border); }
+.review-chip.tone-none { background: var(--sw-surface-2); color: var(--sw-text-secondary); font-weight: 600; font-size: 0.78rem; }
+
+.review-link-button {
+  margin-top: 10px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--sw-accent);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.review-link-button:focus-visible {
+  outline: none;
+  box-shadow: var(--sw-ring);
+  border-radius: 4px;
+}
+
+.review-components {
+  width: 100%;
+  margin-top: 8px;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.review-components th,
+.review-components td {
+  padding: 6px 4px;
+  border-top: 1px solid var(--sw-border);
+  text-align: start;
+  color: var(--sw-text);
+  vertical-align: top;
+}
+
+.review-components th {
+  font-weight: 500;
+}
+
+.review-components tr.is-skipped th {
+  color: var(--sw-text-muted);
+}
+
+.review-category .benchmark-toggle-row {
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.review-goal-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.review-goal-form label {
+  display: grid;
+  gap: 4px;
+  font-size: 0.8rem;
+  color: var(--sw-text-secondary);
+  flex: 1 1 130px;
+}
+
+.review-goal-form input {
+  min-height: 38px;
+  padding: 6px 10px;
+  border-radius: var(--sw-radius-sm);
+  border: 1px solid var(--sw-border-strong);
+  background: var(--sw-surface-3);
+  color: var(--sw-text);
+  font: inherit;
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .review-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .review-notes-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .review-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 480px) {
+  .review-hero-score {
+    gap: 12px;
+  }
+
+  .review-ring {
+    width: 104px;
+    height: 104px;
+  }
+
+  .review-hero-rating {
+    font-size: 1.3rem;
+  }
+
+  .review-positions li {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .review-positions li > :last-child {
+    grid-column: 1 / -1;
+  }
+
+  .review-one-thing-text {
+    font-size: 1rem;
+  }
+}

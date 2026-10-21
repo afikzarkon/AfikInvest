@@ -172,7 +172,7 @@ function getCloseIndex(closes) {
 
 // The most recent close on or before `date` (carrying the last trading
 // day's close forward over weekends/holidays), or null if there's none.
-function closeOnOrBefore(date, closes) {
+export function closeOnOrBefore(date, closes) {
   const index = getCloseIndex(closes);
   if (!index || index.dates.length === 0) return null;
 
