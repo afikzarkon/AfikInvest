@@ -6,7 +6,7 @@ import { useStockSectors } from '../hooks/useStockSectors';
 import { useDividendData } from '../hooks/useDividendData';
 import { useHistoricalPortfolioValue } from '../hooks/useHistoricalPortfolioValue';
 import { PrivacyContext } from './PrivacyToggle';
-import { REVIEW_DISCLAIMER_HE } from '../utils/portfolioReviewConfig';
+import { REVIEW_DISCLAIMER_HE, IDEAS_DISCLAIMER_HE } from '../utils/portfolioReviewConfig';
 import { setAmountsHidden } from '../utils/formatters';
 
 jest.mock('../hooks/useBenchmarkHistory');
@@ -101,6 +101,24 @@ describe('PortfolioReviewView', () => {
     fireEvent.click(within(form).getByRole('button', { name: 'שמירת יעד' }));
     expect(onSaveGoal).toHaveBeenCalledWith({ targetAmount: 250000, targetDate: '2030-01-01' });
     expect(await within(form).findByText('נשמר')).toBeInTheDocument();
+  });
+
+  it('opens the ideas tab: its own disclaimer, both kinds of ideas, drawbacks on every card', () => {
+    renderView();
+    fireEvent.click(screen.getByRole('tab', { name: 'רעיונות להעשרת התיק' }));
+    expect(screen.getAllByText(IDEAS_DISCLAIMER_HE)).toHaveLength(2);
+    expect(screen.getByText('דומה למה שאתה מכיר')).toBeInTheDocument();
+    expect(screen.getByText('משלים או שונה')).toBeInTheDocument();
+    const cards = screen.getAllByRole('article');
+    expect(cards.length).toBeGreaterThan(0);
+    cards.forEach((card) => {
+      expect(within(card).getByText('חסרונות וסיכונים')).toBeInTheDocument();
+      expect(within(card).getByText('למה זה עלה לך')).toBeInTheDocument();
+    });
+    // no "buy"/"sell" wording anywhere on the tab
+    expect(document.body.textContent).not.toMatch(/קנה |מכור |קנו |מכרו /);
+    // the month picker belongs to the review tab only
+    expect(screen.queryByLabelText('בחירת חודש')).not.toBeInTheDocument();
   });
 
   it('masks amounts in privacy mode, in the figures and in the sentences', () => {
