@@ -348,6 +348,13 @@ export function allocationOn(date, { holdings, transactions = [], priceData, sec
     });
   });
 
+  return summarizeAllocation(items, { date, unpriced });
+}
+
+// The splits over a list of valued items. Separate from allocationOn so a
+// hypothetical allocation (the ideas engine's "what if 10% of the next
+// deposit went here") is summarized exactly like the real one.
+export function summarizeAllocation(items, { date = null, unpriced = [] } = {}) {
   const total = items.reduce((sum, item) => sum + item.value, 0);
   const securities = items.filter((item) => item.market === 'israeli' || item.market === 'american');
   const securitiesTotal = securities.reduce((sum, item) => sum + item.value, 0);

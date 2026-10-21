@@ -240,7 +240,66 @@ export const REVIEW_BENCHMARKS = [
 ];
 
 // ---------------------------------------------------------------------------
+// Ideas engine (utils/investmentIdeas.js). Every rule is a gap or a
+// concentration in the portfolio; nothing here looks at past returns.
+
+export const IDEAS_CONFIG = {
+  // Share of the next deposit the "what it changes" simulation moves.
+  simulatedDepositShare: 0.1,
+  maxSimilar: 3,
+  maxComplement: 5,
+  // A world fund counts toward the US by this share and toward the rest of
+  // the world by the remainder - roughly the US weight in world indices.
+  // An approximation, said so on the page.
+  globalFundUsShare: 0.6,
+  rules: {
+    // Single stocks of one sector, as a share of the securities...
+    sectorStocksPct: 20,
+    // ...in at least this many stocks, or one stock of at least this size.
+    sectorStocksMinCount: 2,
+    sectorSingleStockPct: 15,
+    // Single stocks of one market against broad funds on the same market.
+    regionStocksPct: 40,
+    // Bonds and deposits below this share of the invested portfolio.
+    fixedIncomeMinPct: 5,
+    // US share at or above, with the rest of the world (not Israel) below.
+    usHeavyPct: 60,
+    exUsMinPct: 10,
+    // Israel share at or above.
+    homeHeavyPct: 70,
+    // Israel below this with the portfolio mostly in dollars.
+    homeMinPct: 3,
+    dollarHeavyPct: 85,
+    // The largest sector at or above.
+    sectorHeavyPct: 40,
+    // Single stocks at or above this share of the invested portfolio.
+    singleStocksHeavyPct: 60,
+    // Real estate / commodities are suggested only above this portfolio size.
+    minPortfolioForSatellitesILS: 20000
+  },
+  // Rule priorities: the bigger the gap a rule describes, the higher.
+  priority: {
+    noFixedIncome: 90,
+    homeBias: 85,
+    singleStocksHeavy: 80,
+    usConcentration: 75,
+    sectorGap: 70,
+    sectorStocksToEtf: 65,
+    noHome: 60,
+    regionStocksToBroad: 55,
+    sameExposureLocal: 45,
+    noRealEstate: 30,
+    noCommodity: 25
+  }
+};
+
+export const HORIZON_LABELS_HE = { short: 'עד שנתיים', medium: '2 עד 5 שנים', long: '5 שנים ומעלה' };
+export const RISK_LABELS_HE = { low: 'נמוכה', medium: 'בינונית', high: 'גבוהה' };
+
+// ---------------------------------------------------------------------------
 // Fixed copy
 
 export const REVIEW_DISCLAIMER_HE = 'הניתוח הוא כלי עזר למעקב ולהבנה ואינו מהווה ייעוץ השקעות.';
+export const IDEAS_DISCLAIMER_HE =
+  'רעיונות להעשרה ולהבנה בלבד, אינם מהווים ייעוץ או המלצה, ויש להתייעץ עם איש מקצוע מוסמך לפני כל החלטה.';
 export const NO_DATA_LABEL_HE = 'אין מספיק נתונים';

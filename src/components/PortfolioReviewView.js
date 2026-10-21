@@ -2,7 +2,9 @@ import React, { useContext, useEffect, useMemo, useState } from 'react';
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import PageToolbar from './PageToolbar';
 import { PrivacyContext } from './PrivacyToggle';
+import InvestmentIdeasPanel from './InvestmentIdeasPanel';
 import { buildPortfolioReview } from '../utils/portfolioReview';
+import { buildInvestmentIdeas } from '../utils/investmentIdeas';
 import { REVIEW_BENCHMARKS, REVIEW_DISCLAIMER_HE, NO_DATA_LABEL_HE, CATEGORY_WEIGHTS, HISTORY_MONTHS } from '../utils/portfolioReviewConfig';
 import { shiftMonth } from '../utils/portfolioReviewData';
 import { formatMonthLabel, todayISO } from '../utils/portfolioDates';
@@ -221,6 +223,7 @@ function PortfolioReviewView({
   const [split, setSplit] = useState('byAccount');
   const [openCategory, setOpenCategory] = useState(null);
   const [benchmarkKey, setBenchmarkKey] = useState(null);
+  const [tab, setTab] = useState('review');
 
   const holdings = useMemo(
     () => ({ israeliStocks, americanStocks, pensionFunds, cashFunds, bankBalances, bankSavingsFunds }),
@@ -279,29 +282,34 @@ function PortfolioReviewView({
 
   const liveTotalValueILS = analysis && analysis.summaryMetrics ? analysis.summaryMetrics.overallTotalValueILS : null;
 
-  const review = useMemo(
-    () =>
-      buildPortfolioReview(
-        {
-          holdings,
-          transactions,
-          priceData,
-          sectorBySymbol,
-          today,
-          liveTotalValueILS,
-          cpi,
-          goal: goal && goal.targetAmount ? goal : null,
-          benchmark,
-          benchmarkPoints,
-          projectedAnnualDividendsILS
-        },
-        { month }
-      ),
+  const reviewInput = useMemo(
+    () => ({
+      holdings,
+      transactions,
+      priceData,
+      sectorBySymbol,
+      today,
+      liveTotalValueILS,
+      cpi,
+      goal: goal && goal.targetAmount ? goal : null,
+      benchmark,
+      benchmarkPoints,
+      projectedAnnualDividendsILS
+    }),
     // hideAmounts: the sentences carry formatted amounts, so privacy mode
     // has to re-word them.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [holdings, transactions, priceData, sectorBySymbol, today, liveTotalValueILS, cpi, goal, benchmark, benchmarkPoints, projectedAnnualDividendsILS, month, hideAmounts]
+    [holdings, transactions, priceData, sectorBySymbol, today, liveTotalValueILS, cpi, goal, benchmark, benchmarkPoints, projectedAnnualDividendsILS, hideAmounts]
   );
+  const review = useMemo(() => buildPortfolioReview(reviewInput, { month }), [reviewInput, month]);
+
+  // Ideas are about the portfolio as it is now, whichever month the review
+  // tab is showing - and are only worked out once the tab is opened.
+  const ideas = useMemo(() => {
+    if (tab !== 'ideas' || review.empty) return null;
+    const current = review.selectedMonth === today.slice(0, 7) ? review : buildPortfolioReview(reviewInput, { withHistory: false });
+    return buildInvestmentIdeas(current);
+  }, [tab, review, reviewInput, today]);
 
   const chartTheme = getChartTheme(theme);
 
@@ -357,12 +365,26 @@ function PortfolioReviewView({
     <div className="App">
       <div className="analysis-container">
         <div className="analysis-content review-page">
-          <PageToolbar title="ביקורת תיק" subtitle={`סיכום ${text.monthLabel} - מה עבד, מה פחות, ועל מה כדאי לשים לב`} secondaryActions={monthPicker} />
-          <p className="review-disclaimer">{REVIEW_DISCLAIMER_HE}</p>
+          <PageToolbar
+            title="ביקורת תיק"
+            subtitle={tab === 'review' ? `סיכום ${text.monthLabel} - מה עבד, מה פחות, ועל מה כדאי לשים לב` : 'סוגי השקעות שכדאי להכיר, לפי הפערים בתיק שלך היום'}
+            secondaryActions={tab === 'review' ? monthPicker : null}
+          />
+          <div className="benchmark-toggle-row review-tabs" role="tablist" aria-label="תצוגה">
+            <button type="button" role="tab" aria-selected={tab === 'review'} className={`benchmark-toggle-button ${tab === 'review' ? 'active' : ''}`} onClick={() => setTab('review')}>
+              ביקורת וציון
+            </button>
+            <button type="button" role="tab" aria-selected={tab === 'ideas'} className={`benchmark-toggle-button ${tab === 'ideas' ? 'active' : ''}`} onClick={() => setTab('ideas')}>
+              רעיונות להעשרת התיק
+            </button>
+          </div>
+          {tab === 'review' ? <p className="review-disclaimer">{REVIEW_DISCLAIMER_HE}</p> : null}
 
           {pricesLoading || benchmarkLoading ? <p className="review-loading" role="status">טוען היסטוריית מחירים ומדדים - חלק מהנתונים יתעדכנו בעוד רגע…</p> : null}
           {pricesError ? <p className="review-loading" role="status">{pricesError}. נתונים שתלויים במחירי עבר יוצגו כ"{NO_DATA_LABEL_HE}".</p> : null}
 
+          {tab === 'ideas' ? <InvestmentIdeasPanel ideas={ideas} /> : (
+          <>
           {/* Overall */}
           <section className="analysis-section review-hero" aria-label="ציון כללי">
             <div className="review-hero-score">
@@ -574,6 +596,8 @@ function PortfolioReviewView({
           </section>
 
           <p className="review-disclaimer review-disclaimer-foot">{REVIEW_DISCLAIMER_HE}</p>
+          </>
+          )}
         </div>
       </div>
     </div>

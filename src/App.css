@@ -14507,3 +14507,155 @@ select.auth-input[dir='ltr'] {
     font-size: 1rem;
   }
 }
+
+/* --- Ideas to enrich the portfolio (/review, second tab) -----------------
+   Advantages and drawbacks are two columns of the same weight: a card never
+   lets the upside outshout the downside. */
+
+.review-tabs {
+  flex-wrap: wrap;
+  margin: 0 0 14px;
+}
+
+.ideas-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(420px, 100%), 1fr));
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+.ideas-empty {
+  margin-bottom: 24px;
+}
+
+.idea-card {
+  padding: 18px;
+  border-radius: var(--sw-radius-lg);
+  border: 1px solid var(--sw-border);
+  background: var(--sw-surface);
+  box-shadow: var(--sw-shadow-sm);
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.idea-card h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  color: var(--sw-text);
+}
+
+.idea-card h4 {
+  margin: 0 0 6px;
+  font-size: 0.9rem;
+  color: var(--sw-text);
+}
+
+.idea-card ul {
+  margin: 0;
+  padding-inline-start: 18px;
+  display: grid;
+  gap: 4px;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: var(--sw-text);
+}
+
+.idea-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.idea-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.idea-risk-low { background: var(--sw-green-soft); color: var(--sw-green); font-size: 0.78rem; font-weight: 700; }
+.idea-risk-medium { background: var(--sw-amber-soft); color: var(--sw-amber); font-size: 0.78rem; font-weight: 700; }
+.idea-risk-high { background: var(--sw-red-soft); color: var(--sw-red); font-size: 0.78rem; font-weight: 700; }
+
+.idea-sample {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--sw-amber);
+}
+
+.idea-why {
+  padding: 10px 12px;
+  border-radius: var(--sw-radius-sm);
+  background: var(--sw-accent-soft);
+  border-inline-start: 3px solid var(--sw-accent);
+}
+
+.idea-description {
+  margin: 0;
+  color: var(--sw-text-secondary);
+  font-size: 0.88rem;
+  line-height: 1.6;
+}
+
+.idea-pros-cons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.idea-pros,
+.idea-cons {
+  padding: 10px 12px;
+  border-radius: var(--sw-radius-sm);
+  background: var(--sw-surface-2);
+  border: 1px solid var(--sw-border);
+}
+
+.idea-pros { border-top: 3px solid var(--sw-green); }
+.idea-cons { border-top: 3px solid var(--sw-red); }
+
+.idea-facts {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.idea-facts dt {
+  font-size: 0.78rem;
+  color: var(--sw-text-secondary);
+}
+
+.idea-facts dd {
+  margin: 2px 0 0;
+  font-size: 0.86rem;
+  color: var(--sw-text);
+  line-height: 1.55;
+}
+
+.idea-sim-block {
+  padding-top: 10px;
+  border-top: 1px solid var(--sw-border);
+}
+
+.idea-sim th,
+.idea-sim td {
+  padding: 6px 8px;
+  font-size: 0.84rem;
+}
+
+.ideas-catalog-notice {
+  margin-bottom: 12px;
+}
+
+@media (max-width: 560px) {
+  .idea-pros-cons {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .idea-card {
+    padding: 14px;
+  }
+}
