@@ -91,6 +91,13 @@ export const ROUTES = [
     hint: 'ביצועים ופיזור',
     icon: 'analysis'
   },
+  {
+    key: 'portfolio-review',
+    path: '/review',
+    label: 'ביקורת תיק',
+    hint: 'ציון חודשי וביקורת',
+    icon: 'review'
+  },
   // Reachable from the "+ הוספת מידע" action rather than the sidebar, but a
   // real route all the same so the form survives a refresh and the browser's
   // back button leaves it the way it leaves any other page.
@@ -109,7 +116,7 @@ export const ROUTES = [
 // separating them from the overview and the tools keeps each group short
 // enough to read at a glance.
 export const NAV_GROUPS = [
-  { label: 'סקירה', keys: ['home', 'analytics', 'alerts', 'monthly-tracker'] },
+  { label: 'סקירה', keys: ['home', 'analytics', 'portfolio-review', 'alerts', 'monthly-tracker'] },
   {
     label: 'נכסים',
     keys: ['israeli-stocks', 'us-stocks', 'provident-funds', 'cash-and-checking', 'bank-savings']

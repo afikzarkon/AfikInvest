@@ -65,6 +65,22 @@ const VALIDATORS = {
     return out;
   },
 
+  // The portfolio review's goal (utils/portfolioReview.js): an amount to
+  // reach by a date. An empty body clears it.
+  goals(input) {
+    const src = input && typeof input === 'object' ? input : {};
+    const out = {};
+    if (src.targetAmount === undefined && src.targetDate === undefined) return out;
+    out.targetAmount = numberIn(src.targetAmount, 1, 1000000000, 'targetAmount');
+    const date = String(src.targetDate || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(`${date}T00:00:00Z`))) {
+      throw new Error('targetDate must be YYYY-MM-DD');
+    }
+    out.targetDate = date;
+    if (src.label !== undefined && src.label !== null && src.label !== '') out.label = String(src.label).slice(0, 60);
+    return out;
+  },
+
   // Which emails to receive (see emailPreferences.js).
   notifications(input) {
     const { normalizePreferences } = require('./emailPreferences');
