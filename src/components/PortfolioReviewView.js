@@ -203,6 +203,8 @@ function GoalForm({ goal, onSave }) {
   );
 }
 
+const EMPTY_SNAPSHOTS = [];
+
 function PortfolioReviewView({
   israeliStocks = [],
   americanStocks = [],
@@ -211,6 +213,8 @@ function PortfolioReviewView({
   bankBalances = [],
   bankSavingsFunds = [],
   transactions = [],
+  // The saved daily values: a month-end the price history cannot value.
+  valueSnapshots = EMPTY_SNAPSHOTS,
   analysis,
   cpi,
   theme,
@@ -290,6 +294,7 @@ function PortfolioReviewView({
       sectorBySymbol,
       today,
       liveTotalValueILS,
+      valueSnapshots,
       cpi,
       goal: goal && goal.targetAmount ? goal : null,
       benchmark,
@@ -299,7 +304,7 @@ function PortfolioReviewView({
     // hideAmounts: the sentences carry formatted amounts, so privacy mode
     // has to re-word them.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [holdings, transactions, priceData, sectorBySymbol, today, liveTotalValueILS, cpi, goal, benchmark, benchmarkPoints, projectedAnnualDividendsILS, hideAmounts]
+    [holdings, transactions, priceData, sectorBySymbol, today, liveTotalValueILS, valueSnapshots, cpi, goal, benchmark, benchmarkPoints, projectedAnnualDividendsILS, hideAmounts]
   );
   const review = useMemo(() => buildPortfolioReview(reviewInput, { month }), [reviewInput, month]);
 

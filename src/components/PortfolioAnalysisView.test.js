@@ -1,6 +1,8 @@
 import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import PortfolioAnalysisView from './PortfolioAnalysisView';
 import { calculatePortfolioAnalysis } from '../utils/portfolioAnalysis';
+import { buildMoneyEvents } from '../utils/portfolioReviewData';
+import { moneyInByMonth } from '../utils/moneyIn';
 import { useBenchmarkHistory } from '../hooks/useBenchmarkHistory';
 import { useStockSectors } from '../hooks/useStockSectors';
 import { useAnalystRecommendations } from '../hooks/useAnalystRecommendations';
@@ -880,23 +882,16 @@ describe('PortfolioAnalysisView', () => {
           ]
         }
       ];
-      const analysisWithPension = calculatePortfolioAnalysis(
-        israeliStocks,
-        [],
-        pensionWithLedger,
-        [],
-        [],
-        []
-      );
-      const months = analysisWithPension.monthlyDistribution.map((m) => m.month);
+      const distribution = moneyInByMonth(buildMoneyEvents({ holdings: { israeliStocks, pensionFunds: pensionWithLedger } }));
+      const months = distribution.map((m) => m.month);
 
       expect(months).toContain('2023-03');
       expect(months).toContain('2023-09');
       // Not collapsed onto the fund's last-updated month.
       expect(months).not.toContain('2024-06');
 
-      const march = analysisWithPension.monthlyDistribution.find((m) => m.month === '2023-03');
-      expect(march.value).toBe(1000);
+      const march = distribution.find((m) => m.month === '2023-03');
+      expect(march.invested).toBe(1000);
     });
   });
 });

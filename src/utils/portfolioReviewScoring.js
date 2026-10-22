@@ -207,7 +207,10 @@ export function scoreComparison({ current, history }) {
     row('invested', 'סכום שהושקע', (m) => m.invested, 'ils'),
     row('returnPct', 'תשואה חודשית', (m) => m.returnPct, 'pct'),
     row('endValue', 'שווי התיק בסוף החודש', (m) => (m.valuePartial ? null : m.endValue), 'ils'),
-    row('trades', 'מספר עסקאות', (m) => m.trades, 'count')
+    // Counts what "סכום שהושקע" sums - purchases and investment deposits -
+    // so a month of provident-fund deposits does not read as "0" beside an
+    // amount. Sales are in the activity category.
+    row('investCount', 'רכישות והפקדות', (m) => m.investCount, 'count')
   ];
 
   const components = [];

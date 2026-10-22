@@ -342,6 +342,23 @@ describe('month facts', () => {
     expect(f.returnPct).toBeNull();
     expect(f.positions[0].missing).toBe(true);
   });
+
+  it('takes a finished month-end the closes cannot value from a daily snapshot near it', () => {
+    const holdings = { americanStocks: [usLot(1, 'VOO', '2026-08-05', 500, 1)] };
+    const valueSnapshots = [
+      { date: '2026-08-31', totalValueILS: 1900 },
+      { date: '2026-09-29', totalValueILS: 2000 },
+      { date: '2026-09-20', totalValueILS: 1500 }
+    ];
+    const f = buildMonthFacts('2026-09', buildReviewContext({ holdings, valueSnapshots, today: TODAY }));
+    expect(f.valuePartial).toBe(false);
+    expect(f.endValue).toBe(2000);
+    expect(f.endValueFromSnapshot).toBe('2026-09-29');
+    expect(f.returnPct).toBeCloseTo((2000 / 1900 - 1) * 100, 6);
+    // Nothing within 3 days of the month-end: still unknown.
+    const none = buildMonthFacts('2026-09', buildReviewContext({ holdings, valueSnapshots: [{ date: '2026-09-20', totalValueILS: 1500 }], today: TODAY }));
+    expect(none.valuePartial).toBe(true);
+  });
 });
 
 describe('buildPortfolioReview', () => {

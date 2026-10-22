@@ -37,6 +37,7 @@ import { sectorFromTaseBranch } from './israeliSectorMapping';
 import { ETF_SECTOR_KEY, UNCLASSIFIED_SECTOR_KEY, sectorLabelHe } from './sectorLabels';
 import { MONTHLY_CATEGORY_LABELS_HE } from './monthlySnapshotComparison';
 import { normalizeIsraeliPrice, toNum } from './formatters';
+import { COUNTS_AS_INVESTED, israelDateOf, isInvestedEvent, moneyInBetween } from './moneyIn';
 
 // US tickers that are funds rather than single companies. Yahoo's profile
 // gives them no sector, so without this list an S&P 500 tracker would read
@@ -131,10 +132,10 @@ export function describeSecurity(market, lot, sectorBySymbol = {}) {
 }
 
 const ACCOUNT_KINDS = {
-  pensionFunds: { account: 'pension', instrument: 'providentFund', label: 'קופת גמל', invest: true },
-  bankSavingsFunds: { account: 'bankSavings', instrument: 'deposit', label: 'חיסכון בבנק', invest: true },
-  cashFunds: { account: 'cashFunds', instrument: 'moneyMarket', label: 'קרן כספית', invest: false },
-  bankBalances: { account: 'bank', instrument: 'cash', label: 'עו"ש', invest: false }
+  pensionFunds: { account: 'pension', instrument: 'providentFund', label: 'קופת גמל', invest: COUNTS_AS_INVESTED.providentFund },
+  bankSavingsFunds: { account: 'bankSavings', instrument: 'deposit', label: 'חיסכון בבנק', invest: COUNTS_AS_INVESTED.bankSavings },
+  cashFunds: { account: 'cashFunds', instrument: 'moneyMarket', label: 'קרן כספית', invest: COUNTS_AS_INVESTED.moneyMarket },
+  bankBalances: { account: 'bank', instrument: 'cash', label: 'עו"ש', invest: COUNTS_AS_INVESTED.bank }
 };
 
 function describeAccount(key, account, index) {
@@ -177,11 +178,12 @@ export function buildMoneyEvents({ holdings, transactions = [], sectorBySymbol =
   ['israeli', 'american'].forEach((market) => {
     const lots = market === 'american' ? expanded.americanStocks : expanded.israeliStocks;
     (lots || []).forEach((lot) => {
-      if (!isDate(lot.purchaseDate)) return;
+      const date = isDate(lot.purchaseDate) ? israelDateOf(lot.purchaseDate) : null;
+      if (!date) return;
       const amountILS = lotCostILS(market, lot);
       if (!(amountILS > 0)) return;
       const originId = lot.isClosedSlice ? String(lot.id).split(':sold:')[0] : String(lot.id);
-      const key = `${market}|${originId}|${lot.purchaseDate.slice(0, 10)}`;
+      const key = `${market}|${originId}|${date}`;
       const existing = buys.get(key);
       if (existing) {
         existing.amountILS += amountILS;
@@ -189,7 +191,7 @@ export function buildMoneyEvents({ holdings, transactions = [], sectorBySymbol =
       }
       const event = {
         kind: 'buy',
-        date: lot.purchaseDate.slice(0, 10),
+        date,
         amountILS,
         security: describeSecurity(market, lot, sectorBySymbol),
         fromLedger: Boolean(lot.txId)
@@ -204,10 +206,11 @@ export function buildMoneyEvents({ holdings, transactions = [], sectorBySymbol =
       const security = describeAccount(key, account, index);
       (Array.isArray(account.deposits) ? account.deposits : []).forEach((deposit) => {
         const amount = toNum(deposit && deposit.amount);
-        if (!deposit || !isDate(deposit.date) || amount === 0) return;
+        const date = deposit && isDate(deposit.date) ? israelDateOf(deposit.date) : null;
+        if (!date || amount === 0) return;
         events.push({
           kind: amount > 0 ? 'deposit' : 'withdrawal',
-          date: deposit.date.slice(0, 10),
+          date,
           amountILS: Math.abs(amount),
           security,
           invest: security.invest
@@ -216,8 +219,9 @@ export function buildMoneyEvents({ holdings, transactions = [], sectorBySymbol =
     });
   });
 
-  (transactions || []).forEach((tx) => {
-    if (!tx || !isDate(tx.date)) return;
+  (transactions || []).forEach((raw) => {
+    if (!raw || !isDate(raw.date)) return;
+    const tx = { ...raw, date: israelDateOf(raw.date) };
     const rate = tx.currency === 'USD' ? toNum(tx.fxRate) : 1;
     const security =
       tx.assetClass === 'israeli' || tx.assetClass === 'american'
@@ -418,11 +422,13 @@ export function buildMonthFacts(monthKey, ctx) {
   const inMonth = (e) => e.date > start && e.date <= end;
   const monthEvents = events.filter(inMonth);
 
-  const investEvents = monthEvents.filter((e) => e.kind === 'buy' || (e.kind === 'deposit' && e.invest));
-  const invested = sum(investEvents);
+  // The money in is moneyIn.js's, the same figures the analysis page shows.
+  const moneyIn = moneyInBetween(events, start, end);
+  const investEvents = monthEvents.filter(isInvestedEvent);
+  const invested = moneyIn.invested;
   const sold = sum(monthEvents.filter((e) => e.kind === 'sell'));
   const withdrawn = sum(monthEvents.filter((e) => e.kind === 'withdrawal' && e.invest));
-  const parked = sum(monthEvents.filter((e) => e.kind === 'deposit' && !e.invest));
+  const parked = moneyIn.parked;
   const fees = sum(monthEvents.filter((e) => e.kind === 'fee'));
   const dividends = sum(monthEvents.filter((e) => e.kind === 'dividend'));
 
@@ -445,8 +451,17 @@ export function buildMonthFacts(monthKey, ctx) {
 
   // Value and return.
   const expanded = ctx.expanded;
-  const startPoint = computePortfolioValueAtDate(start, expanded, priceData, { anchorLedgerAccountsToFirstRecord: true });
-  const endPoint = computePortfolioValueAtDate(end, expanded, priceData, { anchorLedgerAccountsToFirstRecord: true });
+  const startPointRaw = computePortfolioValueAtDate(start, expanded, priceData, { anchorLedgerAccountsToFirstRecord: true });
+  const endPointRaw = computePortfolioValueAtDate(end, expanded, priceData, { anchorLedgerAccountsToFirstRecord: true });
+  // A month-end the closes cannot price in full (a fund with no price
+  // history) can still have been saved by the daily snapshot that day.
+  const fromSnapshot = (point, date) => {
+    if (!point.isPartial && point.valueILS !== null && point.valueILS !== undefined) return point;
+    const saved = snapshotNear(ctx.valueSnapshots, date);
+    return saved ? { ...point, valueILS: saved.totalValueILS, isPartial: false, fromSnapshot: saved.date } : point;
+  };
+  const startPoint = fromSnapshot(startPointRaw, start);
+  const endPoint = isPartial ? endPointRaw : fromSnapshot(endPointRaw, end);
   const startValue = startPoint.valueILS || 0;
   let endValue = endPoint.valueILS;
   let valuePartial = Boolean(startPoint.isPartial || endPoint.isPartial);
@@ -483,11 +498,14 @@ export function buildMonthFacts(monthKey, ctx) {
     sells,
     deposits,
     trades: buys + sells,
+    // The purchases and deposits `invested` is the sum of.
+    investCount: moneyIn.count,
     destinations,
     topStock: topStock ? { ...topStock, shareOfMonth: invested > 0 ? topStock.amount / invested : 0 } : null,
     startValue: startPoint.valueILS,
     endValue: endValue === undefined ? null : endValue,
     valuePartial,
+    endValueFromSnapshot: endPoint.fromSnapshot || null,
     missingSymbols: [...new Set([...(startPoint.missingSymbols || []), ...(endPoint.missingSymbols || [])])],
     endByCategory: endPoint.byCategory,
     gain: md && !valuePartial ? md.gain : null,
@@ -498,6 +516,21 @@ export function buildMonthFacts(monthKey, ctx) {
 }
 
 const sum = (list) => list.reduce((s, e) => s + (e.amountILS || 0), 0);
+
+// The latest saved daily value in the 3 days up to `date` - a month's last
+// day may fall on a weekend or a day the app was not opened.
+const SNAPSHOT_SLACK_DAYS = 2;
+export function snapshotNear(snapshots, date) {
+  const from = addDays(date, -SNAPSHOT_SLACK_DAYS);
+  let best = null;
+  (snapshots || []).forEach((s) => {
+    if (!s || !isDate(s.date) || !Number.isFinite(Number(s.totalValueILS)) || !(Number(s.totalValueILS) > 0)) return;
+    const d = s.date.slice(0, 10);
+    if (d < from || d > date) return;
+    if (!best || d > best.date) best = { date: d, totalValueILS: Number(s.totalValueILS) };
+  });
+  return best;
+}
 
 // How each security did over (start, end]: its value change, net of what
 // was bought and sold of it, plus what it paid out.
@@ -550,7 +583,10 @@ export function buildReviewContext({
   priceData = {},
   sectorBySymbol = {},
   today,
-  liveTotalValueILS = null
+  liveTotalValueILS = null,
+  // Saved daily values ([{ date, totalValueILS }]): the month-end value
+  // when the closes cannot price it (see buildMonthFacts).
+  valueSnapshots = []
 }) {
   const h = {
     israeliStocks: holdings.israeliStocks || [],
@@ -579,6 +615,7 @@ export function buildReviewContext({
     sectorBySymbol: sectorBySymbol || {},
     today,
     liveTotalValueILS: Number.isFinite(liveTotalValueILS) ? liveTotalValueILS : null,
+    valueSnapshots: Array.isArray(valueSnapshots) ? valueSnapshots : [],
     lotGroups: groupLots(expanded),
     // The flows that neutralize the monthly return - the same pairing the
     // performance chart uses (anchored ledger accounts + opening balances).

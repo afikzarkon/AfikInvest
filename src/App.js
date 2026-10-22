@@ -1106,6 +1106,7 @@ function App() {
           <PortfolioReviewView
             {...holdings}
             transactions={transactions}
+            valueSnapshots={snapshots}
             analysis={analysis}
             cpi={cpi}
             theme={theme}

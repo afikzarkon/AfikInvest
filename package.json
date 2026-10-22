@@ -52,7 +52,8 @@
     "db:users": "node scripts/list-users.js",
     "admin:grant": "node scripts/grant-admin.js",
     "worker": "node src/worker.js",
-    "dcf:run": "node scripts/dcf-run.js"
+    "dcf:run": "node scripts/dcf-run.js",
+    "diag:money-in": "react-scripts test --watchAll=false src/utils/moneyIn.diagnostic.test.js"
   },
   "eslintConfig": {
     "extends": [

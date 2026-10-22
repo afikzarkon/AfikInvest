@@ -2878,6 +2878,23 @@ h3 {
   color: var(--sw-text-secondary);
 }
 
+/* Money parked in the current account / money-market funds that month: a
+   line of its own under the invested figure, never added to it. */
+.date-list .date-item {
+  flex-wrap: wrap;
+}
+
+.date-parked {
+  flex-basis: 100%;
+  font-size: 0.8rem;
+  color: var(--sw-text-dim);
+}
+
+.year-accordion-parked {
+  margin: -6px 0 0;
+  padding: 0 16px 12px;
+}
+
 .reports-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
