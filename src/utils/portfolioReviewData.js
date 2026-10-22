@@ -226,6 +226,13 @@ export function buildMoneyEvents({ holdings, transactions = [], sectorBySymbol =
     if ((tx.type === 'BUY' || tx.type === 'SELL') && toNum(tx.fees) > 0) {
       events.push({ kind: 'fee', date: tx.date, amountILS: toNum(tx.fees) * rate, security, txType: tx.type });
     }
+    // Converting at a worse rate than the representative one costs the
+    // difference on the converted amount, whichever way the trade went.
+    const paidRate = toNum(tx.fxPaidRate);
+    if (tx.currency === 'USD' && (tx.type === 'BUY' || tx.type === 'SELL') && paidRate > 0 && rate > 0) {
+      const fxCost = Math.abs(paidRate - rate) * toNum(tx.units) * toNum(tx.price);
+      if (fxCost > 0) events.push({ kind: 'fxCost', date: tx.date, amountILS: fxCost, security, txType: tx.type });
+    }
     if (tx.type === 'SELL') {
       events.push({
         kind: 'sell',

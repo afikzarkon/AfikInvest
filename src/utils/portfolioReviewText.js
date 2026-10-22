@@ -167,6 +167,7 @@ function collectNotes(review) {
   if (cost.status === 'scored' && Number.isFinite(cost.metrics.feesPct)) {
     if (cost.metrics.feesPct < THRESHOLDS.costs.lowFeeBadgePct) add('good', 34, `העמלות השנתיות שלך ${pct(cost.metrics.feesPct, 2)} מהתיק (${ils(cost.metrics.feesILS)} בתקופה).`, null, 'costs');
     else add('attention', 60, `העמלות השנתיות שלך ${pct(cost.metrics.feesPct, 2)} מהתיק (${ils(cost.metrics.feesILS)}). זה מקטין את התשואה בכל שנה מחדש.`, 'להשוות את מסלול העמלות שלך מול מסלולים אחרים אצל הברוקר.', 'costs');
+    if (cost.metrics.fxCostILS > 0) add('thought', 40, `מתוך העלויות, ${ils(cost.metrics.fxCostILS)} הם הפער בין שער ההמרה ששילמת לשער היציג.`, 'לבדוק אם הברוקר מאפשר המרה בשער קרוב יותר ליציג, או להחזיק יתרה דולרית.', 'costs');
   }
 
   // 10. Tax

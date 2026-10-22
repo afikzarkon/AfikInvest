@@ -631,17 +631,21 @@ export function scoreActivity({ ctx, windowMonths, end }) {
 
 export function scoreCosts({ ctx, windowMonths, end, hasLedger }) {
   const t = THRESHOLDS.costs;
-  const missingFields = ['managementFees', 'fxCosts'];
   if (!hasLedger) {
     return finishCategory('costs', {
-      reason: 'עמלות נשמרות רק בעסקאות שנרשמו בטופס "הוספת מידע". דמי ניהול ועלויות המרה אינם נשמרים במערכת.',
-      metrics: { missingFields }
+      reason: 'עמלות ועלויות המרה נשמרות רק בעסקאות שנרשמו בטופס "הוספת מידע". דמי ניהול אינם נשמרים במערכת.',
+      metrics: { missingFields: ['managementFees', 'fxCosts'] }
     });
   }
   const from = addDays(`${shiftMonth(monthKeyOf(end), -(windowMonths.length - 1))}-01`, -1);
   const fees = ctx.events.filter((e) => e.kind === 'fee' && e.date > from && e.date <= end);
+  // Only trades that recorded the rate actually paid tell the conversion
+  // cost; with none of them it stays unknown.
+  const fxEvents = ctx.events.filter((e) => e.kind === 'fxCost' && e.date > from && e.date <= end);
+  const fxCostILS = fxEvents.length ? fxEvents.reduce((s, e) => s + e.amountILS, 0) : null;
+  const missingFields = fxEvents.length ? ['managementFees'] : ['managementFees', 'fxCosts'];
   const traded = ctx.events.filter((e) => (e.kind === 'buy' && e.fromLedger) || e.kind === 'sell').filter((e) => e.date > from && e.date <= end);
-  const feesILS = fees.reduce((s, e) => s + e.amountILS, 0);
+  const feesILS = fees.reduce((s, e) => s + e.amountILS, 0) + (fxCostILS || 0);
   const tradedILS = traded.reduce((s, e) => s + (e.grossILS || e.amountILS), 0);
   const values = windowMonths.map((m) => m.endValue).filter((v) => Number.isFinite(v) && v > 0);
   const avgValue = values.length ? mean(values) : null;
@@ -652,7 +656,7 @@ export function scoreCosts({ ctx, windowMonths, end, hasLedger }) {
   ];
   return finishCategory('costs', {
     components,
-    metrics: { feesILS, tradedILS, feesOfTradedPct: tradedILS > 0 ? (feesILS / tradedILS) * 100 : null, feesPct, months, missingFields }
+    metrics: { feesILS, tradedILS, feesOfTradedPct: tradedILS > 0 ? (feesILS / tradedILS) * 100 : null, feesPct, fxCostILS, months, missingFields }
   });
 }
 

@@ -517,6 +517,14 @@ function AssetEntryModal({
             </div>
           )}
 
+          {needsFx && (state.action === 'BUY' || state.action === 'SELL') && (
+            <div className="form-group">
+              <label htmlFor="entry-fx-paid">שער ההמרה בפועל (לא חובה)</label>
+              <input id="entry-fx-paid" type="number" inputMode="decimal" step="any" min="0" value={state.fxPaidRate} onChange={(e) => set({ fxPaidRate: e.target.value })} />
+              <small className="form-help">אם הבנק או הברוקר המירו בשער אחר מהיציג - הזינו אותו כאן, וביקורת התיק תראה כמה עלתה ההמרה.</small>
+            </div>
+          )}
+
           {state.action !== 'VALUE' && (
             <div className="form-group">
               <label htmlFor="entry-note">הערה</label>

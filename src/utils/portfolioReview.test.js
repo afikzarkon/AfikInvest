@@ -317,6 +317,15 @@ describe('month facts', () => {
     expect(buildMonthFacts('2026-04', ctx).sold).toBeCloseTo((1200 - 2) * 4, 6);
   });
 
+  it('records the conversion cost of a trade with the rate actually paid', () => {
+    const tx = { ...normalizeTransaction({ type: 'BUY', date: '2026-02-10', assetClass: 'american', assetId: 'NVDA', units: 10, price: 100, fees: 0, fxRate: 3.7, fxPaidRate: 3.75 }, { today: TODAY }), id: 'b' };
+    const applied = applyTransaction({ israeliStocks: [], americanStocks: [] }, tx, { newLotId: 7 });
+    const ctx = buildReviewContext({ holdings: applied.portfolio, transactions: [applied.transaction], today: TODAY });
+    const fx = ctx.events.filter((e) => e.kind === 'fxCost');
+    expect(fx).toHaveLength(1);
+    expect(fx[0].amountILS).toBeCloseTo(50, 6);
+  });
+
   it('marks the running month as partial and ends it today', () => {
     const ctx = buildReviewContext({ holdings: { americanStocks: [usLot(1, 'VOO', '2026-10-05', 500, 1)] }, today: TODAY });
     const f = buildMonthFacts('2026-10', ctx);

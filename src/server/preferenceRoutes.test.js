@@ -49,6 +49,33 @@ describe.each(STORE_FACTORIES)('preferences API (%s)', (_name, makeStore) => {
     expect((await request(baseUrl, 'PUT', '/api/preferences/goals', { token, body: { targetAmount: 100, targetDate: '2030-13-45' } })).status).toBe(400);
   });
 
+  test('keeps horizon and risk tolerance without a goal amount', async () => {
+    const put = await request(baseUrl, 'PUT', '/api/preferences/goals', { token, body: { horizonYears: '10', riskTolerance: 'medium' } });
+    expect(put.body.value).toEqual({ horizonYears: 10, riskTolerance: 'medium' });
+    expect((await request(baseUrl, 'PUT', '/api/preferences/goals', { token, body: { riskTolerance: 'wild' } })).status).toBe(400);
+  });
+
+  test('round-trips holding details and rejects unknown values', async () => {
+    const put = await request(baseUrl, 'PUT', '/api/preferences/holdingDetails', {
+      token,
+      body: {
+        providentTracks: { 'pension:1': 'sp500' },
+        fees: { 'pension:1': { annualPct: '0.5', depositPct: '' } },
+        brokers: { 'american:VOO': ' IBI ' },
+        assetClasses: { 'israeli:1159250': 'bond' },
+        junk: 1
+      }
+    });
+    expect(put.body.value).toEqual({
+      providentTracks: { 'pension:1': 'sp500' },
+      fees: { 'pension:1': { annualPct: 0.5 } },
+      brokers: { 'american:VOO': 'IBI' },
+      assetClasses: { 'israeli:1159250': 'bond' }
+    });
+    expect((await request(baseUrl, 'PUT', '/api/preferences/holdingDetails', { token, body: { assetClasses: { 'israeli:1': 'nope' } } })).status).toBe(400);
+    expect((await request(baseUrl, 'PUT', '/api/preferences/holdingDetails', { token, body: { brokers: { 'bad key': 'x' } } })).status).toBe(400);
+  });
+
   test('rejects bad values, unknown namespaces and anonymous users', async () => {
     expect((await request(baseUrl, 'PUT', '/api/preferences/recommendations', { token, body: { lotMethod: 'RANDOM' } })).status).toBe(400);
     expect((await request(baseUrl, 'PUT', '/api/preferences/recommendations', { token, body: { enabledRules: ['nope'] } })).status).toBe(400);
