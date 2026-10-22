@@ -14,10 +14,10 @@ import React, { useState } from 'react';
 // `items` is built by the table that owns the data (IsraeliStocksTable,
 // AmericanStocksTable), so the cards and the desktop table are two views
 // of one set of figures:
-//   { key, name, idLine, lotsCount, value, valueSub, pl, daily,
+//   { key, name, idLine, lotsCount, value, valueSub, pl, daily, yesterday,
 //     details: [{ label, value }], ext: [...], actions,
 //     lots: [{ key, title, pl, details, ext, actions }] }
-// value/pl/daily and every entry's value are ready-made nodes.
+// value/pl/daily/yesterday and every entry's value are ready-made nodes.
 
 function FieldList({ fields }) {
   if (!fields || fields.length === 0) return null;
@@ -78,6 +78,12 @@ function HoldingCards({ items, showExtended = false, label }) {
                 <span>היום</span>
                 <span className="hc-line">{item.daily}</span>
               </span>
+              {item.yesterday ? (
+                <span className="hc-daily hc-yesterday">
+                  <span>אתמול</span>
+                  <span className="hc-line">{item.yesterday}</span>
+                </span>
+              ) : null}
             </button>
             {open && (
               <div className="hc-body" id={detailsId}>

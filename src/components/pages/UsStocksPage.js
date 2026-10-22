@@ -26,6 +26,7 @@ function UsStocksPage({
   handleDelete,
   toggleGroup,
   hasLoadedLivePrices = false,
+  lastSession = null,
   ...toolbarProps
 }) {
   return (
@@ -64,6 +65,7 @@ function UsStocksPage({
         toggleGroup={toggleGroup}
         editingField={editingField}
         pricesPending={!hasLoadedLivePrices}
+        lastSession={lastSession}
       />
     </AssetPageLayout>
   );

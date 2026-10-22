@@ -39,6 +39,29 @@ export function Pct({ value, digits = 2 }) {
   );
 }
 
+// "15.10" - a session date, short.
+export const shortSessionDate = (iso) => (iso ? `${Number(iso.slice(8, 10))}.${Number(iso.slice(5, 7))}` : '');
+
+// The change on the holding's last completed session (see
+// utils/lastSessionChange.js): "אתמול +12.30 ₪ +0.40%", or "—" when it is
+// not known. The session's date is in the tooltip - on a Monday it is
+// Friday's.
+export function LastSessionChange({ result, label = 'אתמול' }) {
+  if (!result || !Number.isFinite(result.changeILS)) {
+    return (
+      <span className="mv-last" title="אין עדיין נתון על יום המסחר האחרון">
+        {label} —
+      </span>
+    );
+  }
+  const title = `יום המסחר ${shortSessionDate(result.date)}${result.fxApprox ? ' · לפי שער הדולר הנוכחי' : ''}`;
+  return (
+    <span className="mv-last" title={title}>
+      {label} <Money value={result.changeILS} signed /> <Pct value={result.pct} />
+    </span>
+  );
+}
+
 // A cell's content: the main line, and optionally a quieter line under it.
 export function Merged({ main, sub }) {
   return (

@@ -11111,6 +11111,18 @@ select.auth-input[dir='ltr'] {
   color: var(--sw-text-muted);
 }
 
+/* "אתמול" right under "היום": the same row, without a second rule. */
+.hc-yesterday {
+  padding-top: 2px;
+  border-top: none;
+}
+
+.mv-last {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
 .hc-body {
   display: flex;
   flex-direction: column;

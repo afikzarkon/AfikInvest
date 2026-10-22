@@ -15,6 +15,7 @@ import { useAutoSnapshot } from './hooks/useAutoSnapshot';
 import { buildItemizedMonthlyBreakdown } from './utils/monthlySnapshotBreakdown';
 import { useRebalanceTargets } from './hooks/useRebalanceTargets';
 import { useTransactions } from './hooks/useTransactions';
+import { useLastSessionChange } from './hooks/useLastSessionChange';
 import { useAlerts } from './hooks/useAlerts';
 import { usePreferences } from './hooks/usePreferences';
 import { useTheme } from './hooks/useTheme';
@@ -567,6 +568,16 @@ function App() {
     remove: removeTransaction
   } = useTransactions(user, authHeader);
 
+  // "שינוי אתמול" - each holding's last completed session, for the
+  // dashboard and the tables (see utils/lastSessionChange.js). Off for the
+  // sample portfolio, whose made-up symbols have no history to fetch.
+  const lastSession = useLastSessionChange({
+    israeliStocks,
+    americanStocks,
+    transactions,
+    enabled: Boolean(user) && !isSamplePortfolio
+  });
+
   const {
     alerts,
     unreadCount: unreadAlertCount,
@@ -974,7 +985,8 @@ function App() {
     onOpenLedgerEntry: handleOpenLedgerEntry,
     onDeleteTransaction: handleDeleteTransaction,
     transactions,
-    onUpdateTransaction: handleUpdateTransaction
+    onUpdateTransaction: handleUpdateTransaction,
+    lastSession
   };
 
   // THE EXPORT IS ALWAYS THE WHOLE PORTFOLIO.
@@ -1182,6 +1194,7 @@ function App() {
             {...holdings}
             {...toolbarProps}
             summary={summary}
+            lastSession={lastSession.total}
             onNavigate={navigate}
             onLoadSamplePortfolio={handleLoadSamplePortfolio}
             isSamplePortfolio={isSamplePortfolio}

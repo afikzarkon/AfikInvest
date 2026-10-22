@@ -12,6 +12,7 @@ import {
 import PortfolioActionsToolbar from './PortfolioActionsToolbar';
 import KpiTile, { KpiRow } from './KpiTile';
 import BetaBanner from './BetaBanner';
+import { shortSessionDate } from './holdings/MergedValue';
 import { useCompactLayout } from '../hooks/useMediaQuery';
 
 const pctText = (v) => (v == null || !Number.isFinite(v) ? null : `${v > 0 ? '+' : ''}${v.toFixed(2)}%`);
@@ -23,7 +24,7 @@ const toneClass = (v) => (v > 0 ? 'profit-positive' : v < 0 ? 'profit-negative' 
 // The profit row opens to the net-investment breakdown (profitDetails).
 // That breakdown used to be a fold of its own in the list below, headed by
 // the same amount and percent - the one figure shown twice on one screen.
-function CompactKpis({ headlineValue, headlineSub, totalProfitPercent, summary, dailyChangeSub, profitDetails }) {
+function CompactKpis({ headlineValue, headlineSub, totalProfitPercent, summary, dailyChangeSub, lastSession, lastSessionSub, profitDetails }) {
   const row = (label, amount, pct, sub) => (
     <div className="home-kpi-row">
       <span className="home-kpi-label">
@@ -31,7 +32,8 @@ function CompactKpis({ headlineValue, headlineSub, totalProfitPercent, summary, 
         {sub ? <span className="home-kpi-sub">{sub}</span> : null}
       </span>
       <span className={`home-kpi-value ${toneClass(amount)}`}>
-        {formatPriceWithSign(amount)} ₪{pct ? <span className="summary-pct">{pct}</span> : null}
+        {amount == null ? '—' : `${formatPriceWithSign(amount)} ₪`}
+        {pct ? <span className="summary-pct">{pct}</span> : null}
       </span>
     </div>
   );
@@ -53,6 +55,7 @@ function CompactKpis({ headlineValue, headlineSub, totalProfitPercent, summary, 
         <div className="home-kpi-fold-body">{profitDetails}</div>
       </details>
       {row('שינוי יומי', summary.dailyProfitILS, pctText(summary.weightedDailyChange), dailyChangeSub)}
+      {row('שינוי אתמול', lastSession ? lastSession.changeILS : null, lastSession ? pctText(lastSession.pct) : null, lastSessionSub)}
       <div className="home-kpi-row">
         <span className="home-kpi-label">
           מס צפוי<span className="home-kpi-sub">על הרווח הריאלי</span>
@@ -92,6 +95,9 @@ function CompactSummaryItem({ title, value, pct, children }) {
 // several screens of rows they had not asked for.
 function HomeView({
   summary,
+  // The securities' change on each market's last completed session
+  // (utils/lastSessionChange.js's total), or null while unknown.
+  lastSession = null,
   israeliStocks,
   americanStocks,
   pensionFunds,
@@ -209,6 +215,16 @@ function HomeView({
       ? 'אין מסחר היום עדיין - יתעדכן עם פתיחת המסחר'
       : `מסחר היום: ${tradedToday.join(' + ')}`;
 
+  // "Yesterday" is each market's last completed session, so it names the
+  // day - one date when both markets' are the same, else each market's.
+  const lastDates = lastSession ? lastSession.dates : {};
+  const lastSessionSub = !lastSession
+    ? 'אין עדיין נתון'
+    : lastDates.israeli && lastDates.american && lastDates.israeli !== lastDates.american
+      ? `ניירות ערך · ת"א ${shortSessionDate(lastDates.israeli)}, ארה"ב ${shortSessionDate(lastDates.american)}`
+      : `ניירות ערך · יום המסחר ${shortSessionDate(lastDates.israeli || lastDates.american)}`;
+  const lastSessionTone = lastSession ? toneOf(lastSession.changeILS) : 'neutral';
+
   // Each overview card is a doorway to the page that holds its rows. The
   // card stays a plain block of figures when there is nowhere to go (no
   // onNavigate) rather than rendering a button that does nothing.
@@ -266,6 +282,8 @@ function HomeView({
               totalProfitPercent={totalProfitPercent}
               summary={summary}
               dailyChangeSub={dailyChangeSub}
+              lastSession={lastSession}
+              lastSessionSub={lastSessionSub}
               profitDetails={<NetInvestmentCard {...cardProps} present={present} />}
             />
           )}
@@ -309,10 +327,18 @@ function HomeView({
                 badgeTone={toneOf(summary.dailyProfitILS)}
                 sub={dailyChangeSub}
               />
-              {/* Fills the rest of the featured tile's second row, so the
-                  block stays rectangular. */}
+              {/* With the tax tile, fills the rest of the featured tile's
+                  second row, so the block stays rectangular. */}
               <KpiTile
-                wide
+                label="שינוי אתמול"
+                icon="↺"
+                tone={lastSessionTone}
+                value={lastSession ? `${formatPriceWithSign(lastSession.changeILS)} ₪` : '—'}
+                badge={lastSession ? pctText(lastSession.pct) : null}
+                badgeTone={lastSessionTone}
+                sub={lastSessionSub}
+              />
+              <KpiTile
                 label="מס צפוי"
                 icon="%"
                 value={`${formatPriceWithSign(summary.totalTaxILS)} ₪`}

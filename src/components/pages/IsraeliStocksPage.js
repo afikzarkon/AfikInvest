@@ -30,6 +30,7 @@ function IsraeliStocksPage({
   handleDelete,
   toggleGroup,
   hasLoadedLivePrices = false,
+  lastSession = null,
   ...toolbarProps
 }) {
   return (
@@ -67,6 +68,7 @@ function IsraeliStocksPage({
         toggleGroup={toggleGroup}
         editingField={editingField}
         pricesPending={!hasLoadedLivePrices}
+        lastSession={lastSession}
       />
     </AssetPageLayout>
   );

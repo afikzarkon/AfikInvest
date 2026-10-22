@@ -6,7 +6,7 @@ import ScrollableTable from './ScrollableTable';
 import { formatPriceWithSign as maskedAmount } from '../utils/formatters';
 import { effectiveDailyChangePercent } from '../utils/marketSession';
 import { useCompactLayout } from '../hooks/useMediaQuery';
-import { Merged, MergedHeader, Money, Pct } from './holdings/MergedValue';
+import { LastSessionChange, Merged, MergedHeader, Money, Pct } from './holdings/MergedValue';
 import HoldingCards from './holdings/HoldingCards';
 import { HoldingsViewToggle, useHoldingsView } from './holdings/useHoldingsView';
 
@@ -33,7 +33,8 @@ const COL = {
   cost: { title: 'עלות', hint: '$ / ₪' },
   value: { title: 'שווי', hint: '$ / ₪' },
   profit: { title: 'רווח/הפסד', hint: '$ · % / ₪' },
-  daily: { title: 'שינוי יומי', hint: '$ · %' },
+  // Yesterday's line is in shekels: it includes that day's move in the dollar.
+  daily: { title: 'שינוי יומי', hint: '$ · % · ומתחת: אתמול ב-₪' },
   fx: { title: 'השפעת שער חליפין', hint: '₪' },
   real: { title: 'רווח ריאלי / אינפלציוני', hint: '₪' },
   tax: { title: 'מס רווח הון / רווח לאחר מס', hint: '₪' },
@@ -44,7 +45,7 @@ const usd = (v) => `${maskedAmount(v)} $`;
 const ils = (v) => `${maskedAmount(v)} ₪`;
 
 // Every figure for one lot, from portfolioMath's per-stock metrics.
-function lotFigures(stock, { calculateAmericanStockMetrics, calculateProfitPercentage }) {
+function lotFigures(stock, { calculateAmericanStockMetrics, calculateProfitPercentage, lastSession }) {
   const m = calculateAmericanStockMetrics(stock);
   const dailyPercent = effectiveDailyChangePercent(stock) || 0;
   return {
@@ -66,7 +67,8 @@ function lotFigures(stock, { calculateAmericanStockMetrics, calculateProfitPerce
     inflationary: m.currencyExemptGainILS,
     realGain: m.realGainILS,
     dailyPercent,
-    dailyProfit: (dailyPercent / 100) * m.totalCurrentValueUSD
+    dailyProfit: (dailyPercent / 100) * m.totalCurrentValueUSD,
+    lastSession: lastSession ? lastSession.byLot[stock.id] || null : null
   };
 }
 
@@ -138,7 +140,7 @@ function FigureCells({ f, pending, showAdditionalData, formatPrice, buyPrice, ra
         <Merged main={<><Money value={f.profitUSD} currency="$" signed /> <Pct value={f.profitPercent} /></>} sub={<Money value={f.profitILS} signed />} />
       </td>
       <td>
-        <Merged main={<><Money value={f.dailyProfit} currency="$" signed /> <Pct value={f.dailyPercent} /></>} />
+        <Merged main={<><Money value={f.dailyProfit} currency="$" signed /> <Pct value={f.dailyPercent} /></>} sub={<LastSessionChange result={f.lastSession} />} />
       </td>
       {showAdditionalData && (
         <td>
@@ -183,13 +185,15 @@ function AmericanStocksTable({
   // placeholders on cells with no price to show yet (see
   // PendingPriceValue.js). Nothing here waits on it; the table renders
   // immediately either way.
-  pricesPending = false
+  pricesPending = false,
+  // utils/lastSessionChange.js's result ({ bySymbol, byLot }): "אתמול".
+  lastSession = null
 }) {
   const compact = useCompactLayout();
   const [view, setView] = useHoldingsView();
   if (americanStocks.length === 0) return null;
 
-  const ctx = { calculateAmericanStockMetrics, calculateProfitPercentage };
+  const ctx = { calculateAmericanStockMetrics, calculateProfitPercentage, lastSession };
   const editProps = { editingField, isEditMode, handleCellClick, handleInlineEdit, finishInlineEdit, handleKeyDown };
   const field = (stock, name, extra) => (
     <EditableCell id={stock.id} exchange="american" field={name} value={stock[name]} {...editProps} {...extra} />
@@ -242,7 +246,9 @@ function AmericanStocksTable({
 
   const groups = Object.entries(groupStocksByName(americanStocks)).map(([stockName, stocks]) => {
     const lots = stocks.map((s) => lotFigures(s, ctx));
-    const total = stocks.length === 1 ? lots[0] : groupFigures(stocks, lots, calculateGroupSummary(stocks), calculateProfitPercentage);
+    const figures = stocks.length === 1 ? lots[0] : groupFigures(stocks, lots, calculateGroupSummary(stocks), calculateProfitPercentage);
+    // The holding's own figure, which also counts a slice sold that day.
+    const total = { ...figures, lastSession: lastSession ? lastSession.bySymbol[`american:${String(stockName).trim().toUpperCase()}`] || null : null };
     return { stockName, stocks, lots, total };
   });
 
@@ -268,9 +274,10 @@ function AmericanStocksTable({
       { label: 'שווי', value: <><Money value={f.totalCurrentValueUSD} currency="$" /> · <Money value={f.totalCurrentValueILS} /></> },
       { label: COL.profit.title, value: <><Money value={f.profitUSD} currency="$" signed /> <Pct value={f.profitPercent} /></> },
       { label: 'רווח/הפסד בשקלים', value: <Money value={f.profitILS} signed /> },
-      { label: COL.daily.title, value: <><Money value={f.dailyProfit} currency="$" signed /> <Pct value={f.dailyPercent} /></> }
+      { label: COL.daily.title, value: <><Money value={f.dailyProfit} currency="$" signed /> <Pct value={f.dailyPercent} /></> },
+      { label: 'שינוי אתמול', value: <LastSessionChange result={f.lastSession} label="" /> }
     ];
-    const headerOnly = ['שווי', COL.profit.title, COL.daily.title];
+    const headerOnly = ['שווי', COL.profit.title, COL.daily.title, 'שינוי אתמול'];
     const items = groups.map(({ stockName, stocks, lots, total }) => {
       const multi = stocks.length > 1;
       const first = stocks[0];
@@ -283,6 +290,7 @@ function AmericanStocksTable({
         valueSub: <Money value={total.totalCurrentValueILS} />,
         pl: <><Money value={total.profitUSD} currency="$" signed /> <Pct value={total.profitPercent} /></>,
         daily: <><Money value={total.dailyProfit} currency="$" signed /> <Pct value={total.dailyPercent} /></>,
+        yesterday: <LastSessionChange result={total.lastSession} label="" />,
         details: multi
           ? [
               { label: 'מחיר נוכחי', value: <PendingPriceValue value={total.currentPrice} pending={pricesPending} format={usd} /> },
