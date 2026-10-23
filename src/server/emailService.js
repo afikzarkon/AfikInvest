@@ -64,6 +64,12 @@ function createGmailApiTransport({ fetchImpl = (...args) => globalThis.fetch(...
   }
 
   return {
+    // Proves the credentials work without sending anything - the same
+    // check nodemailer's own transports offer.
+    async verify() {
+      await getAccessToken();
+      return true;
+    },
     async sendMail(mail) {
       const { message } = await composer.sendMail(mail);
       const res = await fetchImpl(GMAIL_SEND_URL, {
@@ -124,7 +130,10 @@ function createEmailService({ transport } = {}) {
   async function send(to, { subject, html, text }, { headers, replyTo } = {}) {
     if (!transporter) {
       if (process.env.NODE_ENV === 'production') {
-        console.warn(`email: no mail credentials (GMAIL_* or EMAIL_PASS) - skipped "${subject}"`);
+        // An error, not a warning: console.error is what the admin panel's
+        // server errors record (errorLog.js). A sign-up answered "check your
+        // email" with no email ever sent used to leave no trace there.
+        console.error(`email: no mail credentials (GMAIL_* or EMAIL_USER + EMAIL_PASS) - not sent: "${subject}"`);
       } else if (process.env.NODE_ENV !== 'test') {
         console.log(`\n[email:dev] to=${to}\nsubject: ${subject}\n${text}\n`);
       }
@@ -141,8 +150,35 @@ function createEmailService({ transport } = {}) {
     });
   }
 
+  // What would stop mail from arriving, found before anyone signs up:
+  // missing credentials, credentials Google or Gmail refuse (an expired
+  // refresh token - an OAuth app left in "Testing" mode issues ones that
+  // last 7 days), or no APP_URL to build the links in them. [] when fine.
+  async function checkHealth() {
+    const problems = [];
+    const production = process.env.NODE_ENV === 'production';
+    if (!transporter) {
+      if (production) problems.push('no mail credentials: set GMAIL_CLIENT_ID + GMAIL_CLIENT_SECRET + GMAIL_REFRESH_TOKEN, or EMAIL_USER + EMAIL_PASS (a Gmail app password)');
+    } else if (typeof transporter.verify === 'function') {
+      try {
+        await transporter.verify();
+      } catch (err) {
+        const message = err && err.message ? err.message : String(err);
+        const hint = /invalid_grant/.test(message)
+          ? ' - the Gmail refresh token was revoked or expired; issue a new one (and publish the OAuth app, or it expires again in 7 days)'
+          : /Invalid login|535|BadCredentials/i.test(message)
+            ? ' - EMAIL_USER / EMAIL_PASS were refused; use a Gmail app password, not the account password'
+            : '';
+        problems.push(`mail credentials do not work: ${message}${hint}`);
+      }
+    }
+    if (production && !getAppUrl()) problems.push('APP_URL is not set: links in emails (verification, reset) would have no address');
+    return problems;
+  }
+
   return {
     configured,
+    checkHealth,
     send,
     // options.name: the user's name, when the signup collects one;
     // options.unsubscribeUrl: the opt-out page, for the footer;

@@ -109,6 +109,16 @@ bootstrapServices()
     // Last good quotes and Yahoo profiles, kept through restarts.
     marketMemory.attach(store.sql);
     const mailer = createEmailService();
+    // Says at startup whether email works, in the log and in the admin
+    // panel's server errors - rather than at the first sign-up whose
+    // verification email silently never arrives.
+    mailer
+      .checkHealth()
+      .then((problems) => {
+        if (problems.length) problems.forEach((p) => console.error(`email/health ${p}`));
+        else if (mailer.configured) console.log('email: credentials verified');
+      })
+      .catch((err) => console.error('email/health', err && err.message ? err.message : err));
     const auth = mountAuthRoutes(app, store, { sessionGuard, accounts, mailer });
     mountAccountRoutes(app, { store, accounts, features, mailer, auth });
     mountOAuthRoutes(app, { store, accounts, mailer, auth, jwtSecret: getJwtSecret() });
