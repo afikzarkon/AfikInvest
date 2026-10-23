@@ -50,6 +50,9 @@ export const calculateModifiedDietzReturn = ({
   );
   const denominator = beginningValue + weightedCashFlow;
   const gain = endingValue - beginningValue - netCashFlow;
-  const percent = denominator !== 0 ? (gain / denominator) * 100 : null;
+  // Only a positive base is capital at work. A withdrawal that outweighs
+  // the opening value turns it negative, and a "return" over it has its
+  // sign backwards (a gain over -1,000 reads as a loss) - no return then.
+  const percent = denominator > 0 ? (gain / denominator) * 100 : null;
   return { netCashFlow, weightedCashFlow, gain, percent };
 };

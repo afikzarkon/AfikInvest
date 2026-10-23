@@ -87,7 +87,8 @@ function txToRow(userId, tx) {
     createdAccountId: tx.createdAccountId !== undefined ? tx.createdAccountId : undefined,
     newAccount: tx.newAccount || undefined,
     specificLots: tx.specificLots || undefined,
-    lotDetails: tx.lotDetails || undefined
+    lotDetails: tx.lotDetails || undefined,
+    fxPaidRate: tx.fxPaidRate || undefined
   };
   return {
     id: tx.id,
@@ -148,6 +149,7 @@ function rowToTx(row) {
   if (details.newAccount) tx.newAccount = details.newAccount;
   if (details.specificLots) tx.specificLots = details.specificLots;
   if (details.lotDetails) tx.lotDetails = details.lotDetails;
+  if (details.fxPaidRate) tx.fxPaidRate = Number(details.fxPaidRate);
   return tx;
 }
 

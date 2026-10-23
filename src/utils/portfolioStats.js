@@ -116,30 +116,36 @@ export const computePeriodReturns = (series) => {
   return returns;
 };
 
-// Converts each period return to a "daily-equivalent" return
-// ((1+r)^(1/days) - 1) so unevenly-spaced points can be compared on the
-// same footing, then returns their mean/stdev (sample stdev, n-1).
-const dailyEquivalentStats = (returns) => {
-  const dailyEquivalents = returns.map((r) => Math.pow(1 + r.periodReturn, 1 / r.days) - 1);
-  const mean = dailyEquivalents.reduce((s, v) => s + v, 0) / dailyEquivalents.length;
-  const variance =
-    dailyEquivalents.reduce((s, v) => s + Math.pow(v - mean, 2), 0) /
-    Math.max(dailyEquivalents.length - 1, 1);
+// Puts unevenly-spaced period returns on one footing for their spread:
+// each log return divided by the square root of its length in days, so
+// z = ln(1 + r) / sqrt(days) has the variance of ONE day's return whatever
+// the period's length (variance grows with time, the standard deviation
+// with its square root). Returns their mean/stdev (sample stdev, n-1).
+//
+// It used to compound each return down to a daily-equivalent,
+// (1 + r)^(1/days) - 1. That divides a return - and so its spread - by the
+// number of days, while annualizing multiplies back only by a square root:
+// weekly points came out sqrt(7) too calm, and with sqrt(252) on calendar
+// days lower still - a weekly spread of 2% read as 4.5% a year instead of
+// about 14.4%.
+const perDayReturnStats = (returns) => {
+  const scaled = returns.filter((r) => r.days > 0 && r.periodReturn > -1).map((r) => Math.log(1 + r.periodReturn) / Math.sqrt(r.days));
+  if (!scaled.length) return { mean: null, stdev: null };
+  const mean = scaled.reduce((s, v) => s + v, 0) / scaled.length;
+  const variance = scaled.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / Math.max(scaled.length - 1, 1);
   return { mean, stdev: Math.sqrt(variance) };
 };
 
-// Trading days per calendar year - the standard convention, and the right
-// figure to annualize a DAILY-equivalent standard deviation by.
-export const TRADING_DAYS_PER_YEAR = 252;
+// The periods' lengths are calendar days (a Friday-to-Monday step is 3),
+// so a per-day spread is annualized by the calendar year.
+export const CALENDAR_DAYS_PER_YEAR = 365;
 
 // Annualized volatility (%): the annualized standard deviation of the
-// portfolio's returns.
+// portfolio's returns - perDayReturnStats' stdev x sqrt(365).
 //
-// AUDIT NOTE. The method is: convert each period's return to its
-// daily-equivalent (above), take the sample standard deviation of those,
-// and scale by sqrt(252) to annualize. That is textbook-correct *provided
-// the inputs are real price-driven returns sampled on a consistent basis* -
-// and that proviso is exactly what was wrong before.
+// AUDIT NOTE. Correct *provided the inputs are real price-driven returns
+// sampled on a consistent basis* - and that proviso was what was wrong
+// before as well.
 //
 // The old inputs were saved app-open snapshots: irregular (a 1-day gap next
 // to a 40-day gap), sparse, and clustered around whenever the user happened
@@ -150,16 +156,16 @@ export const TRADING_DAYS_PER_YEAR = 252;
 // market.
 //
 // Fed from the dynamic historical-close series instead, the sampling is
-// regular and market-driven, which is what makes sqrt(252) the correct
-// scaling rather than an approximation layered on an approximation. The
+// regular and market-driven, which is what makes the scaling correct
+// rather than an approximation layered on an approximation. The
 // residual smoothing from sampling weekly rather than daily is real and
 // unavoidable (it's what bounds the number of lookups a multi-year chart
 // does), which is why the figure stays labelled an estimate.
 export const computeVolatilityPercent = (returns) => {
   if (returns.length < 2) return null;
-  const { stdev } = dailyEquivalentStats(returns);
+  const { stdev } = perDayReturnStats(returns);
   if (!Number.isFinite(stdev)) return null;
-  return stdev * Math.sqrt(TRADING_DAYS_PER_YEAR) * 100;
+  return stdev * Math.sqrt(CALENDAR_DAYS_PER_YEAR) * 100;
 };
 
 export const computeBestWorstPeriod = (returns) => {

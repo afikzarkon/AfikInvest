@@ -317,6 +317,15 @@ describe('month facts', () => {
     expect(buildMonthFacts('2026-04', ctx).sold).toBeCloseTo((1200 - 2) * 4, 6);
   });
 
+  it('records the conversion cost of a trade with the rate actually paid', () => {
+    const tx = { ...normalizeTransaction({ type: 'BUY', date: '2026-02-10', assetClass: 'american', assetId: 'NVDA', units: 10, price: 100, fees: 0, fxRate: 3.7, fxPaidRate: 3.75 }, { today: TODAY }), id: 'b' };
+    const applied = applyTransaction({ israeliStocks: [], americanStocks: [] }, tx, { newLotId: 7 });
+    const ctx = buildReviewContext({ holdings: applied.portfolio, transactions: [applied.transaction], today: TODAY });
+    const fx = ctx.events.filter((e) => e.kind === 'fxCost');
+    expect(fx).toHaveLength(1);
+    expect(fx[0].amountILS).toBeCloseTo(50, 6);
+  });
+
   it('marks the running month as partial and ends it today', () => {
     const ctx = buildReviewContext({ holdings: { americanStocks: [usLot(1, 'VOO', '2026-10-05', 500, 1)] }, today: TODAY });
     const f = buildMonthFacts('2026-10', ctx);
@@ -332,6 +341,23 @@ describe('month facts', () => {
     expect(f.valuePartial).toBe(true);
     expect(f.returnPct).toBeNull();
     expect(f.positions[0].missing).toBe(true);
+  });
+
+  it('takes a finished month-end the closes cannot value from a daily snapshot near it', () => {
+    const holdings = { americanStocks: [usLot(1, 'VOO', '2026-08-05', 500, 1)] };
+    const valueSnapshots = [
+      { date: '2026-08-31', totalValueILS: 1900 },
+      { date: '2026-09-29', totalValueILS: 2000 },
+      { date: '2026-09-20', totalValueILS: 1500 }
+    ];
+    const f = buildMonthFacts('2026-09', buildReviewContext({ holdings, valueSnapshots, today: TODAY }));
+    expect(f.valuePartial).toBe(false);
+    expect(f.endValue).toBe(2000);
+    expect(f.endValueFromSnapshot).toBe('2026-09-29');
+    expect(f.returnPct).toBeCloseTo((2000 / 1900 - 1) * 100, 6);
+    // Nothing within 3 days of the month-end: still unknown.
+    const none = buildMonthFacts('2026-09', buildReviewContext({ holdings, valueSnapshots: [{ date: '2026-09-20', totalValueILS: 1500 }], today: TODAY }));
+    expect(none.valuePartial).toBe(true);
   });
 });
 
@@ -358,12 +384,9 @@ describe('buildPortfolioReview', () => {
     expect(byKey.discipline.status).toBe('noData');
     expect(byKey.riskAdjusted.status).toBe('noData');
     expect(review.text.profile.key).toBe('beginner');
-    review.categories.forEach((c) => {
-      if (c.score !== null) {
-        expect(c.score).toBeGreaterThanOrEqual(0);
-        expect(c.score).toBeLessThanOrEqual(100);
-      }
-    });
+    // Every score that exists is on the 0-100 scale.
+    const scores = review.categories.map((c) => c.score).filter((s) => s !== null);
+    expect(scores.every((s) => s >= 0 && s <= 100)).toBe(true);
   });
 
   it('a steady monthly investor: streak, regular habit, comparison and history', () => {

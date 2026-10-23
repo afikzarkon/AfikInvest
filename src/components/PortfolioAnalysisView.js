@@ -40,6 +40,8 @@ import {
 import { computeSectorDistribution } from '../utils/sectorAnalysis';
 import { sectorLabelHe } from '../utils/sectorLabels';
 import { computeReceivedDividends } from '../utils/dividendAnalysis';
+import { buildMoneyEvents } from '../utils/portfolioReviewData';
+import { moneyInByMonth, moneyInByYear } from '../utils/moneyIn';
 import {
   recommendationLabelHe,
   recommendationSentiment,
@@ -755,10 +757,20 @@ function PortfolioAnalysisView({
   // on the page while answering a question ("which months did I buy in,
   // four years ago?") that is rarely the one being asked. Years are the
   // summary; a year's months are one click away.
-  const distributionYears = useMemo(() => analysis.yearlyDistribution || [], [analysis.yearlyDistribution]);
+  //
+  // The amounts are utils/moneyIn.js's - the portfolio review's "הושקע" -
+  // so the two pages agree month by month: purchases at their cost (not
+  // today's value), including lots sold since, plus deposits into provident
+  // funds and savings plans. Money parked in the current account or a
+  // money-market fund is shown beside them, not added in.
+  const moneyInEvents = useMemo(
+    () => buildMoneyEvents({ holdings: { israeliStocks, americanStocks, pensionFunds, cashFunds, bankBalances, bankSavingsFunds }, transactions }),
+    [israeliStocks, americanStocks, pensionFunds, cashFunds, bankBalances, bankSavingsFunds, transactions]
+  );
+  const distributionYears = useMemo(() => moneyInByYear(moneyInEvents), [moneyInEvents]);
 
   const monthsByYear = useMemo(() => {
-    return (analysis.monthlyDistribution || []).reduce((acc, item) => {
+    return moneyInByMonth(moneyInEvents).reduce((acc, item) => {
       // The month key is "YYYY-MM", so its year is its first segment - the
       // same string the yearly distribution is keyed by.
       const year = String(item.month || '').slice(0, 4);
@@ -766,7 +778,7 @@ function PortfolioAnalysisView({
       (acc[year] = acc[year] || []).push(item);
       return acc;
     }, {});
-  }, [analysis.monthlyDistribution]);
+  }, [moneyInEvents]);
 
   // Nothing is open to begin with, so the section starts as the short
   // year-level summary it is meant to be.
@@ -2043,7 +2055,7 @@ function PortfolioAnalysisView({
                           </div>
                           <div className="stock-card-tags">
                             <span className={`stock-tag ${stock.annualizedReturn >= 0 ? 'is-positive' : 'is-negative'}`}>
-                              {signedPercent(stock.annualizedReturn * 100)} בשנה
+                              {signedPercent(stock.annualizedReturn * 100)} {stock.annualizedIsPeriod ? 'מאז הקנייה' : 'בשנה'}
                             </span>
                             {rec && rec.numberOfAnalystOpinions > 0 && (
                               <span className={`stock-tag ${sentiment ? `is-${sentiment}` : ''}`}>
@@ -2101,8 +2113,11 @@ function PortfolioAnalysisView({
                         {stock.profitPercentage.toFixed(1)}%
                       </td>
                       <td>{stock.daysHeld > 365 ? `${stock.yearsHeld.toFixed(1)} שנים` : `${stock.daysHeld} ימים`}</td>
-                      <td className={stock.annualizedReturn >= 0 ? 'profit-positive' : 'profit-negative'}>
-                        {(stock.annualizedReturn * 100).toFixed(1)}%
+                      <td
+                        className={stock.annualizedReturn >= 0 ? 'profit-positive' : 'profit-negative'}
+                        title={stock.annualizedIsPeriod ? 'מוחזק פחות משנה - התשואה מאז הקנייה, לא שנתית' : undefined}
+                      >
+                        {(stock.annualizedReturn * 100).toFixed(1)}%{stock.annualizedIsPeriod ? ' *' : ''}
                       </td>
                     </tr>
                   ))}
@@ -2118,8 +2133,9 @@ function PortfolioAnalysisView({
           <div className="analysis-section analysis-section-half" data-section-key="byDate" ref={(el) => (sectionRefs.current.byDate = el)}>
             <h2 className="section-title">פיזור לפי תאריכי קנייה והפקדה</h2>
             <p className="section-subtitle">
-              כולל גם הפקדות לקופות גמל, לקופות חיסכון ולקרנות כספיות - כל הפקדה משויכת לחודש שבו בוצעה בפועל, לצד
-              רכישות המניות. לחצו על שנה כדי לפתוח את הפירוט החודשי שלה.
+              כמה הושקע בכל חודש: רכישות ניירות ערך לפי העלות שלהן (כולל עמלות, גם אם נמכרו מאז) והפקדות לקופות גמל
+              ולחיסכון בבנק, כל אחת בחודש שבו בוצעה. כסף שהופקד לעו"ש ולקרנות כספיות מוצג בנפרד. אלה אותם סכומים כמו
+              בביקורת התיק. לחצו על שנה כדי לפתוח את הפירוט החודשי שלה.
             </p>
             {distributionYears.length === 0 ? (
               <p className="history-empty-note">אין עדיין רכישות או הפקדות מתוארכות בתיק.</p>
@@ -2141,9 +2157,14 @@ function PortfolioAnalysisView({
                           ▾
                         </span>
                         <span className="year-accordion-year">{year.year}</span>
-                        <span className="year-accordion-value">{formatPriceWithSign(year.value)} ₪</span>
+                        <span className="year-accordion-value">{formatPriceWithSign(year.invested)} ₪</span>
                         <span className="year-accordion-count">({year.count} רכישות/הפקדות)</span>
                       </button>
+                      {year.parked > 0 ? (
+                        <p className="date-parked year-accordion-parked">
+                          בנוסף {formatPriceWithSign(year.parked)} ₪ לעו"ש ולקרנות כספיות (לא נספר כהשקעה)
+                        </p>
+                      ) : null}
 
                       {/* Kept mounted and hidden rather than unmounted: the
                           months are already computed, and re-expanding a
@@ -2160,8 +2181,9 @@ function PortfolioAnalysisView({
                             months.map((item) => (
                               <div key={item.month} className="date-item">
                                 <span className="date-label">{formatMonthLabel(item.month)}</span>
-                                <span className="date-value">{formatPriceWithSign(item.value)} ₪</span>
+                                <span className="date-value">{formatPriceWithSign(item.invested)} ₪</span>
                                 <span className="date-count">({item.count} רכישות/הפקדות)</span>
+                                {item.parked > 0 ? <span className="date-parked">בנוסף {formatPriceWithSign(item.parked)} ₪ לעו"ש ולקרנות כספיות</span> : null}
                               </div>
                             ))
                           )}

@@ -15,6 +15,7 @@ import { useAutoSnapshot } from './hooks/useAutoSnapshot';
 import { buildItemizedMonthlyBreakdown } from './utils/monthlySnapshotBreakdown';
 import { useRebalanceTargets } from './hooks/useRebalanceTargets';
 import { useTransactions } from './hooks/useTransactions';
+import { useLastSessionChange } from './hooks/useLastSessionChange';
 import { useAlerts } from './hooks/useAlerts';
 import { usePreferences } from './hooks/usePreferences';
 import { useTheme } from './hooks/useTheme';
@@ -567,6 +568,16 @@ function App() {
     remove: removeTransaction
   } = useTransactions(user, authHeader);
 
+  // "שינוי אתמול" - each holding's last completed session, for the
+  // dashboard and the tables (see utils/lastSessionChange.js). Off for the
+  // sample portfolio, whose made-up symbols have no history to fetch.
+  const lastSession = useLastSessionChange({
+    israeliStocks,
+    americanStocks,
+    transactions,
+    enabled: Boolean(user) && !isSamplePortfolio
+  });
+
   const {
     alerts,
     unreadCount: unreadAlertCount,
@@ -773,20 +784,50 @@ function App() {
     }
   };
 
+  // The quantity a lot had when its cell was opened for editing, so that a
+  // finished edit that LOWERED it can be offered as a sale instead.
+  const quantityEditStart = React.useRef(null);
+
   // פונקציה להתחלת עריכה inline
-  const startInlineEdit = (id, field) => {
+  const startInlineEdit = (id, field, exchange) => {
     setEditingField(`${id}-${field}`);
+    const list = exchange === 'israeli' ? israeliStocks : exchange === 'american' ? americanStocks : null;
+    const lot = field === 'quantity' && list ? list.find((s) => s.id === id) : null;
+    quantityEditStart.current = lot ? { id, exchange, quantity: Number(lot.quantity) || 0 } : null;
+  };
+
+  // A lot's quantity typed down reads, everywhere downstream, as if the
+  // units had never been owned: no sale in the history, no realized gain
+  // for tax, nothing for the portfolio review to learn from. Recording it
+  // as a SELL keeps all of that - so that is offered first, and the plain
+  // edit stays one click away.
+  const offerSaleForLoweredQuantity = () => {
+    const start = quantityEditStart.current;
+    quantityEditStart.current = null;
+    if (!start) return;
+    const list = start.exchange === 'israeli' ? israeliStocks : americanStocks;
+    const lot = list.find((s) => s.id === start.id);
+    const now = lot ? Number(lot.quantity) || 0 : start.quantity;
+    if (!lot || !(now < start.quantity) || now <= 0) return;
+    const sold = start.quantity - now;
+    const ok = window.confirm(
+      `הכמות של ${lot.stockName} ירדה מ-${start.quantity} ל-${now}. אם מכרת, עדיף לרשום מכירה: כך היא נשמרת בהיסטוריה, בחישובי המס ובביקורת התיק.\n\nאישור - רישום מכירה של ${sold} יחידות. ביטול - עדכון הכמות בלבד.`
+    );
+    if (!ok) return;
+    handleInlineEdit(start.id, 'quantity', start.quantity, start.exchange);
+    openAssetEntry({ assetClass: start.exchange, assetId: lot.stockName, action: 'SELL', units: sold });
   };
 
   // פונקציה לסיום עריכה inline
   const finishInlineEdit = () => {
     setEditingField(null);
+    offerSaleForLoweredQuantity();
   };
 
   // פונקציה לטיפול בלחיצה על תא
   const handleCellClick = (id, field, exchange) => {
     if (isEditMode) {
-      startInlineEdit(id, field);
+      startInlineEdit(id, field, exchange);
     }
   };
 
@@ -944,7 +985,8 @@ function App() {
     onOpenLedgerEntry: handleOpenLedgerEntry,
     onDeleteTransaction: handleDeleteTransaction,
     transactions,
-    onUpdateTransaction: handleUpdateTransaction
+    onUpdateTransaction: handleUpdateTransaction,
+    lastSession
   };
 
   // THE EXPORT IS ALWAYS THE WHOLE PORTFOLIO.
@@ -1076,6 +1118,7 @@ function App() {
           <PortfolioReviewView
             {...holdings}
             transactions={transactions}
+            valueSnapshots={snapshots}
             analysis={analysis}
             cpi={cpi}
             theme={theme}
@@ -1151,6 +1194,7 @@ function App() {
             {...holdings}
             {...toolbarProps}
             summary={summary}
+            lastSession={lastSession.total}
             onNavigate={navigate}
             onLoadSamplePortfolio={handleLoadSamplePortfolio}
             isSamplePortfolio={isSamplePortfolio}

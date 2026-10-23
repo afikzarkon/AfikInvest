@@ -25,8 +25,6 @@ const americanStocks = [
   }
 ];
 const pensionFunds = [{ initialInvestment: 1000, currentValue: 1100, previousValue: 1050, updateDate: '2023-01-01' }];
-const cashFunds = [{ amount: 500, updateDate: '2023-01-01' }];
-const bankBalances = [{ amount: 2000, updateDate: '2023-01-01' }];
 
 function makeProps(overrides = {}) {
   return {

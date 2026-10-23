@@ -186,11 +186,11 @@ test('there is no manual "save daily info" button - the daily snapshot is taken 
 });
 
 test('shows the legacy import button only when showLegacyImportButton is true', () => {
-  const { queryByText, rerender } = render(<HomeView {...makeProps({ showLegacyImportButton: false })} />);
+  const { queryByText, getByText, rerender } = render(<HomeView {...makeProps({ showLegacyImportButton: false })} />);
   expect(queryByText('ייבוא מהדפדפן')).toBeNull();
 
   rerender(<HomeView {...makeProps({ showLegacyImportButton: true })} />);
-  expect(queryByText('ייבוא מהדפדפן')).not.toBeNull();
+  expect(getByText('ייבוא מהדפדפן')).toBeInTheDocument();
 });
 
 test('save button reflects hasUnsavedChanges and saveLoading state', () => {
@@ -252,8 +252,8 @@ test('shows export buttons for a populated portfolio and wires them to downloadP
       logo: null,
       reportMode: 'summary'
     });
-    expect(excelSpy).toHaveBeenCalledWith(exportPortfolioData);
   });
+  await waitFor(() => expect(excelSpy).toHaveBeenCalledWith(exportPortfolioData));
 
   excelSpy.mockRestore();
   pdfSpy.mockRestore();
@@ -336,8 +336,8 @@ test('puts every page action in one toolbar, split into primary and secondary', 
 test('surfaces the headline figures as KPI tiles above the detailed summary', () => {
   const { container, getByText } = render(<HomeView {...makeProps()} />);
   const tiles = container.querySelectorAll('.kpi-tile');
-  expect(tiles.length).toBe(4);
-  ['שווי תיק כולל', 'רווח/הפסד כולל', 'שינוי יומי', 'מס צפוי'].forEach((label) => {
+  expect(tiles.length).toBe(5);
+  ['שווי תיק כולל', 'רווח/הפסד כולל', 'שינוי יומי', 'שינוי אתמול', 'מס צפוי'].forEach((label) => {
     expect(getByText(label)).toBeInTheDocument();
   });
   // The full breakdown is still there, below them.
@@ -347,17 +347,32 @@ test('surfaces the headline figures as KPI tiles above the detailed summary', ()
 // The KPI row is a bento block, not four equal boxes: one figure is what
 // the app is opened to see and three qualify it, and the layout says so.
 // The spans also have to tile exactly - a featured 2x2 beside two 1x1s
-// leaves a hole on the second row unless one tile is wide.
+// leaves a hole on the second row unless it holds two more.
 test('gives the headline figure the featured block, and fills the row beside it', () => {
   const { container } = render(<HomeView {...makeProps()} />);
   const featured = container.querySelectorAll('.kpi-tile.is-featured');
   expect(featured.length).toBe(1);
   expect(featured[0].textContent).toContain('שווי תיק כולל');
 
-  // 4 columns: featured takes 2x2, so the other three must occupy 2 + 2
-  // single-row cells and one double-wide.
-  expect(container.querySelectorAll('.kpi-tile.is-wide').length).toBe(1);
-  expect(container.querySelectorAll('.kpi-tile').length).toBe(4);
+  // 4 columns: featured takes 2x2, so the other four fill 2 + 2 single
+  // cells - profit and daily, then yesterday and tax.
+  expect(container.querySelectorAll('.kpi-tile.is-wide').length).toBe(0);
+  expect(container.querySelectorAll('.kpi-tile').length).toBe(5);
+});
+
+test("shows yesterday's change with its session, and a dash while it is unknown", () => {
+  const unknown = render(<HomeView {...makeProps()} />);
+  const tileOf = (c) => [...c.querySelectorAll('.kpi-tile')].find((t) => t.textContent.includes('שינוי אתמול'));
+  expect(tileOf(unknown.container).querySelector('.kpi-tile-value').textContent).toBe('—');
+  unknown.unmount();
+
+  const { container } = render(
+    <HomeView {...makeProps()} lastSession={{ changeILS: -1234.5, pct: -0.42, dates: { israeli: '2026-10-16', american: '2026-10-15' }, fxApprox: false }} />
+  );
+  const tile = tileOf(container);
+  expect(tile.className).toContain('kpi-tone-negative');
+  expect(tile.textContent).toContain('-0.42%');
+  expect(tile.textContent).toContain('ת"א 16.10, ארה"ב 15.10');
 });
 
 test('an empty portfolio shows no KPI tiles rather than a row of zeroes', () => {

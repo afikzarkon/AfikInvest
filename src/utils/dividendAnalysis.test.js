@@ -40,4 +40,23 @@ describe('computeReceivedDividends', () => {
     const lots = [{ quantity: 10 }];
     expect(computeReceivedDividends(history, lots)).toBe(0);
   });
+
+  test('a lot bought after a payment is not credited with it', () => {
+    const history = [
+      { date: '2024-02-01', amountPerShare: 1 },
+      { date: '2024-06-01', amountPerShare: 1 }
+    ];
+    const lots = [
+      { quantity: 10, purchaseDate: '2024-01-01' },
+      { quantity: 5, purchaseDate: '2024-03-01' }
+    ];
+    // February: the first lot only; June: both.
+    expect(computeReceivedDividends(history, lots)).toBe(10 + 15);
+  });
+
+  test('a share bought on the ex-dividend date is not entitled to that payment', () => {
+    const history = [{ date: '2024-06-01', amountPerShare: 1 }];
+    expect(computeReceivedDividends(history, [{ quantity: 10, purchaseDate: '2024-06-01' }])).toBe(0);
+    expect(computeReceivedDividends(history, [{ quantity: 10, purchaseDate: '2024-05-31' }])).toBe(10);
+  });
 });

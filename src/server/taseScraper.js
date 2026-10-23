@@ -173,7 +173,7 @@ async function scrapeTaseWithPuppeteer(taseUrl) {
         if (!token) return null;
         const s = token.replace(/[\u2212\u2012\u2013\u2014]/g, '-');
         // Detect minus anywhere (prefix or suffix or inside parentheses)
-        const isNegative = /-/.test(s) || /\(\s*\d/.test(s) && /\)/.test(s) && /-/.test(s);
+        const isNegative = /-/.test(s) || (/\(\s*\d/.test(s) && /\)/.test(s) && /-/.test(s));
         // Extract numeric part
         const numMatch = s.match(/\d+(?:\.\d+)?/);
         if (!numMatch) return null;
@@ -227,7 +227,7 @@ async function scrapeTaseWithPuppeteer(taseUrl) {
             .filter(item => item.txt.includes(needle));
           const looksNegative = (el) => {
             const cs = window.getComputedStyle(el);
-            const color = (cs && cs.color || '').toLowerCase();
+            const color = ((cs && cs.color) || '').toLowerCase();
             const cls = (el.className || '').toString().toLowerCase();
             const title = (el.getAttribute('title') || '').toLowerCase();
             const aria = (el.getAttribute('aria-label') || '').toLowerCase();

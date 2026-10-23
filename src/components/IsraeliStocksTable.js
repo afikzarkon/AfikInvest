@@ -4,13 +4,13 @@ import PendingPriceValue from './PendingPriceValue';
 import AssetCell from './AssetCell';
 import ScrollableTable from './ScrollableTable';
 import { formatPriceWithSign as maskedAmount } from '../utils/formatters';
-import { effectiveDailyChangePercent } from '../utils/marketSession';
+import { changeFromPercent, effectiveDailyChangePercent } from '../utils/marketSession';
 import { calculateStockRealGainTax, monthKeyFromDate } from '../utils/cpiTax';
 import { sectorLabelHe } from '../utils/sectorLabels';
 import { effectiveExchangeForIsraeliStock, resolveIsraeliSector } from '../utils/israeliEtfClassifier';
 import { sectorFromTaseBranch } from '../utils/israeliSectorMapping';
 import { useCompactLayout } from '../hooks/useMediaQuery';
-import { Merged, MergedHeader, Money, Pct } from './holdings/MergedValue';
+import { LastSessionChange, Merged, MergedHeader, Money, Pct } from './holdings/MergedValue';
 import HoldingCards from './holdings/HoldingCards';
 import { HoldingsViewToggle, useHoldingsView } from './holdings/useHoldingsView';
 
@@ -34,7 +34,7 @@ const COL = {
   price: { title: 'מחיר נוכחי / קנייה', hint: '₪' },
   value: { title: 'שווי היום / עלות', hint: '₪' },
   profit: { title: 'רווח/הפסד', hint: '₪ · %' },
-  daily: { title: 'שינוי יומי', hint: '₪ · %' },
+  daily: { title: 'שינוי יומי', hint: '₪ · % · ומתחת: אתמול' },
   index: { title: 'מדד ביום הקנייה / היום' },
   real: { title: 'רווח ריאלי / אינפלציוני', hint: '₪' },
   tax: { title: 'מס רווח הון / רווח לאחר מס', hint: '₪' },
@@ -88,7 +88,7 @@ function SectorValue({ stock }) {
 // and falls back to a flat tax on the nominal gain without an index. The
 // inflationary gain is what remains of the nominal gain after the real
 // gain - the asymmetric rule from the Moses ruling.
-function lotFigures(stock, { normalizeIsraeliPrice, calculateProfitPercentage, TAX_RATE, cpi }) {
+function lotFigures(stock, { normalizeIsraeliPrice, calculateProfitPercentage, TAX_RATE, cpi, lastSession }) {
   const currentPrice = normalizeIsraeliPrice(stock.currentPrice);
   const totalPurchase = (stock.purchasePrice || 0) * (stock.quantity || 0);
   const totalCurrentValue = (currentPrice || 0) * (stock.quantity || 0);
@@ -127,7 +127,8 @@ function lotFigures(stock, { normalizeIsraeliPrice, calculateProfitPercentage, T
     inflationaryGain: profit - realGain,
     afterTax: profit - tax,
     dailyPercent,
-    dailyProfit: (dailyPercent / 100) * totalCurrentValue
+    dailyProfit: changeFromPercent(totalCurrentValue, dailyPercent),
+    lastSession: lastSession ? lastSession.byLot[stock.id] || null : null
   };
 }
 
@@ -150,7 +151,7 @@ function groupFigures(stocks, lots, summary) {
     inflationaryGain: summary.totalProfit - sum('realGain'),
     afterTax: summary.totalProfit - sum('tax'),
     dailyPercent: effectiveDailyChangePercent(stocks[0]) || 0,
-    dailyProfit: ((effectiveDailyChangePercent(stocks[0]) || 0) / 100) * summary.totalCurrentValue
+    dailyProfit: changeFromPercent(summary.totalCurrentValue, effectiveDailyChangePercent(stocks[0]) || 0)
   };
 }
 
@@ -179,7 +180,7 @@ function FigureCells({ f, pending, showAdditionalData, formatPrice, buyPrice, is
         <Merged main={<><Money value={f.profit} signed /> <Pct value={f.profitPercent} /></>} />
       </td>
       <td>
-        <Merged main={<><Money value={f.dailyProfit} signed /> <Pct value={f.dailyPercent} /></>} />
+        <Merged main={<><Money value={f.dailyProfit} signed /> <Pct value={f.dailyPercent} /></>} sub={<LastSessionChange result={f.lastSession} />} />
       </td>
       {showAdditionalData && (
         <td title={isGroup ? PER_LOT_TITLE : undefined}>
@@ -225,13 +226,15 @@ function IsraeliStocksTable({
   // placeholders on cells that have no price to show yet (see
   // PendingPriceValue.js). Nothing here waits on it; the table renders
   // immediately either way.
-  pricesPending = false
+  pricesPending = false,
+  // utils/lastSessionChange.js's result ({ bySymbol, byLot }): "אתמול".
+  lastSession = null
 }) {
   const compact = useCompactLayout();
   const [view, setView] = useHoldingsView();
   if (israeliStocks.length === 0) return null;
 
-  const ctx = { normalizeIsraeliPrice, calculateProfitPercentage, TAX_RATE, cpi };
+  const ctx = { normalizeIsraeliPrice, calculateProfitPercentage, TAX_RATE, cpi, lastSession };
   const editProps = { editingField, isEditMode, handleCellClick, handleInlineEdit, finishInlineEdit, handleKeyDown };
   const field = (stock, name, extra) => (
     <EditableCell id={stock.id} exchange="israeli" field={name} value={stock[name]} {...editProps} {...extra} />
@@ -274,7 +277,9 @@ function IsraeliStocksTable({
 
   const groups = Object.entries(groupStocksByName(israeliStocks)).map(([stockName, stocks]) => {
     const lots = stocks.map((s) => lotFigures(s, ctx));
-    const total = stocks.length === 1 ? lots[0] : groupFigures(stocks, lots, calculateGroupSummary(stocks));
+    const figures = stocks.length === 1 ? lots[0] : groupFigures(stocks, lots, calculateGroupSummary(stocks));
+    // The holding's own figure, which also counts a slice sold that day.
+    const total = { ...figures, lastSession: lastSession ? lastSession.bySymbol[`israeli:${String(stockName).trim()}`] || null : null };
     return { stockName, stocks, lots, total };
   });
 
@@ -300,7 +305,8 @@ function IsraeliStocksTable({
       { label: 'עלות', value: <Money value={f.totalPurchase} /> },
       { label: 'שווי היום', value: <Money value={f.totalCurrentValue} /> },
       { label: COL.profit.title, value: <><Money value={f.profit} signed /> <Pct value={f.profitPercent} /></> },
-      { label: COL.daily.title, value: <><Money value={f.dailyProfit} signed /> <Pct value={f.dailyPercent} /></> }
+      { label: COL.daily.title, value: <><Money value={f.dailyProfit} signed /> <Pct value={f.dailyPercent} /></> },
+      { label: 'שינוי אתמול', value: <LastSessionChange result={f.lastSession} label="" /> }
     ];
     const items = groups.map(({ stockName, stocks, lots, total }) => {
       const multi = stocks.length > 1;
@@ -314,13 +320,14 @@ function IsraeliStocksTable({
         value: <PendingPriceValue value={total.totalCurrentValue} pending={pricesPending} format={amountText} />,
         pl: <><Money value={total.profit} signed /> <Pct value={total.profitPercent} /></>,
         daily: <><Money value={total.dailyProfit} signed /> <Pct value={total.dailyPercent} /></>,
+        yesterday: <LastSessionChange result={total.lastSession} label="" />,
         details: multi
           ? [
               { label: 'מחיר נוכחי', value: <PendingPriceValue value={total.currentPrice} pending={pricesPending} format={priceText(formatPrice)} /> },
               { label: 'מחיר קנייה ממוצע', value: formatPrice(total.purchasePrice) },
               { label: 'עלות', value: <Money value={total.totalPurchase} /> }
             ]
-          : lotDetails(first, total).filter((d) => ![COL.profit.title, COL.daily.title, 'שווי היום'].includes(d.label)),
+          : lotDetails(first, total).filter((d) => ![COL.profit.title, COL.daily.title, 'שינוי אתמול', 'שווי היום'].includes(d.label)),
         ext: extFields(first, total, multi),
         actions: isEditMode && !multi ? deleteButton(first) : null,
         lots: multi

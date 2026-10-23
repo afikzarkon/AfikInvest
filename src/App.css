@@ -2878,6 +2878,23 @@ h3 {
   color: var(--sw-text-secondary);
 }
 
+/* Money parked in the current account / money-market funds that month: a
+   line of its own under the invested figure, never added to it. */
+.date-list .date-item {
+  flex-wrap: wrap;
+}
+
+.date-parked {
+  flex-basis: 100%;
+  font-size: 0.8rem;
+  color: var(--sw-text-dim);
+}
+
+.year-accordion-parked {
+  margin: -6px 0 0;
+  padding: 0 16px 12px;
+}
+
 .reports-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
@@ -5593,6 +5610,16 @@ select {
     /* Room for the fixed bottom bar, so the last row of a table isn't
        permanently hidden behind it. */
     padding-bottom: 68px;
+  }
+
+  /* In a column the shell's align-items: flex-start sizes the main column
+     to its content and pins it to the start edge - the right, in RTL. A
+     page wide enough hid that; the loading state between two pages is not,
+     so its logo sat in the top right corner and then jumped when the page
+     arrived. The column always spans the width. */
+  .app-main {
+    align-self: stretch;
+    width: 100%;
   }
 
   .side-nav {
@@ -11092,6 +11119,18 @@ select.auth-input[dir='ltr'] {
   border-top: 1px dashed var(--sw-border);
   font-size: 0.74rem;
   color: var(--sw-text-muted);
+}
+
+/* "אתמול" right under "היום": the same row, without a second rule. */
+.hc-yesterday {
+  padding-top: 2px;
+  border-top: none;
+}
+
+.mv-last {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
 }
 
 .hc-body {

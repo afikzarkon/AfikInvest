@@ -57,7 +57,8 @@ describe('the catalog', () => {
       expect(c.prosHe.length).toBeGreaterThan(0);
       expect(c.consHe.length + c.risksHe.length).toBeGreaterThan(0);
       expect(c.expenseRatioPct === null || Number.isFinite(c.expenseRatioPct)).toBe(true);
-      if (c.expenseRatioPct === null) expect(c.costNoteHe).toBeTruthy();
+      // A product without a known expense ratio says why in words instead.
+      expect(c.expenseRatioPct !== null || Boolean(c.costNoteHe)).toBe(true);
     });
   });
 

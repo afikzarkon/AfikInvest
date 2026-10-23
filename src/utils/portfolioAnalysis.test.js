@@ -123,9 +123,12 @@ describe('calculatePortfolioAnalysis', () => {
     const summary = calculatePortfolioSummary(israeliStocks, [], pensionFunds, [], []);
     const m = analysis.summaryMetrics;
 
-    expect(m.dailyChangeILS).toBeCloseTo(20, 6);
+    // +2% on a holding worth 1,000 now: it was 1,000 / 1.02 at the close.
+    const change = (1000 * 2) / 102;
+    expect(m.dailyChangeILS).toBeCloseTo(change, 6);
+    expect(m.dailyChangeStocksPercent).toBeCloseTo(2, 6);
     expect(m.dailyChangeStocksPercent).toBeCloseTo(summary.weightedDailyChange, 6);
-    expect(m.weightedDailyChangePercent).toBeCloseTo(m.dailyChangeStocksPercent / 3, 6);
+    expect(m.weightedDailyChangePercent).toBeCloseTo((change / (3000 - change)) * 100, 6);
   });
 
   // The three largest holdings are ranked across everything held: with most
@@ -233,5 +236,29 @@ describe('stock distribution display names', () => {
       []
     );
     expect(analysis.stockDistribution[0].displayName).toBe('AAPL');
+  });
+});
+
+describe('per-holding annual return', () => {
+  const daysAgo = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+
+  test('a holding under a year shows its return since purchase, not an annualized extrapolation', () => {
+    const analysis = calculatePortfolioAnalysis(
+      [{ stockName: 'NEW', quantity: 10, purchasePrice: 100, currentPrice: 105, purchaseDate: daysAgo(10) }],
+      [], [], [], []
+    );
+    const s = analysis.stockDistribution[0];
+    expect(s.annualizedIsPeriod).toBe(true);
+    expect(s.annualizedReturn).toBeCloseTo(0.05, 6);
+  });
+
+  test('a holding of a year or more is annualized', () => {
+    const analysis = calculatePortfolioAnalysis(
+      [{ stockName: 'OLD', quantity: 10, purchasePrice: 100, currentPrice: 121, purchaseDate: daysAgo(730) }],
+      [], [], [], []
+    );
+    const s = analysis.stockDistribution[0];
+    expect(s.annualizedIsPeriod).toBe(false);
+    expect(s.annualizedReturn).toBeCloseTo(0.1, 2);
   });
 });

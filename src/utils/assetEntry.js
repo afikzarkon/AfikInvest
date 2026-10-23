@@ -100,10 +100,11 @@ export function emptyEntry(prefill = {}, today = '') {
     assetId: prefill.assetId !== undefined && prefill.assetId !== null ? String(prefill.assetId) : '',
     action: prefill.action || (classInfo(assetClass).kind === 'stock' ? 'BUY' : 'DEPOSIT'),
     date: today,
-    units: '',
+    units: prefill.units !== undefined && prefill.units !== null ? String(prefill.units) : '',
     price: '',
     fees: '',
     fxRate: '',
+    fxPaidRate: '',
     amount: '',
     taxWithheld: '',
     lotMethod: 'FIFO',
@@ -129,6 +130,7 @@ export function entryFromTransaction(tx) {
     price: str(tx.price),
     fees: tx.fees ? str(tx.fees) : '',
     fxRate: tx.currency === 'USD' ? str(tx.fxRate) : '',
+    fxPaidRate: tx.fxPaidRate ? str(tx.fxPaidRate) : '',
     amount: str(tx.amount),
     taxWithheld: tx.taxWithheld ? str(tx.taxWithheld) : '',
     lotMethod: tx.lotMethod || 'FIFO',
@@ -160,6 +162,7 @@ export function buildEntryPayload(state) {
       price: Number(state.price),
       fees: n(state.fees) || 0,
       fxRate: isUsd ? Number(state.fxRate) : undefined,
+      fxPaidRate: isUsd && n(state.fxPaidRate) ? n(state.fxPaidRate) : undefined,
       lotMethod: action === 'SELL' ? state.lotMethod : undefined,
       lotDetails: action === 'BUY' && state.lotDetails ? state.lotDetails : undefined
     };

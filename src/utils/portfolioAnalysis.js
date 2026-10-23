@@ -7,7 +7,7 @@ import { calculateAmericanStockMetrics } from './portfolioMath';
 import { normalizeIsraeliPrice, toNum } from './formatters';
 import { computeBankSavingsFundValue } from './bankSavingsFund';
 import { effectiveExchangeForIsraeliStock } from './israeliEtfClassifier';
-import { effectiveDailyChangePercent, israelToday } from './marketSession';
+import { changeFromPercent, effectiveDailyChangePercent, israelToday } from './marketSession';
 import { liquidBalanceOn } from '../shared/liquidBalance';
 
 export const calculatePortfolioAnalysis = (
@@ -87,8 +87,7 @@ export const calculatePortfolioAnalysis = (
     daysHeld: 0,
     yearsHeld: 0,
     annualizedReturn: 0,
-    dailyChange: 0,
-    volatility: 0
+    dailyChange: 0
   });
 
   // Israeli stocks
@@ -174,85 +173,22 @@ export const calculatePortfolioAnalysis = (
       : stock.yearsHeld;
     stock.daysHeld = Math.round(stock.yearsHeld * 365);
 
-    if (stock.yearsHeld > 0 && stock.totalPurchaseValue > 0) {
+    // Annualized only over a year or more. Compounding a shorter holding up
+    // to a year extrapolates it - +5% in ten days reads as +500% a year - so
+    // under a year the figure is the return over the holding itself, and
+    // annualizedIsPeriod says so (the GIPS rule).
+    if (stock.yearsHeld >= 1 && stock.totalPurchaseValue > 0) {
       stock.annualizedReturn = Math.pow((stock.value / stock.totalPurchaseValue), (1 / stock.yearsHeld)) - 1;
+      stock.annualizedIsPeriod = false;
+    } else if (stock.totalPurchaseValue > 0) {
+      stock.annualizedReturn = stock.value / stock.totalPurchaseValue - 1;
+      stock.annualizedIsPeriod = true;
     }
 
-    // Simplistic volatility approximation
-    stock.volatility = Math.abs(stock.dailyChange) * 1.5;
   });
 
-  // Distribution by purchase date
-  const monthlyDistribution = {};
-  const yearlyDistribution = {};
-
-  const addDateBucket = (stock, value) => {
-    const date = new Date(stock.purchaseDate);
-    if (Number.isNaN(date.getTime())) return;
-    const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-    const year = date.getFullYear();
-    if (!monthlyDistribution[month]) {
-      monthlyDistribution[month] = { value: 0, count: 0 };
-    }
-    monthlyDistribution[month].value += value;
-    monthlyDistribution[month].count += 1;
-
-    if (!yearlyDistribution[year]) {
-      yearlyDistribution[year] = { value: 0, count: 0 };
-    }
-    yearlyDistribution[year].value += value;
-    yearlyDistribution[year].count += 1;
-  };
-
-  israeliStocks.forEach((stock) => {
-    const value = toNum(normalizeIsraeliPrice(stock.currentPrice)) * toNum(stock.quantity);
-    addDateBucket(stock, value);
-  });
-  americanStocks.forEach((stock) => {
-    const metrics = calculateAmericanStockMetrics(stock);
-    addDateBucket(stock, metrics.totalCurrentValueILS);
-  });
-  // Accounts with a deposit ledger are bucketed PER DEPOSIT, at the date
-  // each deposit was actually made, rather than as one lump at whatever
-  // date the account's value was last updated.
-  //
-  // This is what the "פיזור לפי תאריכי קנייה" breakdown is for: it answers
-  // "when did I put money in, and how much". A provident fund's whole
-  // balance landing on its last-updated date answered a different question
-  // and hid every contribution the user had recorded - a fund paid into
-  // monthly for five years showed up as a single entry in the current
-  // month. Now each deposit sits in the month it was made, right alongside
-  // the stock purchases, which is exactly the comparison this section is
-  // meant to support.
-  //
-  // Amounts are the deposits themselves (money in at that date), not a
-  // share of today's value - the same basis as a stock purchase lot's
-  // entry. An account with no ledger at all still falls back to its single
-  // value at its update date, so nothing disappears from the breakdown.
-  const addLedgerBuckets = (account, fallbackValue, fallbackDate) => {
-    const deposits = Array.isArray(account.deposits) ? account.deposits : [];
-    const dated = deposits.filter((d) => d && d.date);
-    if (dated.length === 0) {
-      addDateBucket({ purchaseDate: fallbackDate }, toNum(fallbackValue));
-      return;
-    }
-    dated.forEach((deposit) => {
-      addDateBucket({ purchaseDate: deposit.date }, toNum(deposit.amount));
-    });
-  };
-
-  pensionFunds.forEach((item) => {
-    addLedgerBuckets(item, item.currentValue != null ? item.currentValue : item.amount, item.currentValueDate || item.updateDate);
-  });
-  cashFunds.forEach((item) => {
-    addLedgerBuckets(item, item.amount, item.currentValueDate || item.updateDate);
-  });
-  bankBalances.forEach((item) => {
-    addLedgerBuckets(item, item.amount, item.currentValueDate || item.updateDate);
-  });
-  bankSavingsFunds.forEach((fund) => {
-    addLedgerBuckets(fund, computeBankSavingsFundValue(fund), null);
-  });
+  // Money in by month and year: utils/moneyIn.js, shared with the
+  // portfolio review.
 
   const stockList = Object.values(stockDistribution);
 
@@ -285,10 +221,13 @@ export const calculatePortfolioAnalysis = (
   // shown under the same caption they read as a contradiction. The
   // analysis page now leads with the stocks' figure, matching home, and
   // states the whole-portfolio one as what it is.
-  const dailyChangeILS = stockList.reduce((sum, stock) => sum + (stock.dailyChange / 100) * stock.value, 0);
+  // Each holding's change in shekels (changeFromPercent: the percent is
+  // against the previous close), over the previous close - of the stocks,
+  // or of the whole portfolio with its non-traded balances unchanged.
+  const dailyChangeILS = stockList.reduce((sum, stock) => sum + changeFromPercent(stock.value, stock.dailyChange), 0);
   const stocksValueILS = stockList.reduce((sum, stock) => sum + stock.value, 0);
-  const dailyChangeStocksPercent = stocksValueILS > 0 ? (dailyChangeILS / stocksValueILS) * 100 : 0;
-  const weightedDailyChangePercent = totalValueILS > 0 ? (dailyChangeILS / totalValueILS) * 100 : 0;
+  const dailyChangeStocksPercent = stocksValueILS - dailyChangeILS > 0 ? (dailyChangeILS / (stocksValueILS - dailyChangeILS)) * 100 : 0;
+  const weightedDailyChangePercent = totalValueILS - dailyChangeILS > 0 ? (dailyChangeILS / (totalValueILS - dailyChangeILS)) * 100 : 0;
   const weightedAnnualizedReturnPercent = totalPurchaseILS > 0
     ? stockList.reduce((sum, stock) => sum + ((stock.annualizedReturn || 0) * stock.totalPurchaseValue), 0) /
       totalPurchaseILS * 100
@@ -366,15 +305,6 @@ export const calculatePortfolioAnalysis = (
 
     // Distribution by stock
     stockDistribution: [...stockList].sort((a, b) => b.value - a.value),
-
-    // Distribution by date
-    monthlyDistribution: Object.entries(monthlyDistribution)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([month, data]) => ({ month, ...data })),
-
-    yearlyDistribution: Object.entries(yearlyDistribution)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([year, data]) => ({ year, ...data })),
 
     // Detailed reports
     reports: {

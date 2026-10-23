@@ -11,7 +11,7 @@ import {
   computeTimeWeightedReturnPercent,
   buildTwrIndexSeries,
   annualizeReturnPercent,
-  TRADING_DAYS_PER_YEAR
+  CALENDAR_DAYS_PER_YEAR
 } from './portfolioStats';
 import { computeHistoricalPortfolioSeries } from './historicalPortfolioValue';
 import { buildPortfolioCashFlows } from './portfolioCashFlows';
@@ -128,13 +128,12 @@ describe('computeVolatilityPercent', () => {
     expect(computeVolatilityPercent(bumpyReturns)).toBeGreaterThan(0);
   });
 
-  // The audited definition: sample stdev of the daily-equivalent returns,
-  // annualized by sqrt(252). Pinned numerically so a change to either half
+  // The audited definition: sample stdev of ln(1 + r) / sqrt(days),
+  // annualized by sqrt(365). Pinned numerically so a change to either half
   // of that formula is caught rather than silently shifting every
   // volatility figure the app displays.
-  test('annualizes the daily-equivalent standard deviation by sqrt(252)', () => {
-    // Daily points, so each period's daily-equivalent return IS its return:
-    // +10%, -10%, +10%. Mean = 0.0333..., sample stdev (n-1) over the three.
+  test('annualizes the per-day standard deviation of log returns by sqrt(365)', () => {
+    // Daily points: +10%, -10%, +10%.
     const returns = computePeriodReturns(
       buildEquitySeries([
         { date: '2026-01-01', totalValueILS: 100 },
@@ -143,12 +142,26 @@ describe('computeVolatilityPercent', () => {
         { date: '2026-01-04', totalValueILS: 108.9 }
       ])
     );
-    const dailyEquivalents = [0.1, -0.1, 0.1];
-    const mean = dailyEquivalents.reduce((s, v) => s + v, 0) / 3;
-    const variance = dailyEquivalents.reduce((s, v) => s + (v - mean) ** 2, 0) / 2;
-    const expected = Math.sqrt(variance) * Math.sqrt(TRADING_DAYS_PER_YEAR) * 100;
+    const z = [Math.log(1.1), Math.log(0.9), Math.log(1.1)];
+    const mean = z.reduce((s, v) => s + v, 0) / 3;
+    const variance = z.reduce((s, v) => s + (v - mean) ** 2, 0) / 2;
+    const expected = Math.sqrt(variance) * Math.sqrt(CALENDAR_DAYS_PER_YEAR) * 100;
 
     expect(computeVolatilityPercent(returns)).toBeCloseTo(expected, 6);
+  });
+
+  // The bug this replaced: compounding a week down to a daily-equivalent
+  // return divided its spread by 7, not sqrt(7). The same weekly returns
+  // must annualize to the weekly spread x sqrt(52) or so - not a third of it.
+  test('weekly points annualize to about the weekly spread x sqrt(52)', () => {
+    const values = [100, 102, 99.96, 102.96, 100.9, 103.92, 101.84, 104.9];
+    const points = values.map((v, i) => ({ date: new Date(Date.UTC(2026, 0, 1 + i * 7)).toISOString().slice(0, 10), totalValueILS: v }));
+    const returns = computePeriodReturns(buildEquitySeries(points));
+    const logs = returns.map((r) => Math.log(1 + r.periodReturn));
+    const m = logs.reduce((s, v) => s + v, 0) / logs.length;
+    const weeklySd = Math.sqrt(logs.reduce((s, v) => s + (v - m) ** 2, 0) / (logs.length - 1));
+    expect(computeVolatilityPercent(returns)).toBeCloseTo(weeklySd * Math.sqrt(365 / 7) * 100, 6);
+    expect(computeVolatilityPercent(returns)).toBeGreaterThan(10);
   });
 
   // Compounding a long gap down to a daily-equivalent return smooths away

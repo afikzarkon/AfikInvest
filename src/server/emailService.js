@@ -35,6 +35,7 @@ async function readGoogleError(res) {
 // minute before it expires.
 // fetchImpl defaults to Node's global fetch, looked up at call time (CRA's
 // Jest environment has none).
+/* global globalThis */
 function createGmailApiTransport({ fetchImpl = (...args) => globalThis.fetch(...args) } = {}) {
   const composer = nodemailer.createTransport({ streamTransport: true, buffer: true, newline: 'unix' });
   let accessToken = '';

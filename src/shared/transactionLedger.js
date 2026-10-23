@@ -169,6 +169,10 @@ function normalizeTransaction(input, { today } = {}) {
     specificLots: null,
     lotDetails: null,
     newAccount: null,
+    // The ILS per USD the user's bank or broker actually converted at, when
+    // it differs from the representative rate in fxRate. Optional; the
+    // difference is the conversion cost the portfolio review reports.
+    fxPaidRate: null,
     note
   };
 
@@ -193,6 +197,11 @@ function normalizeTransaction(input, { today } = {}) {
     out.price = price;
     out.amount = round(units * price);
     if (type === 'SELL' && fees > out.amount) fail('fees cannot exceed the sale amount');
+    if (out.currency === 'USD' && tx.fxPaidRate !== undefined && tx.fxPaidRate !== null && tx.fxPaidRate !== '') {
+      const paid = num(tx.fxPaidRate);
+      if (!(paid > 0)) fail('fxPaidRate must be positive');
+      out.fxPaidRate = paid;
+    }
   }
 
   if (type === 'SELL') {
