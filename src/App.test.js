@@ -2,7 +2,7 @@
 // ("renders learn react link"), which had failed since the app stopped
 // being the CRA starter page - a permanently red suite everyone learned to
 // ignore. Replaced with assertions about what App actually renders.
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import App from './App';
 
 describe('App', () => {
@@ -37,5 +37,29 @@ describe('App', () => {
     const requestedUrls = global.fetch.mock.calls.map(([url]) => String(url));
     expect(requestedUrls.some((url) => url.includes('/api/israeli-stocks'))).toBe(false);
     expect(requestedUrls.some((url) => url.includes('/api/american-stocks'))).toBe(false);
+  });
+
+  test('a signed-out visitor at the root sees the landing page, and its button opens sign-up', async () => {
+    window.history.replaceState({}, '', '/');
+    render(<App />);
+    const cta = (await screen.findAllByRole('button', { name: 'התחל עכשיו בחינם' }, { timeout: 5000 }))[0];
+    fireEvent.click(cta);
+    expect(window.location.pathname + window.location.search).toBe('/login?mode=register');
+    expect(await screen.findByLabelText(/אימייל/)).toBeInTheDocument();
+
+    // Back returns to the landing page.
+    act(() => {
+      window.history.replaceState({}, '', '/');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    expect((await screen.findAllByRole('button', { name: 'התחל עכשיו בחינם' })).length).toBeGreaterThan(0);
+  });
+
+  test('a link with ?mode= still opens the form directly', async () => {
+    window.history.replaceState({}, '', '/?mode=login');
+    render(<App />);
+    expect(await screen.findByLabelText(/אימייל/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'התחל עכשיו בחינם' })).toBeNull();
+    window.history.replaceState({}, '', '/');
   });
 });

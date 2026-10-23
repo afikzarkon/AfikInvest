@@ -133,7 +133,7 @@ const shot = (page, name) => page.screenshot({ path: path.join(SHOTS, `${name}.p
     const email = `e2e-${Date.now()}@example.com`;
 
     await step('sign-up: address, password and the terms', async () => {
-      await page.goto(WEB, { waitUntil: 'networkidle0' });
+      await page.goto(`${WEB}/login?mode=register`, { waitUntil: 'networkidle0' });
       await shot(page, '01-signup');
       await typeInto(page, '#auth-email', email);
       await typeInto(page, 'input[autocomplete="new-password"]', 'first-pass-123!');
