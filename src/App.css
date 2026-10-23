@@ -5612,6 +5612,16 @@ select {
     padding-bottom: 68px;
   }
 
+  /* In a column the shell's align-items: flex-start sizes the main column
+     to its content and pins it to the start edge - the right, in RTL. A
+     page wide enough hid that; the loading state between two pages is not,
+     so its logo sat in the top right corner and then jumped when the page
+     arrived. The column always spans the width. */
+  .app-main {
+    align-self: stretch;
+    width: 100%;
+  }
+
   .side-nav {
     position: fixed;
     inset-inline: 0;
