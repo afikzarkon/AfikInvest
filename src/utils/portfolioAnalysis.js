@@ -7,7 +7,7 @@ import { calculateAmericanStockMetrics } from './portfolioMath';
 import { normalizeIsraeliPrice, toNum } from './formatters';
 import { computeBankSavingsFundValue } from './bankSavingsFund';
 import { effectiveExchangeForIsraeliStock } from './israeliEtfClassifier';
-import { effectiveDailyChangePercent, israelToday } from './marketSession';
+import { changeFromPercent, effectiveDailyChangePercent, israelToday } from './marketSession';
 import { liquidBalanceOn } from '../shared/liquidBalance';
 
 export const calculatePortfolioAnalysis = (
@@ -87,8 +87,7 @@ export const calculatePortfolioAnalysis = (
     daysHeld: 0,
     yearsHeld: 0,
     annualizedReturn: 0,
-    dailyChange: 0,
-    volatility: 0
+    dailyChange: 0
   });
 
   // Israeli stocks
@@ -174,12 +173,18 @@ export const calculatePortfolioAnalysis = (
       : stock.yearsHeld;
     stock.daysHeld = Math.round(stock.yearsHeld * 365);
 
-    if (stock.yearsHeld > 0 && stock.totalPurchaseValue > 0) {
+    // Annualized only over a year or more. Compounding a shorter holding up
+    // to a year extrapolates it - +5% in ten days reads as +500% a year - so
+    // under a year the figure is the return over the holding itself, and
+    // annualizedIsPeriod says so (the GIPS rule).
+    if (stock.yearsHeld >= 1 && stock.totalPurchaseValue > 0) {
       stock.annualizedReturn = Math.pow((stock.value / stock.totalPurchaseValue), (1 / stock.yearsHeld)) - 1;
+      stock.annualizedIsPeriod = false;
+    } else if (stock.totalPurchaseValue > 0) {
+      stock.annualizedReturn = stock.value / stock.totalPurchaseValue - 1;
+      stock.annualizedIsPeriod = true;
     }
 
-    // Simplistic volatility approximation
-    stock.volatility = Math.abs(stock.dailyChange) * 1.5;
   });
 
   // Money in by month and year: utils/moneyIn.js, shared with the
@@ -216,10 +221,13 @@ export const calculatePortfolioAnalysis = (
   // shown under the same caption they read as a contradiction. The
   // analysis page now leads with the stocks' figure, matching home, and
   // states the whole-portfolio one as what it is.
-  const dailyChangeILS = stockList.reduce((sum, stock) => sum + (stock.dailyChange / 100) * stock.value, 0);
+  // Each holding's change in shekels (changeFromPercent: the percent is
+  // against the previous close), over the previous close - of the stocks,
+  // or of the whole portfolio with its non-traded balances unchanged.
+  const dailyChangeILS = stockList.reduce((sum, stock) => sum + changeFromPercent(stock.value, stock.dailyChange), 0);
   const stocksValueILS = stockList.reduce((sum, stock) => sum + stock.value, 0);
-  const dailyChangeStocksPercent = stocksValueILS > 0 ? (dailyChangeILS / stocksValueILS) * 100 : 0;
-  const weightedDailyChangePercent = totalValueILS > 0 ? (dailyChangeILS / totalValueILS) * 100 : 0;
+  const dailyChangeStocksPercent = stocksValueILS - dailyChangeILS > 0 ? (dailyChangeILS / (stocksValueILS - dailyChangeILS)) * 100 : 0;
+  const weightedDailyChangePercent = totalValueILS - dailyChangeILS > 0 ? (dailyChangeILS / (totalValueILS - dailyChangeILS)) * 100 : 0;
   const weightedAnnualizedReturnPercent = totalPurchaseILS > 0
     ? stockList.reduce((sum, stock) => sum + ((stock.annualizedReturn || 0) * stock.totalPurchaseValue), 0) /
       totalPurchaseILS * 100

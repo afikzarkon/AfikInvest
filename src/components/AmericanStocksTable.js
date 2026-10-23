@@ -4,7 +4,7 @@ import PendingPriceValue from './PendingPriceValue';
 import AssetCell from './AssetCell';
 import ScrollableTable from './ScrollableTable';
 import { formatPriceWithSign as maskedAmount } from '../utils/formatters';
-import { effectiveDailyChangePercent } from '../utils/marketSession';
+import { changeFromPercent, effectiveDailyChangePercent } from '../utils/marketSession';
 import { useCompactLayout } from '../hooks/useMediaQuery';
 import { LastSessionChange, Merged, MergedHeader, Money, Pct } from './holdings/MergedValue';
 import HoldingCards from './holdings/HoldingCards';
@@ -67,7 +67,7 @@ function lotFigures(stock, { calculateAmericanStockMetrics, calculateProfitPerce
     inflationary: m.currencyExemptGainILS,
     realGain: m.realGainILS,
     dailyPercent,
-    dailyProfit: (dailyPercent / 100) * m.totalCurrentValueUSD,
+    dailyProfit: changeFromPercent(m.totalCurrentValueUSD, dailyPercent),
     lastSession: lastSession ? lastSession.byLot[stock.id] || null : null
   };
 }
@@ -111,7 +111,7 @@ function groupFigures(stocks, lots, summary, calculateProfitPercentage) {
     inflationary: profitILS - sum('realGain'),
     realGain: sum('realGain'),
     dailyPercent,
-    dailyProfit: (dailyPercent / 100) * totalCurrentValueUSD
+    dailyProfit: changeFromPercent(totalCurrentValueUSD, dailyPercent)
   };
 }
 

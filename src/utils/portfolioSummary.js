@@ -13,7 +13,7 @@ import {
 import { normalizeIsraeliPrice } from './formatters';
 import { calculateStockRealGainTax, calculatePensionRealGainTax, calculateBankSavingsFundTax, monthKeyFromDate } from './cpiTax';
 import { computeBankSavingsFundValue } from './bankSavingsFund';
-import { effectiveDailyChangePercent, israelToday, marketSessionState } from './marketSession';
+import { changeFromPercent, effectiveDailyChangePercent, israelToday, marketSessionState } from './marketSession';
 import { liquidBalanceOn } from '../shared/liquidBalance';
 
 // cpi = { currentIndex, indexByMonth } - אופציונלי. כל עוד המדד לא נטען
@@ -81,8 +81,11 @@ export const calculatePortfolioSummary = (
     acc.totalTaxILS += stockTax;
     acc.totalRealGainILS += realGain;
     acc.totalInflationaryGainILS += inflationaryGain;
-    acc.totalWeight += totalCurrentValue; // weight for daily-change percentage
-    acc.dailyChangeSum += dailyPct(stock) * totalCurrentValue;
+    // The day's change in shekels, and the value it is a percent of (the
+    // previous close) - see changeFromPercent.
+    const change = changeFromPercent(totalCurrentValue, dailyPct(stock));
+    acc.totalWeight += totalCurrentValue - change;
+    acc.dailyChangeSum += change;
 
     return acc;
   }, {
@@ -111,8 +114,9 @@ export const calculatePortfolioSummary = (
     acc.totalRealGainILS += metrics.realGainILS;
     acc.totalCurrencyExemptGainILS += metrics.currencyExemptGainILS;
     acc.totalExchangeImpact += metrics.exchangeRateImpact;
-    acc.totalWeight += metrics.totalCurrentValueILS; // weight for daily-change percentage
-    acc.dailyChangeSum += dailyPct(stock) * metrics.totalCurrentValueILS;
+    const change = changeFromPercent(metrics.totalCurrentValueILS, dailyPct(stock));
+    acc.totalWeight += metrics.totalCurrentValueILS - change;
+    acc.dailyChangeSum += change;
 
     return acc;
   }, {
@@ -131,25 +135,23 @@ export const calculatePortfolioSummary = (
     dailyChangeSum: 0
   });
 
-  // Weighted daily-change percentage
+  // The day's change: the shekels summed, over the previous close of what
+  // moved them.
   const totalWeight = israeliSummary.totalWeight + americanSummary.totalWeight;
-  const weightedDailyChange = totalWeight > 0 ?
-    (israeliSummary.dailyChangeSum + americanSummary.dailyChangeSum) / totalWeight : 0;
-
-  // Daily profit in ILS and USD
-  const dailyProfitILS = (weightedDailyChange / 100) * (israeliSummary.totalCurrentValueILS + americanSummary.totalCurrentValueILS);
-  const dailyProfitUSD = (weightedDailyChange / 100) * americanSummary.totalCurrentValueUSD;
+  const dailyProfitILS = israeliSummary.dailyChangeSum + americanSummary.dailyChangeSum;
+  const weightedDailyChange = totalWeight > 0 ? (dailyProfitILS / totalWeight) * 100 : 0;
 
   // Daily profit split per exchange
-  const israeliDailyProfitILS = israeliStocks.reduce((sum, stock) => {
-    const totalCurrentValue = normalizeIsraeliPrice(stock.currentPrice) * (stock.quantity || 0);
-    return sum + (dailyPct(stock) / 100) * totalCurrentValue;
-  }, 0);
+  const israeliDailyProfitILS = israeliSummary.dailyChangeSum;
 
   const americanDailyProfitUSD = americanStocks.reduce((sum, stock) => {
     const totalCurrentValueUSD = (stock.currentPrice || 0) * (stock.quantity || 0);
-    return sum + (dailyPct(stock) / 100) * totalCurrentValueUSD;
+    return sum + changeFromPercent(totalCurrentValueUSD, dailyPct(stock));
   }, 0);
+  // The American holdings' own change in dollars. (It used to be the whole
+  // portfolio's weighted percent applied to the dollar value, Israeli
+  // movement included.)
+  const dailyProfitUSD = americanDailyProfitUSD;
 
   // Total profit percentages per exchange
   const israeliProfitILS = israeliSummary.totalCurrentValueILS - israeliSummary.totalPurchaseILS;
@@ -158,7 +160,7 @@ export const calculatePortfolioSummary = (
   const israeliTaxILS = israeliSummary.totalTaxILS;
   const israeliAfterTaxILS = israeliProfitILS - israeliTaxILS;
   const israeliProfitPercent = israeliSummary.totalPurchaseILS > 0 ? (israeliProfitILS / israeliSummary.totalPurchaseILS) * 100 : 0;
-  const israeliDailyPercent = israeliSummary.totalCurrentValueILS > 0 ? (israeliDailyProfitILS / israeliSummary.totalCurrentValueILS) * 100 : 0;
+  const israeliDailyPercent = israeliSummary.totalWeight > 0 ? (israeliDailyProfitILS / israeliSummary.totalWeight) * 100 : 0;
 
   const americanProfitUSD = americanSummary.totalCurrentValueUSD - americanSummary.totalPurchaseUSD;
   // מס רווח הון על מניות אמריקאיות: כבר חושב per-stock למעלה (מוצמד
@@ -168,7 +170,8 @@ export const calculatePortfolioSummary = (
   const americanTaxUSD = americanSummary.totalTaxUSD;
   const americanAfterTaxUSD = americanProfitUSD - americanTaxUSD;
   const americanProfitPercent = americanSummary.totalPurchaseUSD > 0 ? (americanProfitUSD / americanSummary.totalPurchaseUSD) * 100 : 0;
-  const americanDailyPercent = americanSummary.totalCurrentValueUSD > 0 ? (americanDailyProfitUSD / americanSummary.totalCurrentValueUSD) * 100 : 0;
+  const americanPreviousValueUSD = americanSummary.totalCurrentValueUSD - americanDailyProfitUSD;
+  const americanDailyPercent = americanPreviousValueUSD > 0 ? (americanDailyProfitUSD / americanPreviousValueUSD) * 100 : 0;
   const americanTaxILS = americanSummary.totalTaxILS;
 
   // Total capital by category
@@ -213,7 +216,23 @@ export const calculatePortfolioSummary = (
     (sum, item) => sum + calculatePensionPeriodReturn(item).adjustedPreviousValue,
     0
   );
-  const pensionPreviousProfitPercent = pensionAdjustedPreviousValueILS > 0 ? ((pensionCurrentValueILS / pensionAdjustedPreviousValueILS) - 1) * 100 : (pensionInitialInvestmentILS > 0 ? ((pensionCurrentValueILS / pensionInitialInvestmentILS) - 1) * 100 : 0);
+  // Summed the way each fund's own row measures it (Modified Dietz, a
+  // deposit weighted by how long it was invested): the funds' gains over
+  // their bases, for the funds that have a previous value. A flat
+  // current / (previous + deposits) disagreed with the rows above it.
+  const pensionPeriods = pensionFunds
+    .filter((item) => (item.previousValue ?? 0) > 0)
+    .map((item) => calculatePensionPeriodReturn(item))
+    .filter((r) => r.base > 0);
+  const pensionPeriodBase = pensionPeriods.reduce((s, r) => s + r.base, 0);
+  const pensionPreviousProfitPercent =
+    pensionPeriodBase > 0
+      ? (pensionPeriods.reduce((s, r) => s + r.gain, 0) / pensionPeriodBase) * 100
+      : pensionAdjustedPreviousValueILS > 0
+        ? (pensionCurrentValueILS / pensionAdjustedPreviousValueILS - 1) * 100
+        : pensionInitialInvestmentILS > 0
+          ? (pensionCurrentValueILS / pensionInitialInvestmentILS - 1) * 100
+          : 0;
   const pensionTotalProfitILS = pensionCurrentValueILS - pensionInitialInvestmentILS;
   // מס על קופות גמל: תמיד 25% על הרווח הריאלי בלבד (כל הפקדה מוצמדת
   // בנפרד לפי תאריך ההפקדה שלה, ראו cpiTax.js) - אין עוד ברירת מס שטוח
@@ -292,7 +311,12 @@ export const calculatePortfolioSummary = (
   // פשוט של השדות שכל אחד מהם כבר מחשב לעצמו.
   const totalRealGainILS =
     israeliSummary.totalRealGainILS + americanSummary.totalRealGainILS + pensionRealGainILS + bankSavingsRealGainILS;
-  const totalInflationaryGainILS = israeliSummary.totalInflationaryGainILS + americanSummary.totalCurrencyExemptGainILS + pensionInflationaryGainILS;
+  // Every category's share, so real + inflationary = the nominal profit. The
+  // bank savings' was missing: a linked plan's inflationary part fell out
+  // of both totals.
+  const bankSavingsInflationaryGainILS = bankSavingsTotalProfitILS - bankSavingsRealGainILS;
+  const totalInflationaryGainILS =
+    israeliSummary.totalInflationaryGainILS + americanSummary.totalCurrencyExemptGainILS + pensionInflationaryGainILS + bankSavingsInflationaryGainILS;
   const bankBalancesTotalILS = bankBalances.reduce((sum, item) => sum + liquidBalanceOn(item, today), 0);
   const capitalIsraeliILS = israeliSummary.totalCurrentValueILS;
   const capitalAmericanILS = americanSummary.totalCurrentValueILS;

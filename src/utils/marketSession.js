@@ -50,6 +50,17 @@ export function effectiveDailyChangePercent(stock, today = israelToday()) {
   return tradedToday(stock, today) === false ? 0 : raw;
 }
 
+// The amount a holding worth `value` NOW gained on a day it moved `percent`.
+// The percent is against the previous close, so the base is
+// value / (1 + p), and the change value x p / (100 + p) - not value x p,
+// which counts the day's move on top of itself (+10% on 110 is 10, not 11).
+export function changeFromPercent(value, percent) {
+  const v = Number(value);
+  const p = Number(percent);
+  if (!Number.isFinite(v) || !Number.isFinite(p) || p <= -100) return 0;
+  return (v * p) / (100 + p);
+}
+
 // For a whole market's lots: 'today' when at least one lot's session is
 // today, 'closed' when every lot's session is an earlier day, null when
 // there are no lots (or none carries a date).

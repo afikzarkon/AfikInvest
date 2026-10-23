@@ -4,7 +4,7 @@ import PendingPriceValue from './PendingPriceValue';
 import AssetCell from './AssetCell';
 import ScrollableTable from './ScrollableTable';
 import { formatPriceWithSign as maskedAmount } from '../utils/formatters';
-import { effectiveDailyChangePercent } from '../utils/marketSession';
+import { changeFromPercent, effectiveDailyChangePercent } from '../utils/marketSession';
 import { calculateStockRealGainTax, monthKeyFromDate } from '../utils/cpiTax';
 import { sectorLabelHe } from '../utils/sectorLabels';
 import { effectiveExchangeForIsraeliStock, resolveIsraeliSector } from '../utils/israeliEtfClassifier';
@@ -127,7 +127,7 @@ function lotFigures(stock, { normalizeIsraeliPrice, calculateProfitPercentage, T
     inflationaryGain: profit - realGain,
     afterTax: profit - tax,
     dailyPercent,
-    dailyProfit: (dailyPercent / 100) * totalCurrentValue,
+    dailyProfit: changeFromPercent(totalCurrentValue, dailyPercent),
     lastSession: lastSession ? lastSession.byLot[stock.id] || null : null
   };
 }
@@ -151,7 +151,7 @@ function groupFigures(stocks, lots, summary) {
     inflationaryGain: summary.totalProfit - sum('realGain'),
     afterTax: summary.totalProfit - sum('tax'),
     dailyPercent: effectiveDailyChangePercent(stocks[0]) || 0,
-    dailyProfit: ((effectiveDailyChangePercent(stocks[0]) || 0) / 100) * summary.totalCurrentValue
+    dailyProfit: changeFromPercent(summary.totalCurrentValue, effectiveDailyChangePercent(stocks[0]) || 0)
   };
 }
 

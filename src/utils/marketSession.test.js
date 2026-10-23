@@ -1,4 +1,4 @@
-import { israelToday, tradedToday, effectiveDailyChangePercent, marketSessionState } from './marketSession';
+import { changeFromPercent, israelToday, tradedToday, effectiveDailyChangePercent, marketSessionState } from './marketSession';
 import { calculatePortfolioSummary } from './portfolioSummary';
 
 describe('israelToday', () => {
@@ -59,19 +59,24 @@ describe('portfolio daily change across TASE and US sessions', () => {
     }
   ];
   const summarize = (il, us, today) => calculatePortfolioSummary(il, us, [], [], [], {}, [], { today });
+  // A day's change on a holding worth v now that moved p%: against the
+  // previous close, v / (1 + p).
+  const ch = (v, p) => (v * p) / (100 + p);
+  // The portfolio's percent: the changes over the previous closes.
+  const pct = (...changes) => (changes.reduce((s, c) => s + c, 0) / (13700 - changes.reduce((s, c) => s + c, 0))) * 100;
 
   test('TASE open, US not yet open: only the Israeli movement counts', () => {
     // Monday morning: TASE trading today, Yahoo still reports Friday's session.
     const s = summarize(israeli(2, '2026-10-12'), american(5, '2026-10-09'), '2026-10-12');
-    expect(s.israeliDailyProfitILS).toBeCloseTo(200, 6);
+    expect(s.israeliDailyProfitILS).toBeCloseTo(ch(10000, 2), 6);
     expect(s.americanDailyProfitUSD).toBe(0);
-    expect(s.weightedDailyChange).toBeCloseTo((2 * 10000) / 13700, 6);
+    expect(s.weightedDailyChange).toBeCloseTo(pct(ch(10000, 2)), 6);
     expect(s.dailyChangeSessions).toEqual({ israeli: 'today', american: 'closed' });
   });
 
   test("US open after TASE closed: TASE's closing change for today stays in, alongside US trading", () => {
     const s = summarize(israeli(2, '2026-10-12'), american(-1, '2026-10-12'), '2026-10-12');
-    expect(s.weightedDailyChange).toBeCloseTo((2 * 10000 - 1 * 3700) / 13700, 6);
+    expect(s.weightedDailyChange).toBeCloseTo(pct(ch(10000, 2), ch(3700, -1)), 6);
     expect(s.dailyChangeSessions).toEqual({ israeli: 'today', american: 'today' });
   });
 
@@ -84,6 +89,21 @@ describe('portfolio daily change across TASE and US sessions', () => {
 
     const afterUsOpen = summarize(israeli(2, '2026-10-09'), american(-1, '2026-10-12'), '2026-10-12');
     expect(afterUsOpen.israeliDailyProfitILS).toBe(0);
-    expect(afterUsOpen.weightedDailyChange).toBeCloseTo((-1 * 3700) / 13700, 6);
+    expect(afterUsOpen.weightedDailyChange).toBeCloseTo(pct(ch(3700, -1)), 6);
+  });
+});
+
+describe('changeFromPercent', () => {
+  test("is the change against the previous close, not the percent of today's value", () => {
+    // +10% to 110: it was 100, so the day made 10, not 11.
+    expect(changeFromPercent(110, 10)).toBeCloseTo(10, 9);
+    expect(changeFromPercent(90, -10)).toBeCloseTo(-10, 9);
+    expect(changeFromPercent(1000, 0)).toBe(0);
+  });
+
+  test('has no change to report for nonsense input', () => {
+    expect(changeFromPercent(100, -100)).toBe(0);
+    expect(changeFromPercent(100, NaN)).toBe(0);
+    expect(changeFromPercent(undefined, 5)).toBe(0);
   });
 });

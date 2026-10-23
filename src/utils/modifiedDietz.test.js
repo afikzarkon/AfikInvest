@@ -124,3 +124,17 @@ describe('calculateModifiedDietzReturn', () => {
     expect(() => calculateModifiedDietzReturn({})).not.toThrow();
   });
 });
+
+describe('calculateModifiedDietzReturn - no return over a base at or below zero', () => {
+  test('a withdrawal that outweighs the opening value leaves no percent', () => {
+    const r = calculateModifiedDietzReturn({
+      beginningValue: 1000,
+      endingValue: 100,
+      cashFlows: [{ date: '2026-01-02', amount: -2000 }],
+      periodStart: '2026-01-01',
+      periodEnd: '2026-01-31'
+    });
+    expect(r.percent).toBeNull();
+    expect(r.gain).toBeCloseTo(1100, 9);
+  });
+});

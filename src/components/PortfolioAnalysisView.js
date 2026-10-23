@@ -2055,7 +2055,7 @@ function PortfolioAnalysisView({
                           </div>
                           <div className="stock-card-tags">
                             <span className={`stock-tag ${stock.annualizedReturn >= 0 ? 'is-positive' : 'is-negative'}`}>
-                              {signedPercent(stock.annualizedReturn * 100)} בשנה
+                              {signedPercent(stock.annualizedReturn * 100)} {stock.annualizedIsPeriod ? 'מאז הקנייה' : 'בשנה'}
                             </span>
                             {rec && rec.numberOfAnalystOpinions > 0 && (
                               <span className={`stock-tag ${sentiment ? `is-${sentiment}` : ''}`}>
@@ -2113,8 +2113,11 @@ function PortfolioAnalysisView({
                         {stock.profitPercentage.toFixed(1)}%
                       </td>
                       <td>{stock.daysHeld > 365 ? `${stock.yearsHeld.toFixed(1)} שנים` : `${stock.daysHeld} ימים`}</td>
-                      <td className={stock.annualizedReturn >= 0 ? 'profit-positive' : 'profit-negative'}>
-                        {(stock.annualizedReturn * 100).toFixed(1)}%
+                      <td
+                        className={stock.annualizedReturn >= 0 ? 'profit-positive' : 'profit-negative'}
+                        title={stock.annualizedIsPeriod ? 'מוחזק פחות משנה - התשואה מאז הקנייה, לא שנתית' : undefined}
+                      >
+                        {(stock.annualizedReturn * 100).toFixed(1)}%{stock.annualizedIsPeriod ? ' *' : ''}
                       </td>
                     </tr>
                   ))}

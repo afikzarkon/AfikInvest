@@ -250,7 +250,9 @@ describe('calculatePortfolioSummary', () => {
         ]
       }];
       const summary = calculatePortfolioSummary([], [], pensionFunds, [], []);
-      expect(summary.pensionPreviousProfitPercent).toBeCloseTo(0.909, 2); // לא 11%
+      // Modified Dietz, as the fund's own row: the 10,000 deposit half way
+      // through the 90 days counts for half - 1,000 / (100,000 + 5,000).
+      expect(summary.pensionPreviousProfitPercent).toBeCloseTo(0.952, 2); // לא 11%
     });
   });
 });
@@ -274,5 +276,14 @@ describe('money-market fund returns', () => {
     expect(s.cashFundsPeriodReturnPercent).toBeCloseTo((1000 / (10000 + (1000 * 17) / 31)) * 100, 10);
     expect(s.cashFundsTotalProfitILS).toBe(1000); // 15,000 held on 14,000 paid in
     expect(s.cashFundsTotalReturnPercent).toBeCloseTo((1000 / 14000) * 100, 10);
+  });
+});
+
+describe('real + inflationary = nominal, every category included', () => {
+  test("a linked bank savings plan's inflationary part is in the total", () => {
+    const cpi = { currentIndex: 110, indexByMonth: { '2024-01': 100 } };
+    const bankSavingsFunds = [{ interestRate: 5, isLinkedToIndex: true, deposits: [{ date: '2024-01-01', amount: 10000 }] }];
+    const s = calculatePortfolioSummary([], [], [], [], [], cpi, bankSavingsFunds);
+    expect(s.totalRealGainILS + s.totalInflationaryGainILS).toBeCloseTo(s.totalProfitILS, 6);
   });
 });

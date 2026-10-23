@@ -164,3 +164,10 @@ describe('formatDate', () => {
     expect(formatDate('2023-01-15')).toBe('15.1.2023');
   });
 });
+
+describe('formatPriceWithSign - the sign of what is shown', () => {
+  test('a negative amount that rounds to zero is not "0.00-"', () => {
+    expect(formatPriceWithSign(-0.004)).toBe(formatPriceWithSign(0));
+    expect(formatPriceWithSign(-0.005).endsWith('-')).toBe(true);
+  });
+});

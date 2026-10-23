@@ -40,7 +40,8 @@ export const formatPriceWithSign = (price) => {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   });
-  if (price >= 0) {
+  // The sign of what is shown: -0.004 rounds to 0.00, which is not "0.00-".
+  if (price >= 0 || formattedNumber === '0.00') {
     return withCommas;
   } else {
     return `${withCommas}-`;

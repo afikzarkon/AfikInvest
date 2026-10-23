@@ -280,8 +280,11 @@ function adjustedChangePercent({ baseValue, compareValue, cashFlows, periodStart
     periodStart,
     periodEnd
   });
+  // With flows in the period the naive figure counts them as growth, so it
+  // is no fallback: no measurable return (a base the flows drove to zero or
+  // below) is shown as none.
   return {
-    changePercent: percent !== null ? percent : naive,
+    changePercent: percent,
     rawChangePercent: naive,
     netCashFlow,
     contributionAdjusted: percent !== null
