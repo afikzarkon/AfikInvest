@@ -1232,6 +1232,8 @@ function App() {
             {...toolbarProps}
             summary={summary}
             lastSession={lastSession.total}
+            lastSessionDetail={lastSession}
+            analysis={analysis}
             onNavigate={navigate}
             onLoadSamplePortfolio={handleLoadSamplePortfolio}
             isSamplePortfolio={isSamplePortfolio}
