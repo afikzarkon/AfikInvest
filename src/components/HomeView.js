@@ -218,11 +218,14 @@ function HomeView({
   // "Yesterday" is each market's last completed session, so it names the
   // day - one date when both markets' are the same, else each market's.
   const lastDates = lastSession ? lastSession.dates : {};
-  const lastSessionSub = !lastSession
+  const lastSessionDays = !lastSession
     ? 'אין עדיין נתון'
     : lastDates.israeli && lastDates.american && lastDates.israeli !== lastDates.american
       ? `ניירות ערך · ת"א ${shortSessionDate(lastDates.israeli)}, ארה"ב ${shortSessionDate(lastDates.american)}`
       : `ניירות ערך · יום המסחר ${shortSessionDate(lastDates.israeli || lastDates.american)}`;
+  // Holdings whose last session is not known yet are left out, and said so.
+  const lastSessionSub =
+    lastSession && lastSession.missing > 0 ? `${lastSessionDays} · בלי ${lastSession.missing} ${lastSession.missing === 1 ? 'נייר' : 'ניירות'} שעוד אין להם נתון` : lastSessionDays;
   const lastSessionTone = lastSession ? toneOf(lastSession.changeILS) : 'neutral';
 
   // Each overview card is a doorway to the page that holds its rows. The

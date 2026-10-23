@@ -72,6 +72,10 @@ describe('computeLastSessionChange', () => {
     expect(r.bySymbol['israeli:1159250'].changeILS).toBeCloseTo(10 * (105 - 100), 6);
     // Not yet fetched: unknown, not zero.
     expect(computeLastSessionChange({ holdings: { israeliStocks: [lot] }, now: TUESDAY_NOON }).total).toBeNull();
+    // Beside a holding that is known, it is left out of the total and counted.
+    const mixed = computeLastSessionChange({ holdings: { israeliStocks: [lot], americanStocks: [us(2)] }, now: TUESDAY_NOON });
+    expect(mixed.total.missing).toBe(1);
+    expect(mixed.total.dates.israeli).toBeNull();
   });
 
   it('counts a lot bought that day from its cost, and one bought after it not at all', () => {

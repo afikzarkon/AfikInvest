@@ -112,7 +112,7 @@ function lotChange(lot, s, { market, saleByTx }) {
 // {
 //   bySymbol: { 'israeli:<id>' | 'american:<TICKER>': result },
 //   byLot: { [lot id]: result },
-//   total: { changeILS, pct, dates: { israeli, american }, fxApprox } | null
+//   total: { changeILS, pct, dates: { israeli, american }, fxApprox, missing } | null
 // }
 // result: { date, changeILS, pct, fxApprox }
 //
@@ -128,6 +128,9 @@ export function computeLastSessionChange({ holdings = {}, lots = holdings, trans
   let totalBase = 0;
   let any = false;
   let fxApprox = false;
+  // Holdings still open whose session could not be priced (no history
+  // yet): the total leaves them out and says how many.
+  let missing = 0;
   const dates = { israeli: null, american: null };
 
   [
@@ -157,10 +160,16 @@ export function computeLastSessionChange({ holdings = {}, lots = holdings, trans
       const rawCloses = (history[market] || {})[sym];
       const closes = market === 'israeli' && Array.isArray(rawCloses) ? rawCloses.map((c) => ({ date: c.date, close: toNum(c.close) / 100 })) : rawCloses;
       const closesOf = lastCompletedCloses({ quote, closes, today });
-      if (!closesOf) return;
+      if (!closesOf) {
+        if (q) missing += 1;
+        return;
+      }
       const rate = q ? toNum(q.currentExchangeRate) || toNum(q.exchangeRate) : toNum(group[0].exchangeRate);
       const fx = market === 'american' ? fxFor(closesOf, history.fx, rate) : { fx: 1, prevFx: 1, approx: false };
-      if (market === 'american' && !(fx.fx > 0)) return;
+      if (market === 'american' && !(fx.fx > 0)) {
+        missing += 1;
+        return;
+      }
       const s = { ...closesOf, ...fx };
 
       let change = 0;
@@ -187,7 +196,7 @@ export function computeLastSessionChange({ holdings = {}, lots = holdings, trans
   return {
     bySymbol,
     byLot,
-    total: any ? { changeILS: totalChange, pct: totalBase > 0 ? (totalChange / totalBase) * 100 : null, dates, fxApprox } : null
+    total: any ? { changeILS: totalChange, pct: totalBase > 0 ? (totalChange / totalBase) * 100 : null, dates, fxApprox, missing } : null
   };
 }
 
