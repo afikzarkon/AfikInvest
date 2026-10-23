@@ -384,12 +384,9 @@ describe('buildPortfolioReview', () => {
     expect(byKey.discipline.status).toBe('noData');
     expect(byKey.riskAdjusted.status).toBe('noData');
     expect(review.text.profile.key).toBe('beginner');
-    review.categories.forEach((c) => {
-      if (c.score !== null) {
-        expect(c.score).toBeGreaterThanOrEqual(0);
-        expect(c.score).toBeLessThanOrEqual(100);
-      }
-    });
+    // Every score that exists is on the 0-100 scale.
+    const scores = review.categories.map((c) => c.score).filter((s) => s !== null);
+    expect(scores.every((s) => s >= 0 && s <= 100)).toBe(true);
   });
 
   it('a steady monthly investor: streak, regular habit, comparison and history', () => {

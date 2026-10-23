@@ -733,7 +733,7 @@ describe('PortfolioAnalysisView', () => {
       mockHistoryFetch();
       render(<PortfolioAnalysisView {...makeProps({ americanStocks: [] })} />);
       selectPeriod('הכל');
-      await waitFor(() => expect(screen.getByText('תשואה מאז תחילת ההשקעה')).toBeInTheDocument());
+      expect(await screen.findByText('תשואה מאז תחילת ההשקעה')).toBeInTheDocument();
       // The old label measured from the first saved snapshot instead.
       expect(screen.queryByText('תשואה מאז תחילת המעקב')).toBeNull();
       // The headline is also said as a sentence a non-investor can read.
@@ -759,19 +759,17 @@ describe('PortfolioAnalysisView', () => {
       mockHistoryFetch();
       const { container } = render(<PortfolioAnalysisView {...makeProps({ americanStocks: [] })} />);
       selectPeriod('הכל');
-      await waitFor(() => expect(screen.getByText('תשואה מאז תחילת ההשקעה')).toBeInTheDocument());
+      expect(await screen.findByText('תשואה מאז תחילת ההשקעה')).toBeInTheDocument();
 
       fireEvent.change(container.querySelector('#performanceFrom'), { target: { value: '2024-01-01' } });
 
-      await waitFor(() => expect(screen.getByText('תשואה בתקופה שנבחרה')).toBeInTheDocument());
+      expect(await screen.findByText('תשואה בתקופה שנבחרה')).toBeInTheDocument();
       expect(screen.queryByText('תשואה מאז תחילת ההשקעה')).toBeNull();
     });
 
     test('surfaces an error message instead of a fake/blank result when the underlying fetch fails', async () => {
-      const { getByText } = render(<PortfolioAnalysisView {...makeProps()} />);
-      await waitFor(() =>
-        expect(getByText('לא ניתן היה לטעון נתוני מחירים היסטוריים כרגע')).toBeInTheDocument()
-      );
+      render(<PortfolioAnalysisView {...makeProps()} />);
+      expect(await screen.findByText('לא ניתן היה לטעון נתוני מחירים היסטוריים כרגע')).toBeInTheDocument();
     });
 
     // THE DATE-PICKER FREEZE. A date input fires onChange on every keystroke
@@ -840,7 +838,7 @@ describe('PortfolioAnalysisView', () => {
       const { container } = render(<PortfolioAnalysisView {...makeProps({ americanStocks: [] })} />);
       selectPeriod('הכל');
 
-      await waitFor(() => expect(screen.getByText('תשואה מאז תחילת ההשקעה')).toBeInTheDocument());
+      expect(await screen.findByText('תשואה מאז תחילת ההשקעה')).toBeInTheDocument();
       expect(screen.getByText(/מנוטרל הפקדות ורכישות/)).toBeInTheDocument();
       expect(screen.queryByText('שינוי בשווי התיק (כולל הפקדות)')).toBeNull();
 
@@ -856,7 +854,7 @@ describe('PortfolioAnalysisView', () => {
       mockHistoryFetch();
       render(<PortfolioAnalysisView {...makeProps({ americanStocks: [] })} />);
       selectPeriod('הכל');
-      await waitFor(() => expect(screen.getByText('תשואה מאז תחילת ההשקעה')).toBeInTheDocument());
+      expect(await screen.findByText('תשואה מאז תחילת ההשקעה')).toBeInTheDocument();
 
       expect(screen.queryByText('ציון בריאות תיק')).toBeNull();
       expect(screen.queryByText('ירידה מקסימלית (Drawdown)')).toBeNull();
@@ -895,11 +893,6 @@ describe('PortfolioAnalysisView', () => {
     });
   });
 });
-
-function formatMonthLabelForTest(monthKey) {
-  const [year, month] = monthKey.split('-').map(Number);
-  return new Date(year, month - 1, 1).toLocaleDateString('he-IL', { month: 'long', year: 'numeric' });
-}
 
 // THE PHONE LAYOUT (PHONE_TABS in PortfolioAnalysisView.js). jsdom has no
 // matchMedia, which is why every test above renders the wide layout; here

@@ -16,7 +16,6 @@ jest.mock('./yahooCrumb', () => ({
 
 const {
   unwrapYahooNumber,
-  fetchYahooAssetProfile,
   fetchYahooSymbolSearch,
   getYahooPayload,
   fetchYahooHistoricalRateForDate

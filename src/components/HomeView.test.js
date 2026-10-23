@@ -186,11 +186,11 @@ test('there is no manual "save daily info" button - the daily snapshot is taken 
 });
 
 test('shows the legacy import button only when showLegacyImportButton is true', () => {
-  const { queryByText, rerender } = render(<HomeView {...makeProps({ showLegacyImportButton: false })} />);
+  const { queryByText, getByText, rerender } = render(<HomeView {...makeProps({ showLegacyImportButton: false })} />);
   expect(queryByText('ייבוא מהדפדפן')).toBeNull();
 
   rerender(<HomeView {...makeProps({ showLegacyImportButton: true })} />);
-  expect(queryByText('ייבוא מהדפדפן')).not.toBeNull();
+  expect(getByText('ייבוא מהדפדפן')).toBeInTheDocument();
 });
 
 test('save button reflects hasUnsavedChanges and saveLoading state', () => {
@@ -252,8 +252,8 @@ test('shows export buttons for a populated portfolio and wires them to downloadP
       logo: null,
       reportMode: 'summary'
     });
-    expect(excelSpy).toHaveBeenCalledWith(exportPortfolioData);
   });
+  await waitFor(() => expect(excelSpy).toHaveBeenCalledWith(exportPortfolioData));
 
   excelSpy.mockRestore();
   pdfSpy.mockRestore();
