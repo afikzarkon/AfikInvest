@@ -14698,3 +14698,117 @@ select.auth-input[dir='ltr'] {
     padding: 14px;
   }
 }
+
+/* =============================================================
+   QUICK INSIGHTS (components/QuickInsights.js)
+   One to three short cards under the dashboard's headline figures. The
+   tone colours the edge and the icon's disc only - the text stays the
+   text colour, readable in both themes.
+   ============================================================= */
+
+.quick-insights {
+  margin: 0 0 22px;
+}
+
+.quick-insights-title {
+  margin: 0 0 10px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--sw-text-secondary);
+}
+
+.quick-insights-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 900px) {
+  .quick-insights-list.is-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .quick-insights-list.is-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.quick-insight {
+  --qi-tone: var(--sw-accent);
+  --qi-soft: var(--sw-accent-soft);
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px 16px;
+  border-radius: var(--sw-radius);
+  border: 1px solid var(--sw-border);
+  border-inline-start: 3px solid var(--qi-tone);
+  background: var(--sw-surface);
+}
+
+.quick-insight.is-up {
+  --qi-tone: var(--sw-green);
+  --qi-soft: var(--sw-green-soft);
+}
+
+.quick-insight.is-down {
+  --qi-tone: var(--sw-red);
+  --qi-soft: var(--sw-red-soft);
+}
+
+.quick-insight.is-warn {
+  --qi-tone: var(--sw-amber);
+  --qi-soft: var(--sw-amber-soft);
+}
+
+.quick-insight-icon {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--qi-soft);
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.quick-insight-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.quick-insight-title {
+  font-size: 0.95rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.quick-insight-text {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--sw-text-secondary);
+}
+
+@media (max-width: 560px) {
+  .quick-insights {
+    margin-bottom: 16px;
+  }
+
+  .quick-insight {
+    padding: 12px 14px;
+    gap: 10px;
+  }
+
+  .quick-insight-icon {
+    width: 32px;
+    height: 32px;
+    font-size: 0.95rem;
+  }
+}

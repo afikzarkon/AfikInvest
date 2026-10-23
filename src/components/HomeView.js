@@ -12,6 +12,7 @@ import {
 import PortfolioActionsToolbar from './PortfolioActionsToolbar';
 import KpiTile, { KpiRow } from './KpiTile';
 import BetaBanner from './BetaBanner';
+import QuickInsights from './QuickInsights';
 import { shortSessionDate } from './holdings/MergedValue';
 import { useCompactLayout } from '../hooks/useMediaQuery';
 
@@ -98,6 +99,10 @@ function HomeView({
   // The securities' change on each market's last completed session
   // (utils/lastSessionChange.js's total), or null while unknown.
   lastSession = null,
+  // For the quick insights: every holding's last session, and the
+  // portfolio analysis they are read from.
+  lastSessionDetail = null,
+  analysis = null,
   israeliStocks,
   americanStocks,
   pensionFunds,
@@ -225,7 +230,7 @@ function HomeView({
       : `ניירות ערך · יום המסחר ${shortSessionDate(lastDates.israeli || lastDates.american)}`;
   // Holdings whose last session is not known yet are left out, and said so.
   const lastSessionSub =
-    lastSession && lastSession.missing > 0 ? `${lastSessionDays} · בלי ${lastSession.missing} ${lastSession.missing === 1 ? 'נייר' : 'ניירות'} שעוד אין להם נתון` : lastSessionDays;
+    lastSession && lastSession.missing > 0 ? `${lastSessionDays} · חסר נתון ל-${lastSession.missing}` : lastSessionDays;
   const lastSessionTone = lastSession ? toneOf(lastSession.changeILS) : 'neutral';
 
   // Each overview card is a doorway to the page that holds its rows. The
@@ -348,6 +353,18 @@ function HomeView({
                 sub="על הרווח הריאלי"
               />
             </KpiRow>
+          )}
+
+          {/* Right under the headline figures, on both layouts: the few
+              things most worth knowing today. */}
+          {hasAnyData && (
+            <QuickInsights
+              holdings={{ israeliStocks, americanStocks, pensionFunds, cashFunds, bankBalances, bankSavingsFunds }}
+              analysis={analysis}
+              summary={summary}
+              lastSession={lastSessionDetail}
+              pricesLoaded={Boolean(toolbarProps.hasLoadedLivePrices) && !isSamplePortfolio}
+            />
           )}
 
           {hasAnyData && compact && (
