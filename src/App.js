@@ -61,6 +61,7 @@ import { profileCompletion } from './components/settings/ProfileSection';
 const PortfolioAnalysisView = lazy(() => import('./components/PortfolioAnalysisView'));
 const MonthlyTrackerView = lazy(() => import('./components/MonthlyTrackerView'));
 const TaxOffsetView = lazy(() => import('./components/TaxOffsetView'));
+const LandingPage = lazy(() => import('./components/landing/LandingPage'));
 const IsraeliStocksPage = lazy(() => import('./components/pages/IsraeliStocksPage'));
 const UsStocksPage = lazy(() => import('./components/pages/UsStocksPage'));
 const ProvidentFundsPage = lazy(() => import('./components/pages/ProvidentFundsPage'));
@@ -168,6 +169,9 @@ function clearLegacyPortfolioKeys() {
   LEGACY_KEYS.forEach((k) => localStorage.removeItem(k));
 }
 
+// The landing page's address: the root, with no ?mode= from an email link.
+const atLanding = () => window.location.pathname === '/' && !new URLSearchParams(window.location.search).get('mode');
+
 function App() {
   const { user, authLoading, authHeader, login, logout, updateUser } = useAuth();
   const { theme, toggleTheme } = useTheme();
@@ -176,6 +180,20 @@ function App() {
   // (AccountLinkView.js), and the public terms/privacy pages.
   const [accountLink, setAccountLink] = useState(accountLinkFromUrl);
   const [legalPath, setLegalPath] = useState(legalPathFromUrl);
+  // A signed-out visitor at "/" sees the landing page; its buttons open the
+  // sign-up / sign-in form at /login?mode=..., and back returns to it.
+  // Links in emails (?mode=...) still go straight to the form.
+  const [showLanding, setShowLanding] = useState(atLanding);
+  useEffect(() => {
+    const onPop = () => setShowLanding(atLanding());
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+  const openAuthFromLanding = (mode) => {
+    window.history.pushState({}, '', `/login?mode=${mode}`);
+    setShowLanding(false);
+    window.scrollTo(0, 0);
+  };
   // The profile, picture and preferences the whole site reads (and the
   // privacy-mode flag behind every money amount).
   const accountState = useAccount(user);
@@ -270,7 +288,7 @@ function App() {
   else if (authLoading) screenPath = null;
   else if (resetToken !== null) screenPath = RESET_PASSWORD_PATH;
   else if (accountLink) screenPath = accountLink.path;
-  else if (!user) screenPath = '/login';
+  else if (!user) screenPath = showLanding && !authNotice ? '/' : '/login';
   else if (awaitingFlags) screenPath = null;
   usePageViews(screenPath, screenPath === screenRoute.path ? screenRoute.label : undefined);
   // The one entry form (AssetEntryModal.js): null while closed, otherwise
@@ -917,16 +935,35 @@ function App() {
   }
 
   if (!user) {
+    // A notice (after a password reset, say) is for the sign-in form.
+    if (showLanding && !authNotice) {
+      return (
+        <Suspense fallback={<LoadingScreen fullScreen />}>
+          <SystemBanner banner={screenBanner} />
+          <LandingPage
+            theme={theme}
+            onToggleTheme={toggleTheme}
+            onRegister={() => openAuthFromLanding('register')}
+            onLogin={() => openAuthFromLanding('login')}
+          />
+        </Suspense>
+      );
+    }
     // Links in emails open the right tab: ?mode=forgot, ?mode=register.
     const modeParam = new URLSearchParams(window.location.search).get('mode');
     const initialMode = ['forgot', 'register', 'login', 'magic'].includes(modeParam) ? modeParam : authNotice ? 'login' : 'register';
+    // Signed in from /login: the app's own pages start at "/".
+    const onAuthenticated = (...args) => {
+      if (window.location.pathname === '/login') window.history.replaceState({}, '', '/');
+      handleAuthenticated(...args);
+    };
     return (
       <div className="App">
         <div className="auth-theme-toggle-wrap">
           <ThemeToggleButton theme={theme} onToggleTheme={toggleTheme} />
         </div>
         <SystemBanner banner={screenBanner} />
-        <AuthView key={authNotice} onAuthenticated={handleAuthenticated} initialMode={initialMode} initialNotice={authNotice} />
+        <AuthView key={`${authNotice}|${initialMode}`} onAuthenticated={onAuthenticated} initialMode={initialMode} initialNotice={authNotice} />
       </div>
     );
   }

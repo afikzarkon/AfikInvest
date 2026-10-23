@@ -159,7 +159,7 @@ function navigateAndSample(page, to, ms) {
     page.on('dialog', (d) => d.accept());
     await page.setViewport({ width: 1280, height: 860 });
     const email = `transitions-${Date.now()}@example.com`;
-    await page.goto(WEB, { waitUntil: 'networkidle0' });
+    await page.goto(`${WEB}/login?mode=register`, { waitUntil: 'networkidle0' });
     await typeInto(page, '#auth-email', email);
     await typeInto(page, 'input[autocomplete="new-password"]', 'first-pass-123!');
     await page.click('.auth-check input[type="checkbox"]');
