@@ -33,9 +33,11 @@ const COL = {
   cost: { title: 'עלות', hint: '$ / ₪' },
   value: { title: 'שווי', hint: '$ / ₪' },
   profit: { title: 'רווח/הפסד', hint: '$ · % / ₪' },
-  // Yesterday's line is in shekels: it includes that day's move in the dollar.
-  daily: { title: 'שינוי יומי', hint: '$ · % · ומתחת: אתמול ב-₪' },
-  fx: { title: 'השפעת שער חליפין', hint: '₪' },
+  // Yesterday's line is in dollars - the stock's own move. The same day in
+  // shekels, with that day's move in the dollar, is in the extended data,
+  // under the exchange-rate effect.
+  daily: { title: 'שינוי יומי', hint: '$ · % · ומתחת: אתמול' },
+  fx: { title: 'השפעת שער חליפין', hint: '₪ · ומתחת: אתמול כולל שער' },
   real: { title: 'רווח ריאלי / אינפלציוני', hint: '₪' },
   tax: { title: 'מס רווח הון / רווח לאחר מס', hint: '₪' },
   actions: { title: 'פעולות' }
@@ -144,7 +146,7 @@ function FigureCells({ f, pending, showAdditionalData, formatPrice, buyPrice, ra
       </td>
       {showAdditionalData && (
         <td>
-          <Merged main={<Money value={f.fxImpact} signed />} />
+          <Merged main={<Money value={f.fxImpact} signed />} sub={<LastSessionChange result={f.lastSession} withFx />} />
         </td>
       )}
       {showAdditionalData && (
@@ -256,6 +258,7 @@ function AmericanStocksTable({
   if (compact && view === 'cards') {
     const extFields = (f) => [
       { label: 'השפעת שער חליפין', value: <Money value={f.fxImpact} signed /> },
+      { label: 'שינוי אתמול כולל שער חליפין', value: <LastSessionChange result={f.lastSession} withFx label="" /> },
       { label: 'רווח ריאלי', value: <Money value={f.realGain} signed /> },
       { label: 'רווח אינפלציוני', value: <Money value={f.inflationary} /> },
       { label: 'מס רווח הון', value: <Money value={-f.tax} signed /> },

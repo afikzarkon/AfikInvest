@@ -64,6 +64,26 @@ describe('computeLastSessionChange', () => {
     expect(approx.total.fxApprox).toBe(true);
   });
 
+  it("gives a US holding's own move in dollars, with no exchange rate in it", () => {
+    const fx = [
+      { date: '2026-10-15', close: 3.7 },
+      { date: '2026-10-16', close: 3.8 }
+    ];
+    const r = computeLastSessionChange({ holdings: { americanStocks: [us(2)] }, history: { fx }, now: SUNDAY });
+    // 2 x (110 - 100), +10% - the quote's own change, whatever the dollar did.
+    expect(r.bySymbol['american:VOO'].changeUSD).toBeCloseTo(20, 6);
+    expect(r.bySymbol['american:VOO'].pctUSD).toBeCloseTo(10, 6);
+    expect(r.byLot[2].pctUSD).toBeCloseTo(10, 6);
+    // The shekel percent has the dollar's move in it.
+    expect(r.bySymbol['american:VOO'].pct).toBeCloseTo(((110 * 3.8) / (100 * 3.7) - 1) * 100, 6);
+    // A lot bought that day moves from its cost.
+    const boughtFriday = computeLastSessionChange({ holdings: { americanStocks: [us(3, { purchaseDate: '2026-10-16', purchasePrice: 105 })] }, history: { fx }, now: SUNDAY });
+    expect(boughtFriday.byLot[3].changeUSD).toBeCloseTo(2 * 5, 6);
+    expect(boughtFriday.byLot[3].pctUSD).toBeCloseTo((5 / 105) * 100, 6);
+    // A TASE holding has no dollar figures.
+    expect(computeLastSessionChange({ holdings: { israeliStocks: [il(1)] }, now: SUNDAY }).bySymbol['israeli:1159250'].changeUSD).toBeUndefined();
+  });
+
   it("uses the history while the market trades today, TASE's closes being in agorot", () => {
     const lot = il(1, { currentPrice: 120, dailyChangePercent: 3, dailyChangeTradeDate: '2026-10-20' });
     const history = { israeli: { 1159250: [{ date: '2026-10-16', close: 10000 }, { date: '2026-10-19', close: 10500 }, { date: '2026-10-20', close: 12000 }] } };

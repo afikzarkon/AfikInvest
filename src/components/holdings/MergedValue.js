@@ -46,18 +46,26 @@ export const shortSessionDate = (iso) => (iso ? `${Number(iso.slice(8, 10))}.${N
 // utils/lastSessionChange.js): "אתמול +12.30 ₪ +0.40%", or "—" when it is
 // not known. The session's date is in the tooltip - on a Monday it is
 // Friday's.
-export function LastSessionChange({ result, label = 'אתמול' }) {
-  if (!result || !Number.isFinite(result.changeILS)) {
+//
+// A US holding shows its change in dollars - the stock's own move, as the
+// exchange reports it. `withFx` shows it in shekels instead, with that
+// day's move in the dollar (the extended data).
+export function LastSessionChange({ result, label = 'אתמול', withFx = false }) {
+  const inUsd = !withFx && result && Number.isFinite(result.changeUSD);
+  const amount = result ? (inUsd ? result.changeUSD : result.changeILS) : null;
+  if (!Number.isFinite(amount)) {
     return (
       <span className="mv-last" title="אין עדיין נתון על יום המסחר האחרון">
         {label} —
       </span>
     );
   }
-  const title = `יום המסחר ${shortSessionDate(result.date)}${result.fxApprox ? ' · לפי שער הדולר הנוכחי' : ''}`;
+  const title = `יום המסחר ${shortSessionDate(result.date)}${
+    inUsd ? '' : `${withFx ? ' · כולל השפעת שער החליפין' : ''}${result.fxApprox ? ' · לפי שער הדולר הנוכחי' : ''}`
+  }`;
   return (
     <span className="mv-last" title={title}>
-      {label} <Money value={result.changeILS} signed /> <Pct value={result.pct} />
+      {label} <Money value={amount} currency={inUsd ? '$' : '₪'} signed /> <Pct value={inUsd ? result.pctUSD : result.pct} />
     </span>
   );
 }

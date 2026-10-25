@@ -23,7 +23,10 @@
 // A US holding is valued in shekels at each session's own USD/ILS close
 // (the latest rate on or before that date), so a day the dollar fell shows
 // as a loss even when the price did not move. Without the rate history,
-// today's rate stands in for both days and `fxApprox` says so.
+// today's rate stands in for both days and `fxApprox` says so. Its change in
+// dollars, with no exchange rate in it, comes alongside (changeUSD,
+// pctUSD): that is what the holdings show, and the shekel figure is for
+// the extended data and the total.
 //
 // WHAT WAS HELD
 //
@@ -86,8 +89,10 @@ function fxFor(session, fxCloses, fallbackRate) {
   return { fx, prevFx, approx: false };
 }
 
-// One lot's change over the session, in shekels: { change, base } or null
-// when the lot was not held during it.
+// One lot's change over the session: { change, base } in shekels, and
+// { changeLocal, baseLocal } in the lot's own currency (dollars for a US
+// lot - the stock's own move, with no exchange rate in it). null when the
+// lot was not held during it.
 function lotChange(lot, s, { market, saleByTx }) {
   const qty = toNum(lot.quantity);
   if (!(qty > 0)) return null;
@@ -95,18 +100,40 @@ function lotChange(lot, s, { market, saleByTx }) {
   const sold = lot.isClosedSlice ? israelDateOf(lot.soldDate) : null;
   if (!bought || bought > s.date) return null;
   if (sold && sold < s.date) return null;
-  const costPerUnit = toNum(lot.purchasePrice) * (market === 'american' ? toNum(lot.exchangeRate) || s.fx : 1);
+  const costLocal = toNum(lot.purchasePrice);
+  const costPerUnit = costLocal * (market === 'american' ? toNum(lot.exchangeRate) || s.fx : 1);
   // Bought on the session's day - or after the session before it, when
   // that date is known - it was not held at the previous close.
   const boughtDuring = bought === s.date || (s.prevDate && bought > s.prevDate);
   const startPerUnit = boughtDuring ? costPerUnit : s.prevClose * s.prevFx;
+  const startLocal = boughtDuring ? costLocal : s.prevClose;
   let endPerUnit = s.close * s.fx;
+  let endLocal = s.close;
   if (sold === s.date) {
     const sale = saleByTx.get(String(lot.soldTxId));
     if (!sale) return null;
-    endPerUnit = toNum(sale.price) * (market === 'american' ? toNum(sale.fxRate) || s.fx : 1);
+    endLocal = toNum(sale.price);
+    endPerUnit = endLocal * (market === 'american' ? toNum(sale.fxRate) || s.fx : 1);
   }
-  return { change: qty * (endPerUnit - startPerUnit), base: qty * startPerUnit };
+  return {
+    change: qty * (endPerUnit - startPerUnit),
+    base: qty * startPerUnit,
+    changeLocal: qty * (endLocal - startLocal),
+    baseLocal: qty * startLocal
+  };
+}
+
+// A symbol's or lot's result. A US one also carries its change in dollars
+// (changeUSD, pctUSD): the stock's own move, which is what the holdings
+// show; the shekel figures, with that day's move in the dollar, are for
+// the extended data and the portfolio total.
+function resultOf(market, date, fxApprox, change, base, changeLocal, baseLocal) {
+  const r = { date, changeILS: change, pct: base > 0 ? (change / base) * 100 : null, fxApprox };
+  if (market === 'american') {
+    r.changeUSD = changeLocal;
+    r.pctUSD = baseLocal > 0 ? (changeLocal / baseLocal) * 100 : null;
+  }
+  return r;
 }
 
 // {
@@ -114,7 +141,8 @@ function lotChange(lot, s, { market, saleByTx }) {
 //   byLot: { [lot id]: result },
 //   total: { changeILS, pct, dates: { israeli, american }, fxApprox, missing } | null
 // }
-// result: { date, changeILS, pct, fxApprox }
+// result: { date, changeILS, pct, fxApprox } - and on a US one also
+// { changeUSD, pctUSD }, the change without the exchange rate.
 //
 // holdings: the open lots (their quotes); lots: the same expanded with the
 // closed slices (shared/transactionLedger.js); history: { israeli: {id:
@@ -174,6 +202,8 @@ export function computeLastSessionChange({ holdings = {}, lots = holdings, trans
 
       let change = 0;
       let base = 0;
+      let changeLocal = 0;
+      let baseLocal = 0;
       let held = false;
       group.forEach((lot) => {
         const r = lotChange(lot, s, { market, saleByTx });
@@ -181,10 +211,12 @@ export function computeLastSessionChange({ holdings = {}, lots = holdings, trans
         held = true;
         change += r.change;
         base += r.base;
-        if (!lot.isClosedSlice) byLot[lot.id] = { date: s.date, changeILS: r.change, pct: r.base > 0 ? (r.change / r.base) * 100 : null, fxApprox: fx.approx };
+        changeLocal += r.changeLocal;
+        baseLocal += r.baseLocal;
+        if (!lot.isClosedSlice) byLot[lot.id] = resultOf(market, s.date, fx.approx, r.change, r.base, r.changeLocal, r.baseLocal);
       });
       if (!held) return;
-      bySymbol[`${market}:${sym}`] = { date: s.date, changeILS: change, pct: base > 0 ? (change / base) * 100 : null, fxApprox: fx.approx };
+      bySymbol[`${market}:${sym}`] = resultOf(market, s.date, fx.approx, change, base, changeLocal, baseLocal);
       any = true;
       totalChange += change;
       totalBase += base;
