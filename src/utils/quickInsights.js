@@ -34,6 +34,7 @@ export const FUND_MOVE_PCT = 3;
 export const MAX_INSIGHTS = 3;
 
 const ils = (v) => `${formatPriceWithSign(v)} ₪`;
+const usd = (v) => `${formatPriceWithSign(v)} $`;
 const pct = (v, digits = 1) => `${v > 0 ? '+' : ''}${v.toFixed(digits)}%`;
 const DAY_MS = 86400000;
 
@@ -69,22 +70,26 @@ function moverInsight(holdings, lastSession) {
       text: `אחזקה של ${ils(today.value)}, ${today.percentage.toFixed(1)}% מהתיק.`
     };
   }
-  // No big move today - perhaps on the last completed session.
+  // No big move today - perhaps on the last completed session. A US
+  // holding's move is its own, in dollars, as the holdings table shows it -
+  // not the shekel figure with that day's move in the dollar.
   const bySymbol = (lastSession && lastSession.bySymbol) || {};
+  const moveOf = (r) =>
+    r && Number.isFinite(r.pctUSD) ? { pct: r.pctUSD, amount: usd(Math.abs(r.changeUSD)) } : r ? { pct: r.pct, amount: ils(Math.abs(r.changeILS)) } : null;
   const yesterday = holdings
-    .map((h) => ({ h, r: bySymbol[`${h.market}:${h.market === 'american' ? String(h.name).toUpperCase() : h.name}`] }))
-    .filter(({ r }) => r && Number.isFinite(r.pct) && Math.abs(r.pct) >= MOVER_PCT)
-    .sort((a, b) => Math.abs(b.r.pct) - Math.abs(a.r.pct))[0];
+    .map((h) => ({ h, m: moveOf(bySymbol[`${h.market}:${h.market === 'american' ? String(h.name).toUpperCase() : h.name}`]) }))
+    .filter(({ m }) => m && Number.isFinite(m.pct) && Math.abs(m.pct) >= MOVER_PCT)
+    .sort((a, b) => Math.abs(b.m.pct) - Math.abs(a.m.pct))[0];
   if (!yesterday) return null;
-  const up = yesterday.r.pct > 0;
+  const up = yesterday.m.pct > 0;
   return {
     key: `mover-last:${yesterday.h.name}`,
     kind: 'mover',
-    priority: 75 + Math.abs(yesterday.r.pct),
+    priority: 75 + Math.abs(yesterday.m.pct),
     tone: up ? 'up' : 'down',
     icon: up ? '🚀' : '📉',
-    title: `${nameOf(yesterday.h)} ${up ? 'עלתה' : 'ירדה'} ב-${pct(yesterday.r.pct)} ביום המסחר האחרון`,
-    text: `${up ? 'רווח' : 'הפסד'} של ${ils(Math.abs(yesterday.r.changeILS))} ביום אחד.`
+    title: `${nameOf(yesterday.h)} ${up ? 'עלתה' : 'ירדה'} ב-${pct(yesterday.m.pct)} ביום המסחר האחרון`,
+    text: `${up ? 'רווח' : 'הפסד'} של ${yesterday.m.amount} ביום אחד.`
   };
 }
 
