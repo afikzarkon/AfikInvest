@@ -22,11 +22,7 @@ import { marketFetch } from '../api/marketFetch';
 // server - so /api/cpi/latest was requested twice per load on every page
 // of the app, the second time to re-fetch a value that could not have
 // changed. Splitting them makes the latest index a mount-once fetch.
-//
-// `enabled`: the CPI routes are for signed-in users (marketDataAccess.js),
-// and App mounts this before sign-in - so the latest index is fetched once
-// there is a user, not on mount.
-export function useCpiIndex(monthKeys, { enabled = true } = {}) {
+export function useCpiIndex(monthKeys) {
   const [latest, setLatest] = useState({ currentIndex: null, currentIndexMonth: null, loading: true, error: null });
   const [months, setMonths] = useState({ indexByMonth: {}, loading: true });
 
@@ -36,10 +32,9 @@ export function useCpiIndex(monthKeys, { enabled = true } = {}) {
   // re-fetches only when those contents actually differ.
   const monthKeysKey = JSON.stringify([...new Set((monthKeys || []).filter(Boolean))].sort());
 
-  // The latest published index: once per mount (once enabled). The CPI is
-  // published monthly, so re-reading it mid-session cannot return anything new.
+  // The latest published index: once per mount. The CPI is published
+  // monthly, so re-reading it mid-session cannot return anything new.
   useEffect(() => {
-    if (!enabled) return undefined;
     let cancelled = false;
     (async () => {
       try {
@@ -60,7 +55,7 @@ export function useCpiIndex(monthKeys, { enabled = true } = {}) {
     return () => {
       cancelled = true;
     };
-  }, [enabled]);
+  }, []);
 
   // The per-month values: re-fetched whenever the set of months the
   // portfolio spans actually changes.

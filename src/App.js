@@ -352,7 +352,7 @@ function App() {
     ...bankSavingsFunds.flatMap((f) => (Array.isArray(f.deposits) ? f.deposits : []).map((d) => monthKeyFromDate(d.date)))
   ].filter(Boolean);
 
-  const cpi = useCpiIndex(relevantCpiMonths, { enabled: Boolean(user) });
+  const cpi = useCpiIndex(relevantCpiMonths);
 
   // Computed once here (not just inside the "show analysis" branch) so it
   // can also feed the snapshot-saving hook below, regardless of which

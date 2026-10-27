@@ -37,7 +37,7 @@ describe('useIsraeliStockSearch', () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
     expect(global.fetch).toHaveBeenCalledWith(
       expect.stringContaining(encodeURIComponent('טבע')),
-      // Market data is for signed-in users: the session goes with it.
+      // marketFetch sends the cookie along (and no Authorization header).
       expect.objectContaining({ credentials: 'include' })
     );
     expect(result.current.results).toEqual([{ securityId: '629014', officialName: 'טבע', symbol: 'TEVA' }]);

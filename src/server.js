@@ -15,7 +15,6 @@ const {
   warnAboutConfiguration
 } = require('./server/security');
 const { mountPortfolioRoutes } = require('./server/portfolioRoutes');
-const { mountMarketDataGate } = require('./server/marketDataAccess');
 const { mountQuotesRoutes } = require('./server/quotesRoutes');
 const { mountCpiRoutes } = require('./server/cpiRoutes');
 const { mountSnapshotRoutes } = require('./server/snapshotRoutes');
@@ -67,9 +66,6 @@ app.use((req, res, next) => systemGate.middleware(req, res, next));
 systemGate.mountStatus(app);
 warnAboutConfiguration();
 
-// Market data (outside providers' prices and figures) is for signed-in
-// users only, at a per-user rate (marketDataAccess.js).
-mountMarketDataGate(app);
 mountQuotesRoutes(app);
 mountCpiRoutes(app);
 mountBenchmarkRoutes(app);
