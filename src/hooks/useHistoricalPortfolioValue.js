@@ -18,7 +18,7 @@
 // holdings arrays directly, so a quantity edit is reflected immediately
 // without a network round-trip.
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { marketFetch } from '../api/marketFetch';
+import { apiUrl } from '../apiBase';
 import {
   computeHistoricalBreakdownAtDate,
   computeHistoricalPortfolioSeries
@@ -29,8 +29,9 @@ function uniqueSymbols(stocks) {
 }
 
 async function postJson(path, body) {
-  const r = await marketFetch(path, {
+  const r = await fetch(apiUrl(path), {
     method: 'POST',
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
@@ -104,7 +105,9 @@ export function useHistoricalPortfolioValue({
             ? postJson('/api/american-stocks-history', { symbols: americanSymbols, from: fromDate })
             : Promise.resolve({ history: {} }),
           wantsFx
-            ? marketFetch(`/api/exchange-rate-history?from=${encodeURIComponent(fromDate)}`).then((r) => r.json())
+            ? fetch(apiUrl(`/api/exchange-rate-history?from=${encodeURIComponent(fromDate)}`), {
+                credentials: 'include'
+              }).then((r) => r.json())
             : Promise.resolve({ history: [] })
         ]);
         if (cancelled) return;

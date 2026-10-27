@@ -10,17 +10,12 @@ const { createJobRunner } = require('./jobRunner');
 const { createJobHandlers } = require('./jobs');
 const { runAccountMaintenance } = require('./accountJobs');
 const { createEmailService } = require('./emailService');
-const { sourceSwitch, installSourceSwitch } = require('./sourceSwitch');
 
 async function bootstrapServices() {
   const store = await initDataStore();
   const features = await initFeatureStore(store);
   const accounts = await initAccountStore(store);
   const admin = await initAdminStore(store);
-  // Admin off switch for each outside data provider: on the shared axios
-  // instance, in the API and the worker alike.
-  installSourceSwitch();
-  await sourceSwitch.attach(admin);
   const marketData = createMarketData();
   const runner = createJobRunner({
     features,

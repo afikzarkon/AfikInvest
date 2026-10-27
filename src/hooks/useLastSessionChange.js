@@ -9,7 +9,7 @@
 // kept in this browser under today's date, since a past session's close
 // never changes.
 import { useEffect, useMemo, useState } from 'react';
-import { marketFetch } from '../api/marketFetch';
+import { apiUrl } from '../apiBase';
 import { expandHoldingsWithClosedLots } from '../shared/transactionLedger';
 import { computeLastSessionChange, marketToday, symbolsNeedingHistory } from '../utils/lastSessionChange';
 
@@ -39,7 +39,7 @@ function writeCache(cache) {
 }
 
 async function postJson(path, body) {
-  const r = await marketFetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const r = await fetch(apiUrl(path), { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   if (!r.ok) throw new Error(`${path} failed`);
   return r.json();
 }
@@ -71,7 +71,7 @@ export function useLastSessionChange({ israeliStocks, americanStocks, transactio
       const [il, us, fx] = await Promise.all([
         missingIl.length ? postJson('/api/israeli-stocks-history', { symbols: missingIl, from }).catch(() => null) : null,
         missingUs.length ? postJson('/api/american-stocks-history', { symbols: missingUs, from }).catch(() => null) : null,
-        missingFx ? marketFetch(`/api/exchange-rate-history?from=${from}`).then((r) => (r.ok ? r.json() : null)).catch(() => null) : null
+        missingFx ? fetch(apiUrl(`/api/exchange-rate-history?from=${from}`), { credentials: 'include' }).then((r) => (r.ok ? r.json() : null)).catch(() => null) : null
       ]);
       if (cancelled) return;
       const next = { ...cache, israeli: { ...cache.israeli }, american: { ...cache.american } };

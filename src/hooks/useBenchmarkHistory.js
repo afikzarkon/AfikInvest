@@ -4,7 +4,7 @@
 // auth needed, unlike usePortfolioSnapshots.
 
 import { useEffect, useState } from 'react';
-import { marketFetch } from '../api/marketFetch';
+import { apiUrl } from '../apiBase';
 
 // benchmarkKey: 'sp500' | 'ta125' | null (null/undefined = don't fetch).
 // fromDate: 'YYYY-MM-DD', typically the portfolio's first snapshot date.
@@ -24,7 +24,7 @@ export function useBenchmarkHistory(benchmarkKey, fromDate) {
     setError('');
     (async () => {
       try {
-        const r = await marketFetch(`/api/benchmark-history/${benchmarkKey}?from=${fromDate}`);
+        const r = await fetch(apiUrl(`/api/benchmark-history/${benchmarkKey}?from=${fromDate}`));
         if (!r.ok) throw new Error('load failed');
         const d = await r.json();
         if (!cancelled) setPoints(Array.isArray(d.points) ? d.points : []);

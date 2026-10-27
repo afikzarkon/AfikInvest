@@ -3,12 +3,14 @@
 // These are used both by the price-polling hook and by the stock form
 // (when adding/editing a stock, to pull an initial current price).
 
-import { marketFetch } from './marketFetch';
+import { apiUrl } from '../apiBase';
 
 // Get current price + daily change % for an Israeli stock (TASE) via the local server
 export const fetchIsraeliStockPrice = async (stockId) => {
   try {
-    const response = await marketFetch(`/api/israeli-stock/${stockId}`);
+    const response = await fetch(apiUrl(`/api/israeli-stock/${stockId}`), {
+      credentials: 'include'
+    });
     if (!response.ok) throw new Error('שגיאה בקריאת נתונים מהשרת');
     const json = await response.json();
     return json;
@@ -20,7 +22,9 @@ export const fetchIsraeliStockPrice = async (stockId) => {
 // Get current price + daily change % for a US stock via Yahoo Finance proxy
 export const fetchCurrentPrice = async (stockSymbol) => {
   try {
-    const response = await marketFetch(`/api/american-stock/${encodeURIComponent(stockSymbol)}`);
+    const response = await fetch(apiUrl(`/api/american-stock/${encodeURIComponent(stockSymbol)}`), {
+      credentials: 'include'
+    });
     if (!response.ok) throw new Error('failed to fetch american stock');
     const data = await response.json();
     if (data && data.currentPrice !== null && data.currentPrice !== undefined) return data;
@@ -33,7 +37,9 @@ export const fetchCurrentPrice = async (stockSymbol) => {
 // Get current USD/ILS exchange rate via Yahoo Finance
 export const fetchExchangeRate = async () => {
   try {
-    const response = await marketFetch('/api/exchange-rate');
+    const response = await fetch(apiUrl('/api/exchange-rate'), {
+      credentials: 'include'
+    });
     if (!response.ok) throw new Error('failed to fetch exchange rate');
     const data = await response.json();
     return data && data.rate !== null && data.rate !== undefined ? data.rate : null;
@@ -47,7 +53,9 @@ export const fetchExchangeRate = async () => {
 // requiring the user to look it up and type it in manually.
 export const fetchHistoricalExchangeRate = async (dateStr) => {
   try {
-    const response = await marketFetch(`/api/exchange-rate/${encodeURIComponent(dateStr)}`);
+    const response = await fetch(apiUrl(`/api/exchange-rate/${encodeURIComponent(dateStr)}`), {
+      credentials: 'include'
+    });
     if (!response.ok) throw new Error('failed to fetch historical exchange rate');
     const data = await response.json();
     return data && data.rate !== null && data.rate !== undefined ? data.rate : null;
@@ -70,8 +78,9 @@ export const fetchHistoricalExchangeRate = async (dateStr) => {
 export const fetchIsraeliStockPrices = async (ids) => {
   if (!Array.isArray(ids) || ids.length === 0) return {};
   try {
-    const response = await marketFetch('/api/israeli-stocks', {
+    const response = await fetch(apiUrl('/api/israeli-stocks'), {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids })
     });
@@ -89,8 +98,9 @@ export const fetchIsraeliStockPrices = async (ids) => {
 export const fetchAmericanStockPrices = async (symbols) => {
   if (!Array.isArray(symbols) || symbols.length === 0) return { quotes: {}, exchangeRate: null };
   try {
-    const response = await marketFetch('/api/american-stocks', {
+    const response = await fetch(apiUrl('/api/american-stocks'), {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ symbols })
     });
@@ -113,7 +123,9 @@ export const fetchIsraeliSecurityMeta = async (securityId) => {
   const id = String(securityId || '').trim();
   if (!/^\d+$/.test(id)) return null;
   try {
-    const response = await marketFetch(`/api/israeli-security/${id}`);
+    const response = await fetch(apiUrl(`/api/israeli-security/${id}`), {
+      credentials: 'include'
+    });
     if (!response.ok) return null;
     return await response.json();
   } catch (error) {

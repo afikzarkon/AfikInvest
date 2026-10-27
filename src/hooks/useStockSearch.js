@@ -3,7 +3,7 @@
 // typing doesn't fire a request per keystroke.
 
 import { useEffect, useState } from 'react';
-import { marketFetch } from '../api/marketFetch';
+import { apiUrl } from '../apiBase';
 
 const DEBOUNCE_MS = 300;
 
@@ -23,7 +23,7 @@ export function useStockSearch(query) {
       setLoading(true);
       (async () => {
         try {
-          const r = await marketFetch(`/api/stock-search?q=${encodeURIComponent(trimmed)}`);
+          const r = await fetch(apiUrl(`/api/stock-search?q=${encodeURIComponent(trimmed)}`));
           if (!r.ok) throw new Error('search failed');
           const d = await r.json();
           if (!cancelled) setResults(Array.isArray(d.results) ? d.results : []);

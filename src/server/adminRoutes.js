@@ -16,7 +16,6 @@
 //   settings  GET /api/admin/settings · PUT /api/admin/settings/banner · PUT /api/admin/settings/maintenance
 //   insight   GET /api/admin/stats · GET|DELETE /api/admin/errors · GET /api/admin/jobs?status
 //             GET /api/admin/sources (third-party data sources, sourceHealth.js)
-//             PUT /api/admin/settings/sources {disabled: [provider...]} (off switch, sourceSwitch.js)
 //   export    GET /api/admin/export/users.csv · GET /api/admin/export/audit.csv
 //   log       GET /api/admin/audit?limit&before
 //
@@ -34,7 +33,6 @@ const { requestContext } = require('./authHelpers');
 const { createRateLimiter } = require('./rateLimit');
 const { scrub } = require('./errorLog');
 const { sourceHealth } = require('./sourceHealth');
-const { sourceSwitch } = require('./sourceSwitch');
 const { yahooCooldownState } = require('./yahooQuotes');
 const { fmpPlanState } = require('./fmpClient');
 const { FLAG_DEFINITIONS, FLAG_KEY_PATTERN, isFlagState, flagVisibleTo, defaultFlagStates } = require('../shared/featureFlags');
@@ -419,23 +417,8 @@ function mountAdminRoutes(app, { admin, store, accounts, auth, features }) {
       sources: sourceHealth.snapshot({
         'yahoo-summary': { cooldownUntil },
         fmp: { cooldownUntil: fmp.cooldownUntil, note: fmp.refusedEndpoints.length ? `לא בתוכנית של המפתח: ${fmp.refusedEndpoints.join(', ')}` : null }
-      }).map((s) => ({ ...s, disabled: sourceSwitch.isSourceDisabled(s.name) })),
-      providers: sourceSwitch.list()
+      })
     });
-  });
-
-  // The off switch: the full list of providers to keep switched off. Every
-  // change is audited (setting.disabled_sources) and applies at once.
-  app.put('/api/admin/settings/sources', writeLimiter, async (req, res) => {
-    const disabled = (req.body || {}).disabled;
-    if (!Array.isArray(disabled) || disabled.some((name) => typeof name !== 'string')) {
-      return res.status(400).json({ error: 'רשימה לא תקינה' });
-    }
-    try {
-      return res.json({ providers: await sourceSwitch.save(disabled, req.admin, admin) });
-    } catch (err) {
-      return fail(res, 'admin sources switch', err);
-    }
   });
 
   app.delete('/api/admin/errors', writeLimiter, async (req, res) => {

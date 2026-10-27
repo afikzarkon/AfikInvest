@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { marketFetch } from '../api/marketFetch';
+import { apiUrl } from '../apiBase';
 
 // שולף את "המדד הידוע" העדכני ביותר, ואת ערכי המדד לכל החודשים
 // הרלוונטיים לתיק (תאריכי קניית מניות, תאריכי הפקדות לקופות גמל).
@@ -38,7 +38,7 @@ export function useCpiIndex(monthKeys) {
     let cancelled = false;
     (async () => {
       try {
-        const res = await marketFetch('/api/cpi/latest');
+        const res = await fetch(apiUrl('/api/cpi/latest'));
         const data = res.ok ? await res.json() : null;
         if (cancelled) return;
         setLatest({
@@ -71,7 +71,7 @@ export function useCpiIndex(monthKeys) {
     (async () => {
       setMonths((prev) => ({ ...prev, loading: true }));
       try {
-        const res = await marketFetch('/api/cpi/months', {
+        const res = await fetch(apiUrl('/api/cpi/months'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ months: uniqueMonths })

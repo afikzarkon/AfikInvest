@@ -16,7 +16,6 @@ const { lastSessionDate } = require('./marketCalendar');
 const { fetchTaseSecurityMeta, isSecurityIdQuery } = require('./taseSecurityLookup');
 const { sourceHealth } = require('./sourceHealth');
 const { marketMemory } = require('./marketMemory');
-const { sourceSwitch } = require('./sourceSwitch');
 
 // The database key for a security's last good quote (marketMemory.js).
 const taseMemoryKey = (stockId) => `quote:tase:${stockId}`;
@@ -161,13 +160,6 @@ async function runTaseSource(source, stockId) {
 async function fetchTaseQuote(stockId, req) {
   const errors = {};
   for (const source of TASE_SOURCES) {
-    // The axios sources are refused by the switch's interceptor anyway;
-    // the Puppeteer one is not axios, and skipping here also keeps a
-    // switched-off source out of the Puppeteer circuit breaker's count.
-    if (sourceSwitch.isSourceDisabled(source.name)) {
-      errors[source.name] = 'skipped (switched off by an admin)';
-      continue;
-    }
     if (source.expensive && !isPuppeteerAvailable()) {
       errors[source.name] = 'skipped (circuit breaker open)';
       continue;
