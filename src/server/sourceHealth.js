@@ -27,6 +27,7 @@ const SOURCES = {
   'tase-index': 'הבורסה - היסטוריית מדדים',
   bizportal: 'ביזפורטל - חיפוש ניירות לפי שם',
   cbs: 'הלמ"ס - מדד המחירים לצרכן',
+  boi: 'בנק ישראל - שערים יציגים',
   frankfurter: 'Frankfurter (ECB) - שערי מט"ח (גיבוי)',
   fmp: 'Financial Modeling Prep - סקטורים ומכפילים (גיבוי)',
   tiingo: 'Tiingo - דיבידנדים ומחירים חודשיים (גיבוי)'

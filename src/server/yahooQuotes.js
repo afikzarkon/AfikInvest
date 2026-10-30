@@ -14,6 +14,7 @@ const {
   fetchFrankfurterRateForDate,
   fetchFrankfurterHistory
 } = require('./frankfurterClient');
+const { isBoiSymbol, fetchBoiHistory } = require('./boiRates');
 
 // 30s: the client polls every minute, and with Finnhub on, each symbol
 // refreshed costs a call from its 60-a-minute free budget.
@@ -225,11 +226,13 @@ async function fetchYahooHistoricalCloses(symbol, fromDateStr) {
     : Math.floor(Date.now() / 1000) - 400 * 24 * 60 * 60;
   const period2 = Math.floor(Date.now() / 1000);
   if (!isFrankfurterSymbol(symbol)) return fetchYahooDailyCloses(symbol, period1, period2);
-  // An exchange-rate history (the shekel value of US holdings over time)
-  // falls back to the ECB's daily rates.
+  // An exchange-rate history (the shekel value of US holdings over time):
+  // the Bank of Israel's representative rates (boiRates.js), then Yahoo,
+  // then the ECB's daily rates.
   const { value } = await runFallbackChain(
     `fx history ${symbol}`,
     [
+      { source: 'boi', enabled: isBoiSymbol(symbol), fn: () => fetchBoiHistory(symbol, fromDateStr) },
       { source: 'yahoo-chart', fn: () => fetchYahooDailyCloses(symbol, period1, period2) },
       { source: 'frankfurter', fn: () => fetchFrankfurterHistory(symbol, fromDateStr) }
     ],

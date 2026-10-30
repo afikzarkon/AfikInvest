@@ -11,7 +11,9 @@ import { apiUrl } from '../apiBase';
 import { expandHoldingsWithClosedLots } from '../shared/transactionLedger';
 import { computeLastSessionChange, marketToday, symbolsNeedingHistory } from '../utils/lastSessionChange';
 
-const STORAGE_KEY = 'afikinvest_lastSessionHistory';
+// v2: drops the exchange rates cached from Yahoo before the Bank of
+// Israel's rates came first (server/boiRates.js).
+const STORAGE_KEY = 'afikinvest_lastSessionHistory_v2';
 // Enough calendar days to hold two sessions across any holiday stretch.
 const LOOKBACK_DAYS = 20;
 
