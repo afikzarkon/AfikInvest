@@ -26,13 +26,7 @@
 // today's rate stands in for both days and `fxApprox` says so. Its change in
 // dollars, with no exchange rate in it, comes alongside (changeUSD,
 // pctUSD): that is what the holdings show, and the shekel figure is for
-// the extended data.
-//
-// The portfolio total is the stocks' own move, with a US holding's dollars
-// at today's rate - the same footing as "שינוי יומי", so the two agree on
-// the same session. The dollar's move between two closes is not in it: it
-// would swing the total by thousands on a day the stocks barely moved, and
-// with a bad print in the rate history, show a gain on a day of losses.
+// the extended data and the total.
 //
 // WHAT WAS HELD
 //
@@ -149,7 +143,7 @@ function resultOf(market, date, fxApprox, change, base, changeLocal, baseLocal) 
 // {
 //   bySymbol: { 'israeli:<id>' | 'american:<TICKER>': result },
 //   byLot: { [lot id]: result },
-//   total: { changeILS, pct, dates: { israeli, american }, missing } | null
+//   total: { changeILS, pct, dates: { israeli, american }, fxApprox, missing } | null
 // }
 // result: { date, changeILS, pct, fxApprox } - and on a US one also
 // { changeUSD, pctUSD }, the change without the exchange rate.
@@ -165,6 +159,7 @@ export function computeLastSessionChange({ holdings = {}, lots = holdings, trans
   let totalChange = 0;
   let totalBase = 0;
   let any = false;
+  let fxApprox = false;
   // Holdings still open whose session could not be priced (no history
   // yet): the total leaves them out and says how many.
   let missing = 0;
@@ -208,8 +203,6 @@ export function computeLastSessionChange({ holdings = {}, lots = holdings, trans
         return;
       }
       const s = { ...closesOf, ...fx };
-      // The total's rate for this symbol's dollars: today's.
-      const totalRate = market === 'american' ? (rate > 0 ? rate : fx.fx) : 1;
 
       let change = 0;
       let base = 0;
@@ -229,8 +222,9 @@ export function computeLastSessionChange({ holdings = {}, lots = holdings, trans
       if (!held) return;
       bySymbol[`${market}:${sym}`] = resultOf(market, s.date, fx.approx, change, base, changeLocal, baseLocal);
       any = true;
-      totalChange += market === 'american' ? changeLocal * totalRate : change;
-      totalBase += market === 'american' ? baseLocal * totalRate : base;
+      totalChange += change;
+      totalBase += base;
+      fxApprox = fxApprox || fx.approx;
       if (!dates[market] || s.date > dates[market]) dates[market] = s.date;
     });
   });
@@ -238,7 +232,7 @@ export function computeLastSessionChange({ holdings = {}, lots = holdings, trans
   return {
     bySymbol,
     byLot,
-    total: any ? { changeILS: totalChange, pct: totalBase > 0 ? (totalChange / totalBase) * 100 : null, dates, missing } : null
+    total: any ? { changeILS: totalChange, pct: totalBase > 0 ? (totalChange / totalBase) * 100 : null, dates, fxApprox, missing } : null
   };
 }
 

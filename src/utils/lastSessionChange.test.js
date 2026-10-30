@@ -80,20 +80,7 @@ describe('computeLastSessionChange', () => {
     // Without the rate history, today's rate stands in - and says so.
     const approx = computeLastSessionChange({ holdings: { americanStocks: [us(2)] }, now: SUNDAY });
     expect(approx.bySymbol['american:VOO'].changeILS).toBeCloseTo(2 * 10 * 3.9, 6);
-    expect(approx.bySymbol['american:VOO'].fxApprox).toBe(true);
-  });
-
-  it("totals a US holding's own move at today's rate, as the daily change does", () => {
-    // The dollar "jumped" 3.7 -> 3.8 between the closes: the holding's
-    // shekel figure has it, the total does not.
-    const fx = [
-      { date: '2026-10-15', close: 3.7 },
-      { date: '2026-10-16', close: 3.8 }
-    ];
-    const r = computeLastSessionChange({ holdings: { israeliStocks: [il(1)], americanStocks: [us(2)] }, history: { fx }, now: SUNDAY });
-    // Israeli 10 x (110 - 100), US 2 x (110 - 100) x 3.9.
-    expect(r.total.changeILS).toBeCloseTo(100 + 2 * 10 * 3.9, 6);
-    expect(r.total.pct).toBeCloseTo(((100 + 78) / (1000 + 2 * 100 * 3.9)) * 100, 6);
+    expect(approx.total.fxApprox).toBe(true);
   });
 
   it("gives a US holding's own move in dollars, with no exchange rate in it", () => {
