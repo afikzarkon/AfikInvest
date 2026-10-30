@@ -6,19 +6,19 @@
 //
 // WHERE THE CLOSES COME FROM
 //
-// Every quote already carries the session it is from (dailyChangeTradeDate,
-// see marketSession.js), its price and its change against the session
-// before. So:
+// From each symbol's daily closes: the last completed session is the
+// latest date before today in them, and the one before it is the date
+// before that. A past session's close is a recorded fact, where a live
+// quote outside trading hours is whatever the source says at that moment -
+// before the open it can already be measured against the session it
+// reports, or carry an extended-hours price - and then a whole day's move
+// reads as nearly nothing.
 //
-//   the quote's session is before today (the market has not opened today,
-//   a weekend, a holiday): that session IS the last completed one, and its
-//   close and the close before it come straight from the quote - price, and
-//   price / (1 + change). No request at all.
-//
-//   the quote's session is today (trading now, or closed today): the last
-//   completed session before today is the latest date before today in the
-//   symbol's daily closes, and the one before it is the date before that.
-//   Only these symbols need history (useLastSessionHistory.js).
+// Every quote also carries the session it is from (dailyChangeTradeDate,
+// see marketSession.js). When that session is before today and the closes
+// do not reach it yet (not fetched, or the source has not published it),
+// its close and the close before it come from the quote instead: price,
+// and price / (1 + change).
 //
 // A US holding is valued in shekels at each session's own USD/ILS close
 // (the latest rate on or before that date), so a day the dollar fell shows
@@ -54,23 +54,27 @@ const isDate = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}/.test(s);
 
 // The two closes of a symbol's last completed session: { date, close,
 // prevDate, prevClose } (prices in the lot's own currency, shekels for
-// TASE), or null.
+// TASE), or null. The closes when they reach the quote's session, the
+// quote otherwise.
 export function lastCompletedCloses({ quote, closes, today }) {
   const tradeDate = quote && isDate(quote.tradeDate) ? quote.tradeDate.slice(0, 10) : null;
   if (!tradeDate) return null;
-  if (tradeDate < today) {
-    const close = toNum(quote.price);
-    const pct = Number(quote.changePercent);
-    if (!(close > 0) || !Number.isFinite(pct) || pct <= -100) return null;
-    return { date: tradeDate, close, prevDate: null, prevClose: close / (1 + pct / 100) };
-  }
   const past = (Array.isArray(closes) ? closes : [])
     .filter((c) => c && isDate(c.date) && c.date.slice(0, 10) < today && toNum(c.close) > 0)
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-  if (past.length < 2) return null;
-  const last = past[past.length - 1];
-  const prev = past[past.length - 2];
-  return { date: last.date.slice(0, 10), close: toNum(last.close), prevDate: prev.date.slice(0, 10), prevClose: toNum(prev.close) };
+  if (past.length >= 2) {
+    const last = past[past.length - 1];
+    const prev = past[past.length - 2];
+    const lastDate = last.date.slice(0, 10);
+    if (tradeDate >= today || lastDate >= tradeDate) {
+      return { date: lastDate, close: toNum(last.close), prevDate: prev.date.slice(0, 10), prevClose: toNum(prev.close) };
+    }
+  }
+  if (tradeDate >= today) return null;
+  const close = toNum(quote.price);
+  const pct = Number(quote.changePercent);
+  if (!(close > 0) || !Number.isFinite(pct) || pct <= -100) return null;
+  return { date: tradeDate, close, prevDate: null, prevClose: close / (1 + pct / 100) };
 }
 
 // The USD/ILS on a session's date, and on the session before it.
@@ -232,9 +236,9 @@ export function computeLastSessionChange({ holdings = {}, lots = holdings, trans
   };
 }
 
-// The symbols whose last completed session is not in their quote (it is
-// from today), and so need daily closes. A symbol with no open lot is
-// included only when a slice of it was sold within the last week.
+// The symbols that need daily closes: every open one (see WHERE THE
+// CLOSES COME FROM), and one with no open lot only when a slice of it was
+// sold within the last week.
 export function symbolsNeedingHistory({ holdings = {}, lots = holdings, now = new Date() }) {
   const out = { israeli: [], american: [] };
   [
@@ -250,8 +254,7 @@ export function symbolsNeedingHistory({ holdings = {}, lots = holdings, now = ne
       const sym = norm(l);
       if (!sym) return;
       openSyms.add(sym);
-      const t = isDate(l.dailyChangeTradeDate) ? l.dailyChangeTradeDate.slice(0, 10) : null;
-      if (t && t >= today) set.add(sym);
+      set.add(sym);
     });
     (all || []).forEach((l) => {
       const sym = norm(l);

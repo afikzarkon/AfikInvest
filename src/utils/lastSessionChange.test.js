@@ -23,6 +23,25 @@ describe('lastCompletedCloses', () => {
     expect(lastCompletedCloses({ quote: { tradeDate: '2026-10-16', price: 110, changePercent: 10 }, today: '2026-10-18' })).toEqual({ date: '2026-10-16', close: 110, prevDate: null, prevClose: expect.closeTo(100, 9) });
   });
 
+  it("takes a past session from the closes, not from the quote's change", () => {
+    // Before the open the quote already reads the session as nearly flat.
+    const quote = { tradeDate: '2026-10-16', price: 110, changePercent: 0.1 };
+    const closes = [
+      { date: '2026-10-15', close: 100 },
+      { date: '2026-10-16', close: 110 }
+    ];
+    expect(lastCompletedCloses({ quote, closes, today: '2026-10-18' })).toEqual({ date: '2026-10-16', close: 110, prevDate: '2026-10-15', prevClose: 100 });
+  });
+
+  it("falls back to the quote when the closes do not reach its session yet", () => {
+    const quote = { tradeDate: '2026-10-16', price: 110, changePercent: 10 };
+    const closes = [
+      { date: '2026-10-14', close: 90 },
+      { date: '2026-10-15', close: 100 }
+    ];
+    expect(lastCompletedCloses({ quote, closes, today: '2026-10-18' })).toEqual({ date: '2026-10-16', close: 110, prevDate: null, prevClose: expect.closeTo(100, 9) });
+  });
+
   it("takes today's market's previous two sessions from the closes", () => {
     const closes = [
       { date: '2026-10-15', close: 95 },
@@ -129,9 +148,16 @@ describe('computeLastSessionChange', () => {
 });
 
 describe('symbolsNeedingHistory', () => {
-  it("asks only for the symbols whose quote is today's, and a symbol sold out this week", () => {
+  it('asks for every open symbol, and one sold out this week', () => {
     const holdings = { israeliStocks: [il(1, { dailyChangeTradeDate: '2026-10-20' })], americanStocks: [us(2)] };
-    const lots = { ...holdings, americanStocks: [us(2), { ...us('9:sold:s'), stockName: 'NVDA', isClosedSlice: true, soldDate: '2026-10-19' }] };
-    expect(symbolsNeedingHistory({ holdings, lots, now: TUESDAY_NOON })).toEqual({ israeli: ['1159250'], american: ['NVDA'] });
+    const lots = {
+      ...holdings,
+      americanStocks: [
+        us(2),
+        { ...us('9:sold:s'), stockName: 'NVDA', isClosedSlice: true, soldDate: '2026-10-19' },
+        { ...us('8:sold:s'), stockName: 'AMD', isClosedSlice: true, soldDate: '2026-09-01' }
+      ]
+    };
+    expect(symbolsNeedingHistory({ holdings, lots, now: TUESDAY_NOON })).toEqual({ israeli: ['1159250'], american: ['NVDA', 'VOO'] });
   });
 });
