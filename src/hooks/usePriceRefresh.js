@@ -32,6 +32,15 @@ import { fetchAmericanStockPrices, fetchIsraeliStockPrices } from '../api/stockP
 // re-reading the same cached value six times per cache generation.
 const POLLING_INTERVAL_MS = 60000;
 
+// When the server answers from its last known price while it fetches a
+// fresher one (`revalidating`, see quotesRoutes.js and yahooQuotes.js), the
+// first cycle asks again this soon rather than a whole interval later - so
+// opening the site shows the saved prices at once and the live ones a few
+// seconds after.
+const FOLLOW_UP_MS = 4000;
+
+const anyRevalidating = (quotes) => Object.values(quotes || {}).some((q) => q && q.revalidating);
+
 // A price fetched longer ago than this is reported as not current. The
 // server refreshes every minute and serves its last known price when a
 // source fails, with the time that price was fetched (fetchedAt) - so a
@@ -75,11 +84,11 @@ function uniqueSymbols(stocks) {
 // whose security didn't come back with a usable price keep their existing
 // values rather than being zeroed.
 export async function refreshIsraeliStocks(israeliStocks, setIsraeliStocks) {
-  if (israeliStocks.length === 0) return;
+  if (israeliStocks.length === 0) return false;
 
   const ids = uniqueSymbols(israeliStocks);
   const quotes = await fetchIsraeliStockPrices(ids);
-  if (!quotes || Object.keys(quotes).length === 0) return;
+  if (!quotes || Object.keys(quotes).length === 0) return false;
 
   setIsraeliStocks((current) =>
     current.map((stock) => {
@@ -98,16 +107,17 @@ export async function refreshIsraeliStocks(israeliStocks, setIsraeliStocks) {
       };
     })
   );
+  return anyRevalidating(quotes);
 }
 
 // Same idea for American symbols (via Yahoo), plus the shared USD/ILS rate,
 // which comes back on the same response.
 export async function refreshAmericanStocks(americanStocks, setAmericanStocks) {
-  if (americanStocks.length === 0) return;
+  if (americanStocks.length === 0) return false;
 
   const symbols = uniqueSymbols(americanStocks);
   const { quotes, exchangeRate } = await fetchAmericanStockPrices(symbols);
-  if ((!quotes || Object.keys(quotes).length === 0) && exchangeRate == null) return;
+  if ((!quotes || Object.keys(quotes).length === 0) && exchangeRate == null) return false;
 
   setAmericanStocks((current) =>
     current.map((stock) => {
@@ -128,6 +138,7 @@ export async function refreshAmericanStocks(americanStocks, setAmericanStocks) {
       };
     })
   );
+  return anyRevalidating(quotes);
 }
 
 export function usePriceRefresh({
@@ -167,17 +178,17 @@ export function usePriceRefresh({
   const runRefreshCycle = useCallback(async () => {
     // Don't refresh while the user is editing or adding a stock - an
     // incoming price update would fight with what they're typing.
-    if (pausedRef.current) return;
+    if (pausedRef.current) return false;
 
     const { israeliStocks: israeli, americanStocks: american } = stocksRef.current;
-    if (israeli.length === 0 && american.length === 0) return;
+    if (israeli.length === 0 && american.length === 0) return false;
 
     setRefreshing(true);
     // Israeli (TASE) and American (Yahoo) refreshes are fully independent -
     // neither's result depends on the other's - so they run concurrently.
     // allSettled (not all) so a failure in one branch never prevents the
     // other from updating.
-    await Promise.allSettled([
+    const results = await Promise.allSettled([
       refreshIsraeliStocks(israeli, setIsraeliStocks),
       refreshAmericanStocks(american, setAmericanStocks)
     ]);
@@ -189,6 +200,9 @@ export function usePriceRefresh({
       hasCompletedFirstCycleRef.current = true;
       if (onFirstCycleCompleteRef.current) onFirstCycleCompleteRef.current();
     }
+    // Whether any price came from the server's last known copy while it
+    // fetches a fresher one.
+    return results.some((r) => r.status === 'fulfilled' && r.value === true);
   }, [setIsraeliStocks, setAmericanStocks]);
 
   // Immediate first refresh as soon as there is anything to refresh, then
@@ -197,9 +211,18 @@ export function usePriceRefresh({
   const holdingsKey = `${israeliStocks.length}:${americanStocks.length}`;
   useEffect(() => {
     if (israeliStocks.length === 0 && americanStocks.length === 0) return undefined;
-    runRefreshCycle();
+    let followUp = null;
+    let cancelled = false;
+    // Once, after the first cycle: see FOLLOW_UP_MS.
+    runRefreshCycle().then((revalidating) => {
+      if (revalidating && !cancelled) followUp = setTimeout(runRefreshCycle, FOLLOW_UP_MS);
+    });
     const interval = setInterval(runRefreshCycle, POLLING_INTERVAL_MS);
-    return () => clearInterval(interval);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      if (followUp) clearTimeout(followUp);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [holdingsKey, runRefreshCycle]);
 

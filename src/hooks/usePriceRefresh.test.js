@@ -136,7 +136,7 @@ describe('refreshAmericanStocks', () => {
     const setAmericanStocks = jest.fn();
     await expect(
       refreshAmericanStocks([{ stockName: 'AAPL', quantity: 10 }], setAmericanStocks)
-    ).resolves.toBeUndefined();
+    ).resolves.toBe(false);
     expect(setAmericanStocks).not.toHaveBeenCalled();
   });
 });
@@ -312,6 +312,25 @@ describe('usePriceRefresh', () => {
     expect(result.current.refreshing).toBe(false);
     expect(result.current.hasLoadedLivePrices).toBe(true);
     expect(result.current.lastRefreshAt).toBeInstanceOf(Date);
+  });
+
+  test('asks again a few seconds after load when the server is still fetching fresher prices', async () => {
+    fetchIsraeliStockPrices.mockResolvedValueOnce({ TEVA: { currentPrice: 1000, changePercent: 0, revalidating: true } });
+    renderHook(() =>
+      usePriceRefresh({
+        ...baseArgs,
+        israeliStocks: [{ stockName: 'TEVA', quantity: 1 }],
+        americanStocks: []
+      })
+    );
+    await flush();
+    expect(fetchIsraeliStockPrices).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      jest.advanceTimersByTime(4000);
+    });
+    await flush();
+    expect(fetchIsraeliStockPrices).toHaveBeenCalledTimes(2);
   });
 
   test('keeps polling on an interval after the first cycle', async () => {

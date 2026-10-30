@@ -265,7 +265,9 @@ async function getTaseQuoteSwr(stockId, req) {
   }
   if (stale) {
     refreshTaseQuote(stockId, req).catch(() => {});
-    return stale;
+    // `revalidating`: a fresher quote is being fetched right now - the
+    // client asks again shortly instead of waiting a whole poll for it.
+    return { ...stale, revalidating: true };
   }
 
   try {
