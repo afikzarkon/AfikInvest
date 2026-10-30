@@ -1,10 +1,8 @@
 // The "שינוי אתמול" figures for the dashboard and the holdings tables (see
 // utils/lastSessionChange.js).
 //
-// Most of the time it needs no request: a quote whose session is before
-// today already holds that session's close and the one before. Only the
-// symbols that traded today need daily closes, and only US holdings need
-// the USD/ILS history. Those come from the same cached history endpoints
+// Each held symbol's daily closes, and for US holdings the USD/ILS
+// history, come from the same cached history endpoints
 // the analysis page uses, at most once a day per symbol: the closes are
 // kept in this browser under today's date, since a past session's close
 // never changes.
