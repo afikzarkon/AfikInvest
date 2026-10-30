@@ -187,7 +187,7 @@ describe('quotesRoutes', () => {
 
     // The response is the stale value, not the fresh one - it did not wait.
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ currentPrice: 3500, changePercent: 1.1 });
+    expect(res.body).toEqual({ currentPrice: 3500, changePercent: 1.1, revalidating: true });
     // ...but a refresh was kicked off, so the next poll gets the new price.
     expect(taseQuoteApi.fetchTaseQuoteFromApi).toHaveBeenCalledWith('5678');
   });
@@ -196,7 +196,7 @@ describe('quotesRoutes', () => {
     taseScraper.readStaleTaseQuote.mockReturnValue({ currentPrice: 3500, changePercent: 1.1 });
     const res = await get(`${baseUrl}/api/israeli-stock/5678`);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ currentPrice: 3500, changePercent: 1.1 });
+    expect(res.body).toEqual({ currentPrice: 3500, changePercent: 1.1, revalidating: true });
   });
 
   // After a restart the in-memory cache is empty. A quote saved to the
@@ -209,7 +209,7 @@ describe('quotesRoutes', () => {
 
     const res = await get(`${baseUrl}/api/israeli-stock/4321`);
 
-    expect(res.body).toEqual(saved);
+    expect(res.body).toEqual({ ...saved, revalidating: true });
     // Seeded into the memory cache with its saved time, so it counts as stale.
     expect(taseScraper.writeCachedTaseQuote).toHaveBeenCalledWith('4321', saved, Date.parse('2026-10-19T08:00:00.000Z'));
     expect(taseQuoteApi.fetchTaseQuoteFromApi).toHaveBeenCalledWith('4321');

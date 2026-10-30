@@ -507,12 +507,37 @@ describe('getYahooPayload fallback to the last good price', () => {
     const good = await fresh.getYahooPayload('MSFT');
     expect(good.fetchedAt).toEqual(expect.any(String));
 
-    nowSpy.mockReturnValue(1_000_000 + 60_000); // past the 15s cache
+    nowSpy.mockReturnValue(1_000_000 + 60_000); // past the 30s cache
     mockAxios.get.mockRejectedValueOnce({ response: { status: 429 }, message: 'Request failed with status code 429' });
+    // Served at once while the refresh runs behind it - not yet known to fail.
+    expect(await fresh.getYahooPayload('MSFT')).toEqual({ ...good, revalidating: true });
+    await new Promise((resolve) => setImmediate(resolve));
+    // The refresh failed: from now on the same quote is marked stale.
+    mockAxios.get.mockRejectedValueOnce(new Error('still down'));
     const fallback = await fresh.getYahooPayload('MSFT');
+    // Let that background refresh settle here, not inside the next test.
+    await new Promise((resolve) => setImmediate(resolve));
     nowSpy.mockRestore();
 
-    expect(fallback).toEqual({ ...good, stale: true });
+    expect(fallback).toEqual({ ...good, stale: true, revalidating: true });
+  });
+
+  test('answers from the last good quote without waiting on the refresh', async () => {
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    mockAxios.get.mockResolvedValueOnce({ data: { chart: { result: [{ meta: { regularMarketPrice: 100, previousClose: 99 } }] } } });
+    const good = await fresh.getYahooPayload('AAPL');
+
+    nowSpy.mockReturnValue(1_000_000 + 60_000);
+    let finish;
+    mockAxios.get.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    expect(await fresh.getYahooPayload('AAPL')).toEqual({ ...good, revalidating: true });
+
+    // Once the refresh lands, the next request gets the new price.
+    finish({ data: { chart: { result: [{ meta: { regularMarketPrice: 110, previousClose: 100 } }] } } });
+    await new Promise((resolve) => setImmediate(resolve));
+    const next = await fresh.getYahooPayload('AAPL');
+    nowSpy.mockRestore();
+    expect(next.currentPrice).toBe(110);
   });
 
   test('still throws when there has never been a good quote', async () => {

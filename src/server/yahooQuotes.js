@@ -25,6 +25,9 @@ const yahooInFlight = new Map();
 // serves instead of nothing (see getYahooPayload). The database copy in
 // marketMemory covers the time after a restart, when this map is empty.
 const yahooLastGood = new Map();
+// Symbols whose latest refresh failed - their last good quote is served
+// marked stale until a refresh succeeds again.
+const yahooFailedSince = new Map();
 
 const YAHOO_HEADERS = {
   'User-Agent':
@@ -129,13 +132,9 @@ async function fetchUsQuote(symbol) {
   return { ...value, source: source === 'yahoo-chart' ? 'yahoo' : source };
 }
 
-// A US stock or FX quote, cached briefly and deduplicated per symbol, with
-// the last good quote served (marked stale) when every source fails.
-// The name is historical: Finnhub answers first when it is configured.
-async function getYahooPayload(symbol) {
-  const cached = readCachedYahoo(symbol);
-  if (cached) return cached;
-
+// Fetches one US stock or FX quote now, deduplicated per symbol: N callers
+// for the same symbol share one upstream request.
+function refreshYahooPayload(symbol) {
   const inFlight = yahooInFlight.get(symbol);
   if (inFlight) return inFlight;
 
@@ -144,39 +143,74 @@ async function getYahooPayload(symbol) {
     const payload = {
       ...quote,
       // When this price was fetched, so the client can say how old a price
-      // served from the fallback below is.
+      // served from the last good copy below is.
       fetchedAt: new Date().toISOString()
     };
     writeCachedYahoo(symbol, payload);
+    yahooFailedSince.delete(symbol);
     if (payload.currentPrice !== null) {
       yahooLastGood.set(symbol, payload);
       marketMemory.set(`quote:us:${symbol}`, payload);
     }
     return payload;
-  })();
+  })()
+    .catch((err) => {
+      yahooFailedSince.set(symbol, Date.now());
+      // These failures used to be swallowed by the routes without a trace,
+      // which left no way to tell from the logs whether US prices were down.
+      console.warn('[yahoo] quote failed', {
+        symbol,
+        status: err && err.response && err.response.status,
+        error: err && err.message
+      });
+      throw err;
+    })
+    .finally(() => {
+      yahooInFlight.delete(symbol);
+    });
 
   yahooInFlight.set(symbol, requestPromise);
-  try {
-    return await requestPromise;
-  } catch (err) {
-    // These failures used to be swallowed by the routes without a trace,
-    // which left no way to tell from the logs whether US prices were down.
-    console.warn('[yahoo] quote failed', {
-      symbol,
-      status: err && err.response && err.response.status,
-      error: err && err.message
-    });
-    // The last good price, marked stale, beats no price: the client shows
-    // its age instead of silently keeping an unlabelled old number.
-    const lastGood = yahooLastGood.get(symbol) || ((await marketMemory.get(`quote:us:${symbol}`)) || {}).value;
-    if (lastGood) {
-      yahooLastGood.set(symbol, lastGood);
-      return { ...lastGood, stale: true };
-    }
-    throw err;
-  } finally {
-    yahooInFlight.delete(symbol);
+  return requestPromise;
+}
+
+// The last good quote for a symbol: this process's copy, or after a
+// restart the database's (marketMemory.js). null when there never was one.
+async function readLastGoodYahoo(symbol) {
+  const inMemory = yahooLastGood.get(symbol);
+  if (inMemory) return inMemory;
+  const saved = await marketMemory.get(`quote:us:${symbol}`);
+  if (saved && saved.value) {
+    yahooLastGood.set(symbol, saved.value);
+    return saved.value;
   }
+  return null;
+}
+
+// A US stock or FX quote, stale-while-revalidate - the same shape as the
+// TASE side (quotesRoutes.js's getTaseQuoteSwr). The cache holds a quote
+// for 30s and the client polls every minute, so a blocking fetch on every
+// expiry made nearly every poll wait on Finnhub/Yahoo - up to their 8-12s
+// timeouts, per symbol, with the slowest one holding up the whole batch.
+//
+// Now a request only waits when there is nothing at all to serve - the
+// first time a symbol is ever asked for. Otherwise the last good quote is
+// returned at once and the refresh runs behind it; its fetchedAt says how
+// old it is, so a source that keeps failing shows as an aging price (see
+// usePriceRefresh.js's findStalePrices), never as a live one.
+// The name is historical: Finnhub answers first when it is configured.
+async function getYahooPayload(symbol) {
+  const cached = readCachedYahoo(symbol);
+  if (cached) return cached;
+
+  const lastGood = await readLastGoodYahoo(symbol);
+  if (lastGood) {
+    refreshYahooPayload(symbol).catch(() => {});
+    // Marked stale only once a refresh has failed since it was fetched:
+    // a quote just past the 30s cache is simply the latest there is.
+    // `revalidating`, as on the TASE side: a fresher quote is on its way.
+    return yahooFailedSince.get(symbol) ? { ...lastGood, stale: true, revalidating: true } : { ...lastGood, revalidating: true };
+  }
+  return refreshYahooPayload(symbol);
 }
 
 // Shared fetch+parse for the v8/finance/chart daily-bars endpoint, given
