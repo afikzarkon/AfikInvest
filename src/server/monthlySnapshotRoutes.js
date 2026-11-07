@@ -74,6 +74,43 @@ function serializeBreakdown(rawBreakdown, asOfDate) {
   return JSON.stringify(breakdown);
 }
 
+// THE REAL DATE OF A MONTH SAVED BEFORE CHECKPOINTS RECORDED ONE.
+//
+// Without a date, such a month is read as valid on its last day - but most
+// of them are automatic saves, taken the first time the app was opened that
+// month, often on the 1st. Read as the 31st, every purchase or deposit made
+// in between looked as if it were already inside that month's value, so it
+// was never netted out and the next month showed it as a return.
+//
+// The automatic save writes the day's daily snapshot at the same moment,
+// with the same total (hooks/useAutoSnapshot.js). So the daily snapshot in
+// that month whose total equals the month's is the day it was taken; the
+// earliest such day, if several match. A month no daily snapshot matches
+// (one filled in later, valued at its month end) stays undated, and keeps
+// reading as its last day.
+const SAME_TOTAL_TOLERANCE = 0.01;
+
+function inferAsOfDate(snapshot, dailySnapshots) {
+  if (!snapshot || typeof snapshot.month !== 'string') return null;
+  const total = Number(snapshot.totalValueILS);
+  if (!Number.isFinite(total) || total <= 0) return null;
+  const match = (dailySnapshots || [])
+    .filter((d) => d && typeof d.date === 'string' && d.date.slice(0, 7) === snapshot.month)
+    .filter((d) => Math.abs(Number(d.totalValueILS) - total) <= SAME_TOTAL_TOLERANCE)
+    .map((d) => d.date.slice(0, 10))
+    .sort()[0];
+  return match && DATE_RE.test(match) ? match : null;
+}
+
+function withAsOfDates(monthlySnapshots, dailySnapshots) {
+  return monthlySnapshots.map((snap) => {
+    const recorded = snap.breakdown && snap.breakdown.asOfDate;
+    if (recorded) return { ...snap, asOfDate: recorded };
+    const inferred = inferAsOfDate(snap, dailySnapshots);
+    return inferred ? { ...snap, asOfDate: inferred, asOfDateInferred: true } : { ...snap, asOfDate: null };
+  });
+}
+
 function mountMonthlySnapshotRoutes(app, store) {
   app.post('/api/portfolio-monthly-snapshot', requireAuth, async (req, res) => {
     try {
@@ -136,12 +173,20 @@ function mountMonthlySnapshotRoutes(app, store) {
 
   app.get('/api/portfolio-monthly-snapshots', requireAuth, async (req, res) => {
     try {
-      const snapshots = (await store.listMonthlySnapshots(req.user.id)).map((snap) => ({
-        ...snap,
-        // null for a month saved before checkpoints recorded their date -
-        // the comparison falls back to month boundaries for those.
-        asOfDate: (snap.breakdown && snap.breakdown.asOfDate) || null
-      }));
+      const monthly = await store.listMonthlySnapshots(req.user.id);
+      // Only needed for months saved before checkpoints carried a date.
+      const needsInference = monthly.some((snap) => !(snap.breakdown && snap.breakdown.asOfDate));
+      let daily = [];
+      if (needsInference && typeof store.listPortfolioSnapshots === 'function') {
+        try {
+          daily = await store.listPortfolioSnapshots(req.user.id);
+        } catch (err) {
+          console.error('[monthly-snapshot] could not read daily snapshots to date old months', err);
+        }
+      }
+      // asOfDate: recorded, else recovered from the matching daily snapshot,
+      // else null (the comparison then reads the month's last day).
+      const snapshots = withAsOfDates(monthly, daily);
       return res.json({ snapshots });
     } catch (err) {
       console.error('[monthly-snapshot] failed to list snapshots', err);
@@ -203,4 +248,4 @@ function mountMonthlySnapshotRoutes(app, store) {
   });
 }
 
-module.exports = { mountMonthlySnapshotRoutes, resolveAsOfDate, serializeBreakdown };
+module.exports = { mountMonthlySnapshotRoutes, resolveAsOfDate, serializeBreakdown, inferAsOfDate, withAsOfDates };
