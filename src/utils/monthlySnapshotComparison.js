@@ -119,20 +119,23 @@ export function buildLiveCashFlows(liveHoldings) {
     bank: new Map(),
     bankSavings: new Map()
   };
-  const push = (map, key, date, amount) => {
+  const push = (map, key, date, amount, lot) => {
     if (!key || !date) return;
     if (!map.has(key)) map.set(key, []);
-    map.get(key).push({ date, amount });
+    // A purchase keeps the dates of the lot it bought, so the comparison
+    // can tell whether that lot was held on a checkpoint's date.
+    map.get(key).push(lot ? { date, amount, lot } : { date, amount });
   };
+  const lotDates = (s) => ({ purchaseDate: s.purchaseDate, soldDate: s.soldDate || null });
 
   (liveHoldings?.israeliStocks || []).forEach((s) => {
-    push(flows.israeli, s.stockName, s.purchaseDate, (s.purchasePrice || 0) * (s.quantity || 0));
+    push(flows.israeli, s.stockName, s.purchaseDate, (s.purchasePrice || 0) * (s.quantity || 0), lotDates(s));
   });
   (liveHoldings?.americanStocks || []).forEach((s) => {
     // ILS cost at the time of purchase (purchase price * quantity * the
     // exchange rate paid) - matches totalPurchaseILS everywhere else in
     // this app, so it's on the same footing as the category's ILS values.
-    push(flows.american, s.stockName, s.purchaseDate, (s.purchasePrice || 0) * (s.quantity || 0) * (s.exchangeRate || 0));
+    push(flows.american, s.stockName, s.purchaseDate, (s.purchasePrice || 0) * (s.quantity || 0) * (s.exchangeRate || 0), lotDates(s));
   });
   // Keyed with the same fallbacks monthlySnapshotBreakdown.js uses for an
   // unnamed fund - keyed by fundName alone, an unnamed fund's deposits were
@@ -440,11 +443,82 @@ export function compareMonthlySnapshots(baseSnapshot, compareSnapshot, liveHoldi
   const reflectedAmount = (record, key, itemKey) =>
     record ? (record[key] && Number(record[key][itemKey])) || 0 : null;
 
+  // A STOCK A CHECKPOINT DOES NOT HOLD AT ALL.
+  //
+  // Dates alone decide which purchases fall between two checkpoints, and a
+  // checkpoint's date can be wrong: a month saved before checkpoints
+  // recorded their date is read as valid on its LAST day, though the
+  // automatic save took it on the first day the app was opened that month.
+  // A stock bought in between then looked as if it were already inside
+  // that month's value, its purchase was never netted out, and the next
+  // month showed the whole purchase as profit. (A purchase recorded with an
+  // earlier date than the day it was entered does the same.)
+  //
+  // The checkpoint's own rows settle it. A stock with no row in a
+  // checkpoint was not in its value, whatever the dates say:
+  //   - missing from the BASE checkpoint but held in the COMPARE one,
+  //     though its lots were held on the base date: their purchases are new
+  //     money in this period;
+  //   - missing from the COMPARE checkpoint, though its lots were held on
+  //     the compare date: their purchases are not in that value, so they
+  //     are not netted out of it.
+  // Only when the checkpoints itemize their stocks under the keys the
+  // holdings use - an older save keyed some other way says nothing.
+  const stockKeys = (breakdown) => {
+    const keys = new Set();
+    for (const category of ['israeli', 'american']) {
+      const value = breakdown[category];
+      if (value === undefined || value === null) continue;
+      if (!Array.isArray(value)) return null; // a pre-itemized total
+      value.forEach((it) => it && keys.add(it.key));
+    }
+    return keys;
+  };
+  const heldLotKeys = new Set(
+    liveCashFlows ? ['israeli', 'american'].flatMap((c) => Array.from(liveCashFlows[c].keys())) : []
+  );
+  const presenceFor = (breakdown) => {
+    const keys = stockKeys(breakdown);
+    if (!keys || ![...keys].some((k) => heldLotKeys.has(k))) return null;
+    return keys;
+  };
+  const baseStockKeys = presenceFor(baseBreakdown);
+  const compareStockKeys = presenceFor(compareBreakdown);
+  const heldOn = (lot, day) => {
+    const bought = flowDay(lot.purchaseDate);
+    return Boolean(bought) && bought <= day && !(lot.soldDate && day >= flowDay(lot.soldDate));
+  };
+
+  const stockPresenceAdjusted = (key, itemKey, list, inPeriod) => {
+    if (key !== 'israeli' && key !== 'american') return inPeriod;
+    let out = inPeriod;
+    if (compareStockKeys && !compareStockKeys.has(itemKey)) {
+      // The compare day itself is left to the same-day record when there is one.
+      out = out.filter(
+        (f) => !(f.lot && heldOn(f.lot, periodEnd) && !(compareReflectedItems && flowDay(f.date) === periodEnd))
+      );
+    }
+    // Only for a stock the later checkpoint DOES hold: one missing from
+    // both (a holding added to the app after both were saved, with an old
+    // purchase date) moved neither value, so nothing of it is a flow here.
+    if (baseStockKeys && !baseStockKeys.has(itemKey) && compareStockKeys && compareStockKeys.has(itemKey)) {
+      const missing = (list || []).filter(
+        (f) =>
+          f.lot &&
+          heldOn(f.lot, periodStart) &&
+          (flowDay(f.date) < periodStart || (flowDay(f.date) === periodStart && !baseReflectedItems))
+      );
+      const amount = missing.reduce((sum, f) => sum + (Number(f.amount) || 0), 0);
+      if (amount !== 0) out = [...out, { date: periodStart, amount }];
+    }
+    return out;
+  };
+
   // One item's ledger flows inside the period, corrected on the two
   // boundary days for what each checkpoint actually held (see
-  // buildReflectedFlows).
+  // buildReflectedFlows and the stock rows above).
   const itemFlowsInPeriod = (key, itemKey, list) => [
-    ...flowsInPeriod(list, periodStart, periodEnd),
+    ...stockPresenceAdjusted(key, itemKey, list, flowsInPeriod(list, periodStart, periodEnd)),
     ...boundaryCorrections({
       flowList: list,
       periodStart,

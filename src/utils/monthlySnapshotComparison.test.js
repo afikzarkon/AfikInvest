@@ -681,3 +681,69 @@ describe('stocks: purchases follow the category holding the stock', () => {
     expect(row(rows, 'israeli').changePercent).toBeCloseTo(0, 6);
   });
 });
+
+// The case reported: a stock bought during the month and added to the
+// portfolio, read by the tracker as a large return.
+describe('a stock the earlier checkpoint does not hold', () => {
+  const holdings = {
+    israeliStocks: [
+      { stockName: 'TEVA', purchaseDate: '2026-09-01', purchasePrice: 50, quantity: 100 },
+      { stockName: 'NEW', purchaseDate: '2026-10-15', purchasePrice: 100, quantity: 100 }
+    ]
+  };
+  const row = (rows, key) => rows.find((r) => r.key === key);
+
+  test("is new money even when the earlier month's date says it was already in it (a month saved before checkpoints carried dates)", () => {
+    // October was saved early in October, before NEW was bought - but it
+    // carries no date, so it is read as valid on Oct 31.
+    const october = { month: '2026-10', totalValueILS: 5000, breakdown: { israeli: [{ key: 'TEVA', label: 'TEVA', value: 5000 }] } };
+    const november = {
+      month: '2026-11',
+      asOfDate: '2026-11-02',
+      totalValueILS: 15000,
+      breakdown: { israeli: [{ key: 'TEVA', label: 'TEVA', value: 5000 }, { key: 'NEW', label: 'NEW', value: 10000 }] }
+    };
+    const rows = compareMonthlySnapshots(october, november, holdings);
+    expect(row(rows, 'total').netCashFlow).toBe(10000);
+    expect(row(rows, 'total').changePercent).toBeCloseTo(0, 6);
+    expect(row(rows, 'israeli').changePercent).toBeCloseTo(0, 6);
+  });
+
+  test('is not netted out of a later checkpoint that does not hold it either', () => {
+    // A purchase recorded with an earlier date than the save it missed.
+    const september = { month: '2026-09', asOfDate: '2026-09-30', totalValueILS: 5000, breakdown: { israeli: [{ key: 'TEVA', label: 'TEVA', value: 5000 }] } };
+    const october = { month: '2026-10', asOfDate: '2026-10-31', totalValueILS: 5250, breakdown: { israeli: [{ key: 'TEVA', label: 'TEVA', value: 5250 }] } };
+    const rows = compareMonthlySnapshots(september, october, holdings);
+    expect(row(rows, 'total').netCashFlow).toBe(0);
+    expect(row(rows, 'total').changePercent).toBeCloseTo(5, 6);
+  });
+
+  test('a stock sold before the earlier checkpoint is not brought back', () => {
+    const sold = {
+      israeliStocks: [
+        { stockName: 'TEVA', purchaseDate: '2026-09-01', purchasePrice: 50, quantity: 100 },
+        { stockName: 'OLD', purchaseDate: '2026-08-01', purchasePrice: 100, quantity: 10, soldDate: '2026-09-10', isClosedSlice: true }
+      ]
+    };
+    const base = { month: '2026-09', asOfDate: '2026-09-30', totalValueILS: 5000, breakdown: { israeli: [{ key: 'TEVA', label: 'TEVA', value: 5000 }] } };
+    const compare = { month: '2026-10', asOfDate: '2026-10-31', totalValueILS: 5500, breakdown: { israeli: [{ key: 'TEVA', label: 'TEVA', value: 5500 }] } };
+    const rows = compareMonthlySnapshots(base, compare, sold);
+    expect(row(rows, 'total').netCashFlow).toBe(0);
+    expect(row(rows, 'total').changePercent).toBeCloseTo(10, 6);
+  });
+
+  test('a stock missing from BOTH checkpoints (added to the app later, with an old date) is no flow at all', () => {
+    const base = { month: '2026-10', totalValueILS: 5000, breakdown: { israeli: [{ key: 'TEVA', label: 'TEVA', value: 5000 }] } };
+    const compare = { month: '2026-11', asOfDate: '2026-11-02', totalValueILS: 5500, breakdown: { israeli: [{ key: 'TEVA', label: 'TEVA', value: 5500 }] } };
+    const rows = compareMonthlySnapshots(base, compare, holdings);
+    expect(row(rows, 'total').netCashFlow).toBe(0);
+    expect(row(rows, 'total').changePercent).toBeCloseTo(10, 6);
+  });
+
+  test('a checkpoint keyed some other way (nothing matches the holdings) is left alone', () => {
+    const base = { month: '2026-10', totalValueILS: 5000, breakdown: { israeli: [{ key: 'טבע', label: 'טבע', value: 5000 }] } };
+    const compare = { month: '2026-11', asOfDate: '2026-11-02', totalValueILS: 15000, breakdown: { israeli: [{ key: 'טבע', label: 'טבע', value: 15000 }] } };
+    const rows = compareMonthlySnapshots(base, compare, holdings);
+    expect(row(rows, 'total').netCashFlow).toBe(0);
+  });
+});
