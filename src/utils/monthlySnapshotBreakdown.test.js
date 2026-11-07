@@ -1,4 +1,4 @@
-import { buildItemizedMonthlyBreakdown } from './monthlySnapshotBreakdown';
+import { buildItemizedMonthlyBreakdown, providentFundValueOn } from './monthlySnapshotBreakdown';
 
 const analysis = {
   stockDistribution: [
@@ -97,5 +97,40 @@ describe('item keys vs. labels', () => {
       []
     );
     expect(breakdown.israeli).toEqual([{ key: '1234567', label: '1234567', value: 500 }]);
+  });
+});
+
+// A deposit made after a provident fund's last statement is money in the
+// fund - and the monthly comparison nets it out as a contribution, so a
+// checkpoint that left it out showed a loss the size of the deposit.
+describe('providentFundValueOn', () => {
+  const fund = {
+    fundName: 'קופה א',
+    currentValue: 40000,
+    currentValueDate: '2026-09-30',
+    deposits: [
+      { date: '2026-09-15', amount: 1000 }, // before the statement - already in it
+      { date: '2026-10-10', amount: 2000 }, // after it
+      { date: '2026-10-20T00:00:00.000Z', amount: '500' }, // after it, timestamp + string
+      { date: '2026-11-05', amount: 3000 } // after the day asked about
+    ]
+  };
+
+  test('statement value plus the deposits made after it, up to the day', () => {
+    expect(providentFundValueOn(fund, '2026-10-31')).toBe(42500);
+    expect(providentFundValueOn(fund, '2026-09-30')).toBe(40000);
+  });
+
+  test('a fund whose value has no date keeps its plain value', () => {
+    expect(providentFundValueOn({ amount: 12000, deposits: [{ date: '2026-10-10', amount: 2000 }] }, '2026-10-31')).toBe(12000);
+  });
+
+  test('the live breakdown uses it', () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const result = buildItemizedMonthlyBreakdown(analysis, [
+      { id: 1, fundName: 'קופה א', currentValue: 40000, currentValueDate: '2000-01-01', deposits: [{ date: '2000-02-01', amount: 2000 }] }
+    ], [], []);
+    expect(today > '2000-02-01').toBe(true);
+    expect(result.pension).toEqual([{ key: 'קופה א', label: 'קופה א', value: 42000 }]);
   });
 });

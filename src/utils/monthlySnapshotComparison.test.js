@@ -1,4 +1,5 @@
 import {
+  buildReflectedFlows,
   compareMonthlySnapshots,
   normalizeCategoryItems,
   isLegacyRollup,
@@ -559,5 +560,82 @@ describe('liquid-account ledgers', () => {
     const compare = compareWith({ bank: -10000 });
     const rows = compareMonthlySnapshots(base, compare, { bankBalances: [{ deposits: [] }] }, [base, compare]);
     expect(bankRow(rows).netCashFlow).toBe(-10000);
+  });
+});
+
+// A purchase or deposit dated on a checkpoint's own day: was it recorded
+// before the save (inside the saved value) or after it? The automatic save
+// is taken the first time the app opens in a month, so "after" is common.
+describe('flows dated on a checkpoint\'s own day', () => {
+  // TEVA bought on Oct 3 for ₪10,000, AFTER that day's automatic save.
+  const holdings = {
+    israeliStocks: [
+      { stockName: 'TEVA', purchaseDate: '2026-09-01', purchasePrice: 100, quantity: 100 },
+      { stockName: 'TEVA', purchaseDate: '2026-10-03', purchasePrice: 100, quantity: 100 }
+    ]
+  };
+  const snap = (month, asOfDate, value, reflectedFlows) => ({
+    month,
+    asOfDate,
+    totalValueILS: value,
+    breakdown: { israeli: [{ key: 'TEVA', label: 'TEVA', value }], ...(reflectedFlows ? { reflectedFlows } : {}) }
+  });
+  // Saved on Oct 3 before the purchase: nothing of that day is in it.
+  const savedBeforePurchase = { date: '2026-10-03', items: {} };
+  const total = (rows) => rows.find((r) => r.key === 'total');
+  const israeliRow = (rows) => rows.find((r) => r.key === 'israeli');
+
+  test('records the flows of its own day that the figures include', () => {
+    expect(buildReflectedFlows(holdings, '2026-10-03')).toEqual({ date: '2026-10-03', items: { israeli: { TEVA: 10000 } } });
+    expect(buildReflectedFlows(holdings, '2026-10-04')).toEqual({ date: '2026-10-04', items: {} });
+    expect(buildReflectedFlows(holdings, 'bad')).toBeNull();
+  });
+
+  test('a purchase recorded after the BASE save is netted out of the next month, not read as growth', () => {
+    // Oct 3: ₪10,000 (one lot). Nov 2: ₪20,000 (both lots, no price change).
+    const base = snap('2026-10', '2026-10-03', 10000, savedBeforePurchase);
+    const compare = snap('2026-11', '2026-11-02', 20000, { date: '2026-11-02', items: {} });
+    const rows = compareMonthlySnapshots(base, compare, holdings);
+    expect(total(rows).netCashFlow).toBe(10000);
+    expect(total(rows).changePercent).toBeCloseTo(0, 6);
+    expect(israeliRow(rows).changePercent).toBeCloseTo(0, 6);
+    expect(israeliRow(rows).items[0].changePercent).toBeCloseTo(0, 6);
+  });
+
+  test('a purchase recorded after the COMPARE save is not netted out of a value it was never in', () => {
+    // Sept 30: ₪10,000. Oct 3 (saved before the purchase): ₪10,500 - a 5% gain.
+    const base = snap('2026-09', '2026-09-30', 10000);
+    const compare = snap('2026-10', '2026-10-03', 10500, savedBeforePurchase);
+    const rows = compareMonthlySnapshots(base, compare, holdings);
+    expect(total(rows).netCashFlow).toBe(0);
+    expect(total(rows).changePercent).toBeCloseTo(5, 6);
+  });
+
+  test('a purchase the save already included is treated as before', () => {
+    const base = snap('2026-09', '2026-09-30', 10000);
+    const compare = snap('2026-10', '2026-10-03', 20000, { date: '2026-10-03', items: { israeli: { TEVA: 10000 } } });
+    const rows = compareMonthlySnapshots(base, compare, holdings);
+    expect(total(rows).netCashFlow).toBe(10000);
+    expect(total(rows).changePercent).toBeCloseTo(0, 6);
+  });
+
+  test('a checkpoint without the record keeps the old assumption (the day\'s flows are inside it)', () => {
+    const base = snap('2026-10', '2026-10-03', 20000);
+    const compare = snap('2026-11', '2026-11-02', 20000);
+    const rows = compareMonthlySnapshots(base, compare, holdings);
+    expect(total(rows).netCashFlow).toBe(0);
+    expect(total(rows).changePercent).toBeCloseTo(0, 6);
+  });
+});
+
+describe('unnamed funds', () => {
+  test("an unnamed provident fund's deposits are netted out like a named one's", () => {
+    const base = { month: '2026-09', asOfDate: '2026-09-30', totalValueILS: 10000, breakdown: { pension: [{ key: 'pension-7', label: 'קופת גמל', value: 10000 }] } };
+    const compare = { month: '2026-10', asOfDate: '2026-10-31', totalValueILS: 15000, breakdown: { pension: [{ key: 'pension-7', label: 'קופת גמל', value: 15000 }] } };
+    const rows = compareMonthlySnapshots(base, compare, { pensionFunds: [{ id: 7, fundName: '', deposits: [{ date: '2026-10-10', amount: 5000 }] }] });
+    const pension = rows.find((r) => r.key === 'pension');
+    expect(pension.netCashFlow).toBe(5000);
+    expect(pension.changePercent).toBeCloseTo(0, 6);
+    expect(pension.items[0].netCashFlow).toBe(5000);
   });
 });

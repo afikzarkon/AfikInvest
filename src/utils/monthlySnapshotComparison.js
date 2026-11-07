@@ -134,26 +134,29 @@ export function buildLiveCashFlows(liveHoldings) {
     // this app, so it's on the same footing as the category's ILS values.
     push(flows.american, s.stockName, s.purchaseDate, (s.purchasePrice || 0) * (s.quantity || 0) * (s.exchangeRate || 0));
   });
+  // Keyed with the same fallbacks monthlySnapshotBreakdown.js uses for an
+  // unnamed fund - keyed by fundName alone, an unnamed fund's deposits were
+  // dropped altogether and read as growth.
   (liveHoldings?.pensionFunds || []).forEach((fund) => {
     (Array.isArray(fund.deposits) ? fund.deposits : []).forEach((d) => {
-      push(flows.pension, fund.fundName, d.date, d.amount || 0);
+      push(flows.pension, fund.fundName || `pension-${fund.id}`, d.date, Number(d.amount) || 0);
     });
   });
   (liveHoldings?.bankSavingsFunds || []).forEach((fund) => {
     (Array.isArray(fund.deposits) ? fund.deposits : []).forEach((d) => {
-      push(flows.bankSavings, fund.fundName, d.date, d.amount || 0);
+      push(flows.bankSavings, fund.fundName || `bank-savings-${fund.id}`, d.date, Number(d.amount) || 0);
     });
   });
   // Keyed exactly as monthlySnapshotBreakdown.js keys these items, so a
   // flow lands on the same row it is netted out of.
   (liveHoldings?.cashFunds || []).forEach((fund) => {
     (Array.isArray(fund.deposits) ? fund.deposits : []).forEach((d) => {
-      push(flows.cashFunds, fund.fundName || `cash-${fund.id}`, d.date, d.amount || 0);
+      push(flows.cashFunds, fund.fundName || `cash-${fund.id}`, d.date, Number(d.amount) || 0);
     });
   });
   (liveHoldings?.bankBalances || []).forEach((account, index) => {
     (Array.isArray(account.deposits) ? account.deposits : []).forEach((d) => {
-      push(flows.bank, `bank-${index + 1}`, d.date, d.amount || 0);
+      push(flows.bank, `bank-${index + 1}`, d.date, Number(d.amount) || 0);
     });
   });
   (liveHoldings?.transactions || []).forEach((tx) => {
@@ -162,6 +165,68 @@ export function buildLiveCashFlows(liveHoldings) {
     if (flow) push(flows[tx.assetClass], tx.assetId, flow.date, flow.amount);
   });
   return flows;
+}
+
+// WHAT A CHECKPOINT ALREADY HOLDS FROM ITS OWN DAY.
+//
+// A flow's date has no time of day, so a purchase or deposit dated on the
+// very day a checkpoint was taken is ambiguous: was it recorded before the
+// save (and so inside the saved value) or after it? The comparison used to
+// assume "before", always. But the automatic monthly save fires the first
+// time the app is opened in a month, so a purchase recorded later that same
+// day was NOT in the saved value - and it was then read as growth in the
+// next month, and netted out of a value it was never in (a loss) in this
+// one.
+//
+// So a checkpoint records, when it is saved, the flows dated on its own day
+// that its figures already include: { date, items: { category: { itemKey:
+// amount } } }. Anything dated that day beyond that was recorded after the
+// save. A checkpoint without the record (saved before it existed, or
+// rebuilt for a past day from history, where every flow of the day is
+// included) keeps the old assumption.
+export function buildReflectedFlows(liveHoldings, asOfDate) {
+  if (!liveHoldings || typeof asOfDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(asOfDate)) return null;
+  const flows = buildLiveCashFlows(liveHoldings);
+  const items = {};
+  MONTHLY_CATEGORY_KEYS.forEach((key) => {
+    flows[key].forEach((list, itemKey) => {
+      const sum = list.reduce((s, f) => (flowDay(f.date) === asOfDate ? s + (Number(f.amount) || 0) : s), 0);
+      if (sum !== 0) {
+        if (!items[key]) items[key] = {};
+        items[key][itemKey] = sum;
+      }
+    });
+  });
+  return { date: asOfDate, items };
+}
+
+const flowDay = (date) => (typeof date === 'string' ? date.slice(0, 10) : '');
+
+// The reflected-flows record of a checkpoint, when it applies to `day`.
+function reflectedFlowsOn(snapshot, day) {
+  const r = snapshot && snapshot.breakdown && snapshot.breakdown.reflectedFlows;
+  if (!r || typeof r !== 'object' || r.date !== day || !r.items || typeof r.items !== 'object') return null;
+  return r.items;
+}
+
+// Corrections for one item's (or a whole category's) flows on the two
+// boundary days, given what each checkpoint recorded as already included:
+//   - recorded on the BASE day but not in the base value: new money during
+//     the period, at its very start (full weight);
+//   - recorded on the COMPARE day but not in the compare value: not part of
+//     this period at all, so taken back out.
+function boundaryCorrections({ flowList, periodStart, periodEnd, baseReflected, compareReflected }) {
+  const out = [];
+  const onDay = (day) => (flowList || []).reduce((s, f) => (flowDay(f.date) === day ? s + (Number(f.amount) || 0) : s), 0);
+  if (baseReflected !== undefined && baseReflected !== null) {
+    const missing = onDay(periodStart) - baseReflected;
+    if (Math.abs(missing) > 0.005) out.push({ date: periodStart, amount: missing });
+  }
+  if (compareReflected !== undefined && compareReflected !== null) {
+    const after = onDay(periodEnd) - compareReflected;
+    if (Math.abs(after) > 0.005) out.push({ date: periodEnd, amount: -after });
+  }
+  return out;
 }
 
 // THE DATE A CHECKPOINT IS VALID FOR - the day its figures were taken.
@@ -190,7 +255,7 @@ function midpointDate(fromDate, toDate) {
 // treated as already reflected in the beginning value, not as "new" money
 // during this period.
 function flowsInPeriod(flowList, periodStart, periodEnd) {
-  return (flowList || []).filter((f) => f.date && f.date > periodStart && f.date <= periodEnd);
+  return (flowList || []).filter((f) => f.date && flowDay(f.date) > periodStart && flowDay(f.date) <= periodEnd);
 }
 
 // Last calendar day of a "YYYY-MM" month, as "YYYY-MM-DD" (day 0 of the
@@ -334,9 +399,28 @@ export function compareMonthlySnapshots(baseSnapshot, compareSnapshot, liveHoldi
   const liveCashFlows = liveHoldings ? buildLiveCashFlows(liveHoldings) : null;
   const manualCashFlows = buildManualCashFlows(allSnapshots, baseSnapshot.month, compareSnapshot.month);
 
+  const baseReflectedItems = reflectedFlowsOn(baseSnapshot, periodStart);
+  const compareReflectedItems = reflectedFlowsOn(compareSnapshot, periodEnd);
+  const reflectedAmount = (record, key, itemKey) =>
+    record ? (record[key] && Number(record[key][itemKey])) || 0 : null;
+
+  // One item's ledger flows inside the period, corrected on the two
+  // boundary days for what each checkpoint actually held (see
+  // buildReflectedFlows).
+  const itemFlowsInPeriod = (key, itemKey, list) => [
+    ...flowsInPeriod(list, periodStart, periodEnd),
+    ...boundaryCorrections({
+      flowList: list,
+      periodStart,
+      periodEnd,
+      baseReflected: reflectedAmount(baseReflectedItems, key, itemKey),
+      compareReflected: reflectedAmount(compareReflectedItems, key, itemKey)
+    })
+  ];
+
   const autoFlowsInPeriod = (key) =>
     liveCashFlows && CONTRIBUTION_ADJUSTABLE_CATEGORIES.includes(key)
-      ? Array.from(liveCashFlows[key].values()).flatMap((list) => flowsInPeriod(list, periodStart, periodEnd))
+      ? Array.from(liveCashFlows[key].entries()).flatMap(([itemKey, list]) => itemFlowsInPeriod(key, itemKey, list))
       : [];
 
   // Per category: ledger flows (drawn from liveHoldings) plus declared ones
@@ -375,7 +459,7 @@ export function compareMonthlySnapshots(baseSnapshot, compareSnapshot, liveHoldi
         const baseValue = baseItem ? baseItem.value : null;
         const compareValue = compareItem ? compareItem.value : null;
         const cashFlows = autoItemFlows
-          ? flowsInPeriod(autoItemFlows.get(itemKey), periodStart, periodEnd)
+          ? itemFlowsInPeriod(key, itemKey, autoItemFlows.get(itemKey))
           : null;
         return {
           key: itemKey,

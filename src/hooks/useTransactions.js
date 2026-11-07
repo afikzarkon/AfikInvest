@@ -27,9 +27,13 @@ async function readError(r) {
 export function useTransactions(user, authHeader) {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(false);
+  // True once the ledger has actually arrived for this user - an empty list
+  // before then means "not known yet", not "no transactions".
+  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
+    setLoaded(false);
     if (!user) {
       setTransactions([]);
       return undefined;
@@ -46,6 +50,7 @@ export function useTransactions(user, authHeader) {
         const d = await r.json();
         if (!cancelled) {
           setTransactions(Array.isArray(d.transactions) ? d.transactions : []);
+          setLoaded(true);
           setError('');
         }
       } catch {
@@ -143,5 +148,5 @@ export function useTransactions(user, authHeader) {
     []
   );
 
-  return { transactions, loading, error, preview, record, update, remove };
+  return { transactions, loading, loaded, error, preview, record, update, remove };
 }
