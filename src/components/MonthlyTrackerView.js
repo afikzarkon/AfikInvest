@@ -4,6 +4,7 @@ import BetaBanner from './BetaBanner';
 import { useHistoricalPortfolioValue } from '../hooks/useHistoricalPortfolioValue';
 import { expandHoldingsWithClosedLots } from '../shared/transactionLedger';
 import {
+  buildReflectedFlows,
   compareMonthlySnapshots,
   normalizeCategoryItems,
   isLegacyRollup,
@@ -238,6 +239,9 @@ function MonthlyTrackerView({
   // auto-fill valued it at. null for a month saved before checkpoints
   // carried a date, which stays undated rather than being given a guess.
   const [editDraftAsOfDate, setEditDraftAsOfDate] = useState(null);
+  // Which of its own day's flows the edited month's figures include (see
+  // buildReflectedFlows) - kept through a correction, replaced by a re-fill.
+  const [editReflectedFlows, setEditReflectedFlows] = useState(null);
 
   const draftRowIdRef = useRef(0);
   const nextDraftRowId = () => {
@@ -285,6 +289,7 @@ function MonthlyTrackerView({
     setEditDraftAsOfDate(snapshot.asOfDate || snapshot.breakdown?.asOfDate || null);
     setEditDraftBreakdown(buildDraftFromBreakdown(snapshot.breakdown));
     setEditLegacyCashFlows(savedCashFlows(snapshot.breakdown?.cashFlows));
+    setEditReflectedFlows(snapshot.breakdown?.reflectedFlows || null);
   };
 
   const cancelEditingMonth = () => {
@@ -292,6 +297,7 @@ function MonthlyTrackerView({
     setEditDraftBreakdown(null);
     setEditLegacyCashFlows({});
     setEditDraftAsOfDate(null);
+    setEditReflectedFlows(null);
   };
 
   // Both editors update one field of one row, addressed by its stable
@@ -353,16 +359,23 @@ function MonthlyTrackerView({
     () => ({ cashFunds, bankBalances, bankSavingsFunds }),
     [cashFunds, bankBalances, bankSavingsFunds]
   );
+  // Every breakdown built here also records which of its own day's
+  // purchases/deposits it already includes (see buildReflectedFlows): with
+  // today's live figures, something recorded later today is not in them.
   const buildBreakdownAt = useCallback(
-    (asOfDate) =>
-      composeAsOfBreakdown({
+    (asOfDate) => {
+      const breakdown = composeAsOfBreakdown({
         asOfDate,
         today: todayDate,
         liveBreakdown,
         historicalBreakdownAtDate,
         holdings: accountHoldings
-      }),
-    [todayDate, liveBreakdown, historicalBreakdownAtDate, accountHoldings]
+      });
+      if (!breakdown) return null;
+      const reflectedFlows = buildReflectedFlows(monthlyLiveHoldings, asOfDate);
+      return reflectedFlows ? { ...breakdown, reflectedFlows } : breakdown;
+    },
+    [todayDate, liveBreakdown, historicalBreakdownAtDate, accountHoldings, monthlyLiveHoldings]
   );
 
   const [autoFillMessage, setAutoFillMessage] = useState('');
@@ -381,6 +394,7 @@ function MonthlyTrackerView({
     setEditDraftBreakdown(buildDraftFromBreakdown(breakdown));
     // The figures now describe the date they were valued at.
     setEditDraftAsOfDate(asOfDate);
+    setEditReflectedFlows(breakdown.reflectedFlows || null);
   };
 
   const draftTotal = editDraftBreakdown
@@ -398,6 +412,7 @@ function MonthlyTrackerView({
     }, {});
     breakdown.cashFlows = editLegacyCashFlows;
     if (editDraftAsOfDate) breakdown.asOfDate = editDraftAsOfDate;
+    if (editReflectedFlows && editReflectedFlows.date === editDraftAsOfDate) breakdown.reflectedFlows = editReflectedFlows;
     const ok = await onUpdateMonthlySnapshot(editingMonth, draftTotal, breakdown);
     if (ok) cancelEditingMonth();
   };
@@ -537,6 +552,7 @@ function MonthlyTrackerView({
     // Valid for the date the user picked, which is the date every row above
     // was valued at - not "some time that month".
     breakdown.asOfDate = manualAddAsOfDate;
+    if (manualAddAutoBreakdown?.reflectedFlows) breakdown.reflectedFlows = manualAddAutoBreakdown.reflectedFlows;
     const ok = await onAddManualMonthlySnapshot(manualAddMonth, manualAddTotal, breakdown);
     if (ok) setShowManualAddForm(false);
   };

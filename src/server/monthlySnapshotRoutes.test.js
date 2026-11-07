@@ -1,4 +1,4 @@
-const { resolveAsOfDate, serializeBreakdown } = require('./monthlySnapshotRoutes');
+const { resolveAsOfDate, serializeBreakdown, inferAsOfDate, withAsOfDates } = require('./monthlySnapshotRoutes');
 const { dateInTimeZone } = require('./marketCalendar');
 
 describe('resolveAsOfDate', () => {
@@ -31,5 +31,45 @@ describe('serializeBreakdown', () => {
 
   test("drops a client-sent date when the server resolved none", () => {
     expect(JSON.parse(serializeBreakdown({ asOfDate: '2099-01-01' }, null))).toEqual({});
+  });
+});
+
+// A month saved before checkpoints recorded their date: the automatic save
+// wrote that day's daily snapshot with the same total at the same moment.
+describe('recovering the date of an undated month', () => {
+  const daily = [
+    { date: '2026-09-30', totalValueILS: 100000 },
+    { date: '2026-10-01', totalValueILS: 101234.56 },
+    { date: '2026-10-02', totalValueILS: 101500 },
+    { date: '2026-10-20', totalValueILS: 111234.56 },
+    { date: '2026-11-01', totalValueILS: 101234.56 }
+  ];
+
+  test('is the day of the daily snapshot in that month with the same total', () => {
+    expect(inferAsOfDate({ month: '2026-10', totalValueILS: 101234.56 }, daily)).toBe('2026-10-01');
+  });
+
+  test('looks only inside the month itself', () => {
+    expect(inferAsOfDate({ month: '2026-09', totalValueILS: 101234.56 }, daily)).toBeNull();
+  });
+
+  test('is none when no total matches (a month filled in later, valued at its end)', () => {
+    expect(inferAsOfDate({ month: '2026-10', totalValueILS: 99999 }, daily)).toBeNull();
+  });
+
+  test('a recorded date always wins, and only an undated month is marked as inferred', () => {
+    const out = withAsOfDates(
+      [
+        { month: '2026-10', totalValueILS: 101234.56, breakdown: { asOfDate: '2026-10-05' } },
+        { month: '2026-10', totalValueILS: 101234.56, breakdown: {} },
+        { month: '2026-10', totalValueILS: 5, breakdown: null }
+      ],
+      daily
+    );
+    expect(out[0].asOfDate).toBe('2026-10-05');
+    expect(out[0].asOfDateInferred).toBeUndefined();
+    expect(out[1].asOfDate).toBe('2026-10-01');
+    expect(out[1].asOfDateInferred).toBe(true);
+    expect(out[2].asOfDate).toBeNull();
   });
 });

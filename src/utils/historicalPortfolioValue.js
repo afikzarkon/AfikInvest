@@ -39,6 +39,7 @@
 // net worth do" - separately answerable.
 import { valueOfLedgerAccountAtDate, valueOfLedgerAccountsAtDate } from './ledgerAccountHistory';
 import { computeBankSavingsFundValue } from './bankSavingsFund';
+import { effectiveExchangeForIsraeliStock } from './israeliEtfClassifier';
 
 function groupBySymbol(lots) {
   return lots.reduce((acc, lot) => {
@@ -422,6 +423,7 @@ export const computeHistoricalBreakdownAtDate = (date, holdings = {}, priceData 
   const { taseHistoricalCloses = {}, yahooHistoricalCloses = {}, fxHistoricalCloses = [] } = priceData;
 
   const israeli = [];
+  const americanFromTase = [];
   Object.entries(groupBySymbol(israeliStocks)).forEach(([symbol, lots]) => {
     if (quantityAsOfDate(lots, date) <= 0) return;
     const priceAgorot = closeOnOrBefore(date, taseHistoricalCloses[symbol]);
@@ -431,7 +433,12 @@ export const computeHistoricalBreakdownAtDate = (date, holdings = {}, priceData 
     const value = valueLotsOnDate(lots, date, priceAgorot === null ? null : priceAgorot / 100);
     if (value === null) return;
     const label = lots.find((lot) => lot.officialName)?.officialName;
-    israeli.push({
+    // Filed where the live checkpoint files it: a TASE-listed fund that
+    // tracks a foreign index is shown under American stocks, so a month
+    // filled from history has to put it there too, or comparing it with a
+    // month saved live reads as money moving between the two rows.
+    const target = lots.some((lot) => effectiveExchangeForIsraeliStock(lot) === 'american') ? americanFromTase : israeli;
+    target.push({
       key: symbol,
       label: label ? `${label} (${symbol})` : symbol,
       value
@@ -491,7 +498,7 @@ export const computeHistoricalBreakdownAtDate = (date, holdings = {}, priceData 
 
   return {
     israeli,
-    american,
+    american: [...american, ...americanFromTase],
     pension: ledgerItems(pensionFunds, 'קופת גמל', 'pension'),
     cashFunds: ledgerItems(cashFunds, 'קרן כספית', 'cash'),
     bank: ledgerItems(bankBalances, 'עו"ש', 'bank'),

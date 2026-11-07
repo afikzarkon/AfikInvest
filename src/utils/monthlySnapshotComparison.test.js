@@ -1,4 +1,5 @@
 import {
+  buildReflectedFlows,
   compareMonthlySnapshots,
   normalizeCategoryItems,
   isLegacyRollup,
@@ -559,5 +560,190 @@ describe('liquid-account ledgers', () => {
     const compare = compareWith({ bank: -10000 });
     const rows = compareMonthlySnapshots(base, compare, { bankBalances: [{ deposits: [] }] }, [base, compare]);
     expect(bankRow(rows).netCashFlow).toBe(-10000);
+  });
+});
+
+// A purchase or deposit dated on a checkpoint's own day: was it recorded
+// before the save (inside the saved value) or after it? The automatic save
+// is taken the first time the app opens in a month, so "after" is common.
+describe('flows dated on a checkpoint\'s own day', () => {
+  // TEVA bought on Oct 3 for ₪10,000, AFTER that day's automatic save.
+  const holdings = {
+    israeliStocks: [
+      { stockName: 'TEVA', purchaseDate: '2026-09-01', purchasePrice: 100, quantity: 100 },
+      { stockName: 'TEVA', purchaseDate: '2026-10-03', purchasePrice: 100, quantity: 100 }
+    ]
+  };
+  const snap = (month, asOfDate, value, reflectedFlows) => ({
+    month,
+    asOfDate,
+    totalValueILS: value,
+    breakdown: { israeli: [{ key: 'TEVA', label: 'TEVA', value }], ...(reflectedFlows ? { reflectedFlows } : {}) }
+  });
+  // Saved on Oct 3 before the purchase: nothing of that day is in it.
+  const savedBeforePurchase = { date: '2026-10-03', items: {} };
+  const total = (rows) => rows.find((r) => r.key === 'total');
+  const israeliRow = (rows) => rows.find((r) => r.key === 'israeli');
+
+  test('records the flows of its own day that the figures include', () => {
+    expect(buildReflectedFlows(holdings, '2026-10-03')).toEqual({ date: '2026-10-03', items: { israeli: { TEVA: 10000 } } });
+    expect(buildReflectedFlows(holdings, '2026-10-04')).toEqual({ date: '2026-10-04', items: {} });
+    expect(buildReflectedFlows(holdings, 'bad')).toBeNull();
+  });
+
+  test('a purchase recorded after the BASE save is netted out of the next month, not read as growth', () => {
+    // Oct 3: ₪10,000 (one lot). Nov 2: ₪20,000 (both lots, no price change).
+    const base = snap('2026-10', '2026-10-03', 10000, savedBeforePurchase);
+    const compare = snap('2026-11', '2026-11-02', 20000, { date: '2026-11-02', items: {} });
+    const rows = compareMonthlySnapshots(base, compare, holdings);
+    expect(total(rows).netCashFlow).toBe(10000);
+    expect(total(rows).changePercent).toBeCloseTo(0, 6);
+    expect(israeliRow(rows).changePercent).toBeCloseTo(0, 6);
+    expect(israeliRow(rows).items[0].changePercent).toBeCloseTo(0, 6);
+  });
+
+  test('a purchase recorded after the COMPARE save is not netted out of a value it was never in', () => {
+    // Sept 30: ₪10,000. Oct 3 (saved before the purchase): ₪10,500 - a 5% gain.
+    const base = snap('2026-09', '2026-09-30', 10000);
+    const compare = snap('2026-10', '2026-10-03', 10500, savedBeforePurchase);
+    const rows = compareMonthlySnapshots(base, compare, holdings);
+    expect(total(rows).netCashFlow).toBe(0);
+    expect(total(rows).changePercent).toBeCloseTo(5, 6);
+  });
+
+  test('a purchase the save already included is treated as before', () => {
+    const base = snap('2026-09', '2026-09-30', 10000);
+    const compare = snap('2026-10', '2026-10-03', 20000, { date: '2026-10-03', items: { israeli: { TEVA: 10000 } } });
+    const rows = compareMonthlySnapshots(base, compare, holdings);
+    expect(total(rows).netCashFlow).toBe(10000);
+    expect(total(rows).changePercent).toBeCloseTo(0, 6);
+  });
+
+  test('a checkpoint without the record keeps the old assumption (the day\'s flows are inside it)', () => {
+    const base = snap('2026-10', '2026-10-03', 20000);
+    const compare = snap('2026-11', '2026-11-02', 20000);
+    const rows = compareMonthlySnapshots(base, compare, holdings);
+    expect(total(rows).netCashFlow).toBe(0);
+    expect(total(rows).changePercent).toBeCloseTo(0, 6);
+  });
+});
+
+describe('unnamed funds', () => {
+  test("an unnamed provident fund's deposits are netted out like a named one's", () => {
+    const base = { month: '2026-09', asOfDate: '2026-09-30', totalValueILS: 10000, breakdown: { pension: [{ key: 'pension-7', label: 'קופת גמל', value: 10000 }] } };
+    const compare = { month: '2026-10', asOfDate: '2026-10-31', totalValueILS: 15000, breakdown: { pension: [{ key: 'pension-7', label: 'קופת גמל', value: 15000 }] } };
+    const rows = compareMonthlySnapshots(base, compare, { pensionFunds: [{ id: 7, fundName: '', deposits: [{ date: '2026-10-10', amount: 5000 }] }] });
+    const pension = rows.find((r) => r.key === 'pension');
+    expect(pension.netCashFlow).toBe(5000);
+    expect(pension.changePercent).toBeCloseTo(0, 6);
+    expect(pension.items[0].netCashFlow).toBe(5000);
+  });
+});
+
+// A TASE-listed fund tracking a foreign index is valued under "American
+// stocks", while its purchase is an Israeli lot.
+describe('stocks: purchases follow the category holding the stock', () => {
+  const holdings = {
+    israeliStocks: [
+      { stockName: '1183441', purchaseDate: '2026-09-01', purchasePrice: 100, quantity: 100, isForeignETF: true },
+      { stockName: '1183441', purchaseDate: '2026-10-15', purchasePrice: 100, quantity: 100, isForeignETF: true }
+    ]
+  };
+  const snap = (month, asOfDate, value) => ({
+    month,
+    asOfDate,
+    totalValueILS: value,
+    breakdown: { israeli: [], american: [{ key: '1183441', label: 'S&P 500', value }] }
+  });
+  const row = (rows, key) => rows.find((r) => r.key === key);
+
+  test('a purchase mid-month is netted out of the row that holds it - not read as profit there and a loss elsewhere', () => {
+    // ₪10,000 on Sept 30; ₪10,000 more bought Oct 15; ₪21,000 on Oct 31.
+    const rows = compareMonthlySnapshots(snap('2026-09', '2026-09-30', 10000), snap('2026-10', '2026-10-31', 21000), holdings);
+    expect(row(rows, 'american').netCashFlow).toBe(10000);
+    expect(row(rows, 'american').changePercent).toBeGreaterThan(0);
+    expect(row(rows, 'american').changePercent).toBeLessThan(10);
+    expect(row(rows, 'israeli').netCashFlow).toBe(0);
+    expect(row(rows, 'total').netCashFlow).toBe(10000);
+    expect(row(rows, 'american').items[0].netCashFlow).toBe(10000);
+  });
+
+  test('an ordinary Israeli share still has its purchases in the israeli row', () => {
+    const base = { month: '2026-09', asOfDate: '2026-09-30', totalValueILS: 10000, breakdown: { israeli: [{ key: 'TEVA', label: 'TEVA', value: 10000 }] } };
+    const compare = { month: '2026-10', asOfDate: '2026-10-31', totalValueILS: 20000, breakdown: { israeli: [{ key: 'TEVA', label: 'TEVA', value: 20000 }] } };
+    const rows = compareMonthlySnapshots(base, compare, {
+      israeliStocks: [
+        { stockName: 'TEVA', purchaseDate: '2026-09-01', purchasePrice: 100, quantity: 100 },
+        { stockName: 'TEVA', purchaseDate: '2026-10-15', purchasePrice: 100, quantity: 100 }
+      ]
+    });
+    expect(row(rows, 'israeli').netCashFlow).toBe(10000);
+    expect(row(rows, 'israeli').changePercent).toBeCloseTo(0, 6);
+  });
+});
+
+// The case reported: a stock bought during the month and added to the
+// portfolio, read by the tracker as a large return.
+describe('a stock the earlier checkpoint does not hold', () => {
+  const holdings = {
+    israeliStocks: [
+      { stockName: 'TEVA', purchaseDate: '2026-09-01', purchasePrice: 50, quantity: 100 },
+      { stockName: 'NEW', purchaseDate: '2026-10-15', purchasePrice: 100, quantity: 100 }
+    ]
+  };
+  const row = (rows, key) => rows.find((r) => r.key === key);
+
+  test("is new money even when the earlier month's date says it was already in it (a month saved before checkpoints carried dates)", () => {
+    // October was saved early in October, before NEW was bought - but it
+    // carries no date, so it is read as valid on Oct 31.
+    const october = { month: '2026-10', totalValueILS: 5000, breakdown: { israeli: [{ key: 'TEVA', label: 'TEVA', value: 5000 }] } };
+    const november = {
+      month: '2026-11',
+      asOfDate: '2026-11-02',
+      totalValueILS: 15000,
+      breakdown: { israeli: [{ key: 'TEVA', label: 'TEVA', value: 5000 }, { key: 'NEW', label: 'NEW', value: 10000 }] }
+    };
+    const rows = compareMonthlySnapshots(october, november, holdings);
+    expect(row(rows, 'total').netCashFlow).toBe(10000);
+    expect(row(rows, 'total').changePercent).toBeCloseTo(0, 6);
+    expect(row(rows, 'israeli').changePercent).toBeCloseTo(0, 6);
+  });
+
+  test('is not netted out of a later checkpoint that does not hold it either', () => {
+    // A purchase recorded with an earlier date than the save it missed.
+    const september = { month: '2026-09', asOfDate: '2026-09-30', totalValueILS: 5000, breakdown: { israeli: [{ key: 'TEVA', label: 'TEVA', value: 5000 }] } };
+    const october = { month: '2026-10', asOfDate: '2026-10-31', totalValueILS: 5250, breakdown: { israeli: [{ key: 'TEVA', label: 'TEVA', value: 5250 }] } };
+    const rows = compareMonthlySnapshots(september, october, holdings);
+    expect(row(rows, 'total').netCashFlow).toBe(0);
+    expect(row(rows, 'total').changePercent).toBeCloseTo(5, 6);
+  });
+
+  test('a stock sold before the earlier checkpoint is not brought back', () => {
+    const sold = {
+      israeliStocks: [
+        { stockName: 'TEVA', purchaseDate: '2026-09-01', purchasePrice: 50, quantity: 100 },
+        { stockName: 'OLD', purchaseDate: '2026-08-01', purchasePrice: 100, quantity: 10, soldDate: '2026-09-10', isClosedSlice: true }
+      ]
+    };
+    const base = { month: '2026-09', asOfDate: '2026-09-30', totalValueILS: 5000, breakdown: { israeli: [{ key: 'TEVA', label: 'TEVA', value: 5000 }] } };
+    const compare = { month: '2026-10', asOfDate: '2026-10-31', totalValueILS: 5500, breakdown: { israeli: [{ key: 'TEVA', label: 'TEVA', value: 5500 }] } };
+    const rows = compareMonthlySnapshots(base, compare, sold);
+    expect(row(rows, 'total').netCashFlow).toBe(0);
+    expect(row(rows, 'total').changePercent).toBeCloseTo(10, 6);
+  });
+
+  test('a stock missing from BOTH checkpoints (added to the app later, with an old date) is no flow at all', () => {
+    const base = { month: '2026-10', totalValueILS: 5000, breakdown: { israeli: [{ key: 'TEVA', label: 'TEVA', value: 5000 }] } };
+    const compare = { month: '2026-11', asOfDate: '2026-11-02', totalValueILS: 5500, breakdown: { israeli: [{ key: 'TEVA', label: 'TEVA', value: 5500 }] } };
+    const rows = compareMonthlySnapshots(base, compare, holdings);
+    expect(row(rows, 'total').netCashFlow).toBe(0);
+    expect(row(rows, 'total').changePercent).toBeCloseTo(10, 6);
+  });
+
+  test('a checkpoint keyed some other way (nothing matches the holdings) is left alone', () => {
+    const base = { month: '2026-10', totalValueILS: 5000, breakdown: { israeli: [{ key: 'טבע', label: 'טבע', value: 5000 }] } };
+    const compare = { month: '2026-11', asOfDate: '2026-11-02', totalValueILS: 15000, breakdown: { israeli: [{ key: 'טבע', label: 'טבע', value: 15000 }] } };
+    const rows = compareMonthlySnapshots(base, compare, holdings);
+    expect(row(rows, 'total').netCashFlow).toBe(0);
   });
 });

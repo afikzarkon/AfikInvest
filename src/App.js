@@ -13,6 +13,9 @@ import { usePortfolioSnapshots } from './hooks/usePortfolioSnapshots';
 import { useMonthlySnapshots } from './hooks/useMonthlySnapshots';
 import { useAutoSnapshot } from './hooks/useAutoSnapshot';
 import { buildItemizedMonthlyBreakdown } from './utils/monthlySnapshotBreakdown';
+import { buildReflectedFlows } from './utils/monthlySnapshotComparison';
+import { expandHoldingsWithClosedLots } from './shared/transactionLedger';
+import { todayISO } from './utils/portfolioDates';
 import { useRebalanceTargets } from './hooks/useRebalanceTargets';
 import { useTransactions } from './hooks/useTransactions';
 import { useLastSessionChange } from './hooks/useLastSessionChange';
@@ -400,6 +403,35 @@ function App() {
     addManualError
   } = useMonthlySnapshots(user, authHeader);
 
+  // THE AUTOMATIC MONTHLY SAVE is taken the first time the app is opened in
+  // a month, with today's live figures. Two things it has to carry for the
+  // month-over-month return to be right:
+  //   * its total is the sum of the rows it saves (a provident fund's rows
+  //     include the deposits made since its last statement - see
+  //     monthlySnapshotBreakdown.js - so the headline total, which does
+  //     not, would disagree with them);
+  //   * which of today's purchases/deposits those figures already include,
+  //     since anything recorded later today is not in them but carries the
+  //     same date (see buildReflectedFlows).
+  // The holdings are read through a ref: the transactions ledger loads
+  // further down this component, and the save only happens in an effect,
+  // after it has rendered.
+  const monthlyFlowSourceRef = React.useRef(null);
+  const saveAutoMonthlySnapshot = (_headlineTotal, rows) => {
+    const total = ['israeli', 'american', 'pension', 'cashFunds', 'bank', 'bankSavings'].reduce(
+      (sum, key) => sum + (Array.isArray(rows?.[key]) ? rows[key].reduce((s, item) => s + (Number(item.value) || 0), 0) : 0),
+      0
+    );
+    const source = monthlyFlowSourceRef.current;
+    const reflectedFlows = source && source.ready
+      ? buildReflectedFlows(
+          { ...source, ...expandHoldingsWithClosedLots(source, source.transactions) },
+          todayISO()
+        )
+      : null;
+    return saveMonthlySnapshot(total, reflectedFlows ? { ...rows, reflectedFlows } : rows);
+  };
+
   // Replaces the old manual "שמור מידע יומי עדכני" button entirely - see
   // useAutoSnapshot.js for the full mechanism. portfolioReady is folded
   // into the same gate as firstPriceCycleComplete so a snapshot is never
@@ -411,7 +443,7 @@ function App() {
     snapshots,
     saveSnapshotNow,
     monthlySnapshots,
-    saveMonthlySnapshot,
+    saveMonthlySnapshot: saveAutoMonthlySnapshot,
     snapshotsLoaded,
     monthlySnapshotsLoaded
   });
@@ -580,11 +612,25 @@ function App() {
   const {
     transactions,
     loading: transactionsLoading,
+    loaded: transactionsLoaded,
     preview: previewTransaction,
     record: recordTransaction,
     update: updateTransaction,
     remove: removeTransaction
   } = useTransactions(user, authHeader);
+  // What the automatic monthly save reads (see saveAutoMonthlySnapshot).
+  // Not "ready" until the ledger has loaded: without it, a sale made today
+  // would look like money the saved figures don't include.
+  monthlyFlowSourceRef.current = {
+    israeliStocks,
+    americanStocks,
+    pensionFunds,
+    cashFunds,
+    bankBalances,
+    bankSavingsFunds,
+    transactions,
+    ready: transactionsLoaded && !transactionsLoading
+  };
 
   // "שינוי אתמול" - each holding's last completed session, for the
   // dashboard and the tables (see utils/lastSessionChange.js). Off for the
@@ -814,18 +860,34 @@ function App() {
     quantityEditStart.current = lot ? { id, exchange, quantity: Number(lot.quantity) || 0 } : null;
   };
 
-  // A lot's quantity typed down reads, everywhere downstream, as if the
+  // A lot's quantity typed up or down in the table: a purchase or a sale
+  // with no record of it. A quantity typed down reads, everywhere downstream, as if the
   // units had never been owned: no sale in the history, no realized gain
   // for tax, nothing for the portfolio review to learn from. Recording it
   // as a SELL keeps all of that - so that is offered first, and the plain
   // edit stays one click away.
-  const offerSaleForLoweredQuantity = () => {
+  const offerTransactionForChangedQuantity = () => {
     const start = quantityEditStart.current;
     quantityEditStart.current = null;
     if (!start) return;
     const list = start.exchange === 'israeli' ? israeliStocks : americanStocks;
     const lot = list.find((s) => s.id === start.id);
     const now = lot ? Number(lot.quantity) || 0 : start.quantity;
+    // Typed UP, the same problem the other way round: the extra units would
+    // carry the lot's original purchase date and price, so they were never
+    // a purchase - the monthly tracker read the money spent on them as
+    // growth, and their cost basis was wrong for tax. Recorded as a BUY
+    // they are a new lot with their own date, price and cash flow.
+    if (lot && now > start.quantity && start.quantity > 0) {
+      const bought = now - start.quantity;
+      const buy = window.confirm(
+        `הכמות של ${lot.stockName} עלתה מ-${start.quantity} ל-${now}. אם קנית, עדיף לרשום קנייה: כך היא נכנסת עם התאריך והמחיר שלה, המעקב החודשי מנטרל אותה מהתשואה, וחישובי המס נכונים.\n\nאישור - רישום קנייה של ${bought} יחידות. ביטול - עדכון הכמות בלבד.`
+      );
+      if (!buy) return;
+      handleInlineEdit(start.id, 'quantity', start.quantity, start.exchange);
+      openAssetEntry({ assetClass: start.exchange, assetId: lot.stockName, action: 'BUY', units: bought });
+      return;
+    }
     if (!lot || !(now < start.quantity) || now <= 0) return;
     const sold = start.quantity - now;
     const ok = window.confirm(
@@ -839,7 +901,7 @@ function App() {
   // פונקציה לסיום עריכה inline
   const finishInlineEdit = () => {
     setEditingField(null);
-    offerSaleForLoweredQuantity();
+    offerTransactionForChangedQuantity();
   };
 
   // פונקציה לטיפול בלחיצה על תא
