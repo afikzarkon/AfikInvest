@@ -860,18 +860,34 @@ function App() {
     quantityEditStart.current = lot ? { id, exchange, quantity: Number(lot.quantity) || 0 } : null;
   };
 
-  // A lot's quantity typed down reads, everywhere downstream, as if the
+  // A lot's quantity typed up or down in the table: a purchase or a sale
+  // with no record of it. A quantity typed down reads, everywhere downstream, as if the
   // units had never been owned: no sale in the history, no realized gain
   // for tax, nothing for the portfolio review to learn from. Recording it
   // as a SELL keeps all of that - so that is offered first, and the plain
   // edit stays one click away.
-  const offerSaleForLoweredQuantity = () => {
+  const offerTransactionForChangedQuantity = () => {
     const start = quantityEditStart.current;
     quantityEditStart.current = null;
     if (!start) return;
     const list = start.exchange === 'israeli' ? israeliStocks : americanStocks;
     const lot = list.find((s) => s.id === start.id);
     const now = lot ? Number(lot.quantity) || 0 : start.quantity;
+    // Typed UP, the same problem the other way round: the extra units would
+    // carry the lot's original purchase date and price, so they were never
+    // a purchase - the monthly tracker read the money spent on them as
+    // growth, and their cost basis was wrong for tax. Recorded as a BUY
+    // they are a new lot with their own date, price and cash flow.
+    if (lot && now > start.quantity && start.quantity > 0) {
+      const bought = now - start.quantity;
+      const buy = window.confirm(
+        `הכמות של ${lot.stockName} עלתה מ-${start.quantity} ל-${now}. אם קנית, עדיף לרשום קנייה: כך היא נכנסת עם התאריך והמחיר שלה, המעקב החודשי מנטרל אותה מהתשואה, וחישובי המס נכונים.\n\nאישור - רישום קנייה של ${bought} יחידות. ביטול - עדכון הכמות בלבד.`
+      );
+      if (!buy) return;
+      handleInlineEdit(start.id, 'quantity', start.quantity, start.exchange);
+      openAssetEntry({ assetClass: start.exchange, assetId: lot.stockName, action: 'BUY', units: bought });
+      return;
+    }
     if (!lot || !(now < start.quantity) || now <= 0) return;
     const sold = start.quantity - now;
     const ok = window.confirm(
@@ -885,7 +901,7 @@ function App() {
   // פונקציה לסיום עריכה inline
   const finishInlineEdit = () => {
     setEditingField(null);
-    offerSaleForLoweredQuantity();
+    offerTransactionForChangedQuantity();
   };
 
   // פונקציה לטיפול בלחיצה על תא

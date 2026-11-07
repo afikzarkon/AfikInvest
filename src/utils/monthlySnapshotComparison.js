@@ -356,6 +356,40 @@ function adjustedChangePercent({ baseValue, compareValue, cashFlows, periodStart
   };
 }
 
+// A STOCK'S PURCHASES GO WHERE ITS VALUE IS.
+//
+// Every Israeli-listed lot is a purchase in the israeli ledger, but a
+// TASE-listed fund that tracks a foreign index (an S&P 500 tracker bought
+// on the Tel Aviv exchange) is shown under "American stocks" - the live
+// checkpoint files its value there (portfolioAnalysis.js's
+// effectiveExchangeForIsraeliStock). Its purchase was still netted out of
+// the israeli row, which then showed a loss the size of the purchase,
+// while the american row showed the whole purchase as profit.
+//
+// So each stock's flows are filed under the category that holds that
+// stock in the checkpoints being compared - the later one first, then the
+// earlier - and under its own market only when neither holds it.
+function routeStockFlowsToHeldCategory(flows, compareBreakdown, baseBreakdown) {
+  const holder = (itemKey) => {
+    for (const breakdown of [compareBreakdown, baseBreakdown]) {
+      for (const category of ['israeli', 'american']) {
+        if (normalizeCategoryItems(breakdown && breakdown[category], category).some((it) => it.key === itemKey)) {
+          return category;
+        }
+      }
+    }
+    return null;
+  };
+  const routed = { ...flows, israeli: new Map(), american: new Map() };
+  ['israeli', 'american'].forEach((market) => {
+    flows[market].forEach((list, itemKey) => {
+      const target = routed[holder(itemKey) || market];
+      target.set(itemKey, [...(target.get(itemKey) || []), ...list]);
+    });
+  });
+  return routed;
+}
+
 // baseSnapshot/compareSnapshot: { month: 'YYYY-MM', totalValueILS, breakdown }
 // (the shape useMonthlySnapshots' list returns). liveHoldings (optional):
 // { israeliStocks, americanStocks, pensionFunds, bankSavingsFunds } - the
@@ -396,7 +430,9 @@ export function compareMonthlySnapshots(baseSnapshot, compareSnapshot, liveHoldi
   // before checkpoints recorded their date.
   const periodStart = snapshotAsOfDate(baseSnapshot);
   const periodEnd = snapshotAsOfDate(compareSnapshot);
-  const liveCashFlows = liveHoldings ? buildLiveCashFlows(liveHoldings) : null;
+  const liveCashFlows = liveHoldings
+    ? routeStockFlowsToHeldCategory(buildLiveCashFlows(liveHoldings), compareBreakdown, baseBreakdown)
+    : null;
   const manualCashFlows = buildManualCashFlows(allSnapshots, baseSnapshot.month, compareSnapshot.month);
 
   const baseReflectedItems = reflectedFlowsOn(baseSnapshot, periodStart);

@@ -194,6 +194,19 @@ describe('computeHistoricalBreakdownAtDate', () => {
     expect(breakdown.bank).toEqual([{ key: 'bank-1', label: 'עו"ש', value: 8000 }]);
   });
 
+  test('a TASE-listed fund tracking a foreign index is filed under American stocks, as the live checkpoint files it', () => {
+    const withForeignFund = {
+      israeliStocks: [
+        ...holdings.israeliStocks,
+        { stockName: '1183441', officialName: 'קרן מחקה S&P 500', isForeignETF: true, quantity: 3, purchaseDate: '2024-01-01' }
+      ]
+    };
+    const prices = { ...priceData, taseHistoricalCloses: { ...priceData.taseHistoricalCloses, 1183441: [{ date: '2024-01-01', close: 50000 }] } };
+    const breakdown = computeHistoricalBreakdownAtDate('2024-03-01', withForeignFund, prices);
+    expect(breakdown.israeli.map((i) => i.key)).toEqual(['629014']);
+    expect(breakdown.american).toEqual([{ key: '1183441', label: 'קרן מחקה S&P 500 (1183441)', value: 1500 }]);
+  });
+
   test('includes a holding once its purchase date has passed', () => {
     const breakdown = computeHistoricalBreakdownAtDate('2024-07-01', holdings, priceData);
     expect(breakdown.israeli.map((i) => i.key).sort()).toEqual(['1159250', '629014']);

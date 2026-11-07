@@ -639,3 +639,45 @@ describe('unnamed funds', () => {
     expect(pension.items[0].netCashFlow).toBe(5000);
   });
 });
+
+// A TASE-listed fund tracking a foreign index is valued under "American
+// stocks", while its purchase is an Israeli lot.
+describe('stocks: purchases follow the category holding the stock', () => {
+  const holdings = {
+    israeliStocks: [
+      { stockName: '1183441', purchaseDate: '2026-09-01', purchasePrice: 100, quantity: 100, isForeignETF: true },
+      { stockName: '1183441', purchaseDate: '2026-10-15', purchasePrice: 100, quantity: 100, isForeignETF: true }
+    ]
+  };
+  const snap = (month, asOfDate, value) => ({
+    month,
+    asOfDate,
+    totalValueILS: value,
+    breakdown: { israeli: [], american: [{ key: '1183441', label: 'S&P 500', value }] }
+  });
+  const row = (rows, key) => rows.find((r) => r.key === key);
+
+  test('a purchase mid-month is netted out of the row that holds it - not read as profit there and a loss elsewhere', () => {
+    // ₪10,000 on Sept 30; ₪10,000 more bought Oct 15; ₪21,000 on Oct 31.
+    const rows = compareMonthlySnapshots(snap('2026-09', '2026-09-30', 10000), snap('2026-10', '2026-10-31', 21000), holdings);
+    expect(row(rows, 'american').netCashFlow).toBe(10000);
+    expect(row(rows, 'american').changePercent).toBeGreaterThan(0);
+    expect(row(rows, 'american').changePercent).toBeLessThan(10);
+    expect(row(rows, 'israeli').netCashFlow).toBe(0);
+    expect(row(rows, 'total').netCashFlow).toBe(10000);
+    expect(row(rows, 'american').items[0].netCashFlow).toBe(10000);
+  });
+
+  test('an ordinary Israeli share still has its purchases in the israeli row', () => {
+    const base = { month: '2026-09', asOfDate: '2026-09-30', totalValueILS: 10000, breakdown: { israeli: [{ key: 'TEVA', label: 'TEVA', value: 10000 }] } };
+    const compare = { month: '2026-10', asOfDate: '2026-10-31', totalValueILS: 20000, breakdown: { israeli: [{ key: 'TEVA', label: 'TEVA', value: 20000 }] } };
+    const rows = compareMonthlySnapshots(base, compare, {
+      israeliStocks: [
+        { stockName: 'TEVA', purchaseDate: '2026-09-01', purchasePrice: 100, quantity: 100 },
+        { stockName: 'TEVA', purchaseDate: '2026-10-15', purchasePrice: 100, quantity: 100 }
+      ]
+    });
+    expect(row(rows, 'israeli').netCashFlow).toBe(10000);
+    expect(row(rows, 'israeli').changePercent).toBeCloseTo(0, 6);
+  });
+});
