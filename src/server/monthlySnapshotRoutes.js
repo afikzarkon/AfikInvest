@@ -8,6 +8,7 @@
 // "מעקב חודשי" section).
 const { readAuthUserFromRequest, getJwtSecret } = require('./authRoutes');
 const { dateInTimeZone } = require('./marketCalendar');
+const reporting = require('../shared/reportingMonth');
 
 function requireAuth(req, res, next) {
   try {
@@ -50,20 +51,19 @@ const DATE_RE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 // or nets it out twice.
 //
 // Stored as breakdown.asOfDate, next to the breakdown's other reserved key
-// (cashFlows), so it needs no schema change. Must fall inside its own month
-// and not in the future; anything else is replaced by the latest date the
-// month can be valid for (its last day, or today for the current month).
+// (cashFlows), so it needs no schema change. May fall anywhere from the
+// month's first day to a few days into the next month (a month's report is
+// usually taken once the next month has begun - see shared/reportingMonth.js),
+// never in the future; anything else is replaced by the month's last day
+// (or today, for a month still in progress).
 function lastValidDateOfMonth(month) {
-  const [year, mm] = month.split('-').map(Number);
-  const lastDay = new Date(Date.UTC(year, mm, 0)).toISOString().slice(0, 10);
+  const lastDay = reporting.lastDayOfMonth(month);
   const today = todayString();
   return lastDay > today ? today : lastDay;
 }
 
 function resolveAsOfDate(month, requested) {
-  if (typeof requested === 'string' && DATE_RE.test(requested)) {
-    if (requested.slice(0, 7) === month && requested <= todayString()) return requested;
-  }
+  if (typeof requested === 'string' && reporting.isValidAsOfDate(month, requested, todayString())) return requested;
   return lastValidDateOfMonth(month);
 }
 
@@ -119,15 +119,20 @@ function mountMonthlySnapshotRoutes(app, store) {
       if (!Number.isFinite(totalValueILS) || totalValueILS < 0) {
         return res.status(400).json({ error: 'totalValueILS לא תקין' });
       }
-      const snapshotMonth = currentMonthString();
+      const today = todayString();
+      // The month the save is for: this month, or - during the first days
+      // of a month - the month that just ended, whose report is taken now
+      // (shared/reportingMonth.js). An older client sends none: this month.
+      const allowed = reporting.savableMonths(today);
+      if (body.month !== undefined && !allowed.includes(body.month)) {
+        return res.status(400).json({ error: 'לא ניתן לשמור לחודש הזה כעת' });
+      }
+      const snapshotMonth = body.month || currentMonthString();
       // The day the saved figures are true for, as picked on the tracker
-      // ("הנתונים נכונים לתאריך") - inside the current month and not in the
-      // future; today when none (or an invalid one) was sent.
+      // ("הנתונים נכונים לתאריך") - within the month's allowed range and not
+      // in the future; today when none (or an invalid one) was sent.
       const requested = body.breakdown && body.breakdown.asOfDate;
-      const asOfDate =
-        typeof requested === 'string' && DATE_RE.test(requested) && requested.slice(0, 7) === snapshotMonth && requested <= todayString()
-          ? requested
-          : todayString();
+      const asOfDate = reporting.isValidAsOfDate(snapshotMonth, requested, today) ? requested : today;
       const breakdown = serializeBreakdown(body.breakdown, asOfDate);
 
       await store.upsertMonthlySnapshot(req.user.id, snapshotMonth, totalValueILS, breakdown);

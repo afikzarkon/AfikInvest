@@ -54,8 +54,11 @@ export function useMonthlySnapshots(user, authHeader) {
     fetchMonthlySnapshots();
   }, [fetchMonthlySnapshots]);
 
+  // month (optional): the month the save is for - this month, or during the
+  // first days of a month the one that just ended (shared/reportingMonth.js).
+  // The server checks it; without it the save is for this month.
   const saveMonthlySnapshot = useCallback(
-    async (totalValueILS, breakdown) => {
+    async (totalValueILS, breakdown, month) => {
       if (!user || !user.id) return;
       if (!Number.isFinite(totalValueILS) || totalValueILS <= 0) return;
       setSavingMonthly(true);
@@ -65,7 +68,7 @@ export function useMonthlySnapshots(user, authHeader) {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json', ...authHeader() },
-          body: JSON.stringify({ totalValueILS, breakdown: breakdown || undefined })
+          body: JSON.stringify({ totalValueILS, breakdown: breakdown || undefined, ...(month ? { month } : {}) })
         });
         if (!r.ok) throw new Error('save failed');
         await fetchMonthlySnapshots();

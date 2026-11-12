@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import MonthlyTrackerView from './MonthlyTrackerView';
 import { todayISO } from '../utils/portfolioDates';
+import { reportingMonthFor } from '../shared/reportingMonth';
 
 // The monthly tracker used to be a section of PortfolioAnalysisView, and
 // these tests moved here with it when it became its own page. They assert
@@ -150,16 +151,51 @@ test('there is no field to type deposits or withdrawals into - they come from th
   expect(document.querySelector('[id*="cashflow"]')).toBeNull();
 });
 
-test('shows whether the current month is already saved', () => {
+describe('early in a month, the save is for the month that just ended', () => {
+  // November 7th: October's report, taken once its figures are in.
+  beforeEach(() => {
+    jest.useFakeTimers('modern');
+    jest.setSystemTime(new Date('2026-11-07T09:00:00Z'));
+  });
+  afterEach(() => jest.useRealTimers());
+
+  test('defaults to October, dated today, and November can be chosen instead', () => {
+    const onSaveMonthlySnapshot = jest.fn();
+    render(<MonthlyTrackerView {...makeProps({ onSaveMonthlySnapshot })} />);
+    const select = screen.getByLabelText('השמירה עבור');
+    expect(select).toHaveValue('2026-10');
+    expect(screen.getByText('אוקטובר 2026 עדיין לא נשמר')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('שמור שמירה חודשית'));
+    expect(onSaveMonthlySnapshot).toHaveBeenCalledWith({}, expect.objectContaining({ month: '2026-10', asOfDate: '2026-11-07' }));
+
+    fireEvent.change(select, { target: { value: '2026-11' } });
+    fireEvent.click(screen.getByText('שמור שמירה חודשית'));
+    expect(onSaveMonthlySnapshot).toHaveBeenLastCalledWith({}, expect.objectContaining({ month: '2026-11', asOfDate: '2026-11-07' }));
+  });
+
+  test('refuses a date that is not after the previous month\'s', () => {
+    const onSaveMonthlySnapshot = jest.fn();
+    // September's report was taken on October 8th.
+    const september = { month: '2026-09', asOfDate: '2026-10-08', totalValueILS: 1, breakdown: { asOfDate: '2026-10-08' } };
+    render(<MonthlyTrackerView {...makeProps({ onSaveMonthlySnapshot, monthlySnapshots: [september] })} />);
+    fireEvent.change(screen.getByLabelText('הנתונים נכונים לתאריך'), { target: { value: '2026-10-05' } });
+    fireEvent.click(screen.getByText('שמור שמירה חודשית'));
+    expect(onSaveMonthlySnapshot).not.toHaveBeenCalled();
+    expect(screen.getByText(/התאריך חייב להיות אחרי 08\/10\/2026/)).toBeInTheDocument();
+  });
+});
+
+test('shows whether the month being saved (this month, or last month early in a month) is already saved', () => {
+  const saveMonth = reportingMonthFor(todayISO());
   const { rerender } = render(<MonthlyTrackerView {...makeProps()} />);
-  expect(screen.getByText(`החודש (${formatMonthLabelForTest(currentMonthKey)}) עדיין לא נשמר`)).toBeInTheDocument();
+  expect(screen.getByText(`${formatMonthLabelForTest(saveMonth)} עדיין לא נשמר`)).toBeInTheDocument();
 
   rerender(
     <MonthlyTrackerView
-      {...makeProps({ monthlySnapshots: [{ month: currentMonthKey, totalValueILS: 1, breakdown: {} }] })}
+      {...makeProps({ monthlySnapshots: [{ month: saveMonth, totalValueILS: 1, breakdown: {} }] })}
     />
   );
-  expect(screen.getByText(`החודש (${formatMonthLabelForTest(currentMonthKey)}) נשמר`)).toBeInTheDocument();
+  expect(screen.getByText(`${formatMonthLabelForTest(saveMonth)} נשמר`)).toBeInTheDocument();
   expect(screen.getByText('עדכן שמירה חודשית')).toBeInTheDocument();
 });
 

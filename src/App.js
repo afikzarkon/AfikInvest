@@ -15,7 +15,7 @@ import { useAutoSnapshot } from './hooks/useAutoSnapshot';
 import { buildItemizedMonthlyBreakdown } from './utils/monthlySnapshotBreakdown';
 import { buildReflectedFlows } from './utils/monthlySnapshotComparison';
 import { expandHoldingsWithClosedLots } from './shared/transactionLedger';
-import { todayISO } from './utils/portfolioDates';
+import { formatMonthLabel, todayISO } from './utils/portfolioDates';
 import { useRebalanceTargets } from './hooks/useRebalanceTargets';
 import { useTransactions } from './hooks/useTransactions';
 import { useLastSessionChange } from './hooks/useLastSessionChange';
@@ -417,7 +417,7 @@ function App() {
   // further down this component, and the save only happens in an effect,
   // after it has rendered.
   const monthlyFlowSourceRef = React.useRef(null);
-  const saveAutoMonthlySnapshot = (_headlineTotal, rows) => {
+  const saveAutoMonthlySnapshot = (_headlineTotal, rows, month) => {
     const total = ['israeli', 'american', 'pension', 'cashFunds', 'bank', 'bankSavings'].reduce(
       (sum, key) => sum + (Array.isArray(rows?.[key]) ? rows[key].reduce((s, item) => s + (Number(item.value) || 0), 0) : 0),
       0
@@ -429,7 +429,7 @@ function App() {
           todayISO()
         )
       : null;
-    return saveMonthlySnapshot(total, reflectedFlows ? { ...rows, reflectedFlows } : rows);
+    return saveMonthlySnapshot(total, reflectedFlows ? { ...rows, reflectedFlows } : rows, month);
   };
 
   // Replaces the old manual "שמור מידע יומי עדכני" button entirely - see
@@ -466,10 +466,11 @@ function App() {
   // then measures from. Without them it is today's live figures, as before.
   // The total is the sum of the rows actually saved, so the two can never
   // disagree.
-  const handleSaveMonthlySnapshot = (cashFlows, { asOfDate = null, breakdown = null } = {}) => {
+  const handleSaveMonthlySnapshot = (cashFlows, { asOfDate = null, breakdown = null, month = null } = {}) => {
     if (!portfolioReady) return;
     const day = asOfDate ? asOfDate.split('-').reverse().join('/') : 'היום';
-    const ok = window.confirm(`השמירה החודשית תתעד את התיק כפי שהיה נכון ל-${day}. להמשיך?`);
+    const forMonth = month ? ` של ${formatMonthLabel(month)}` : '';
+    const ok = window.confirm(`השמירה החודשית${forMonth} תתעד את התיק כפי שהיה נכון ל-${day}. להמשיך?`);
     if (!ok) return;
     const rows = breakdown || snapshotBreakdown;
     const total = ['israeli', 'american', 'pension', 'cashFunds', 'bank', 'bankSavings'].reduce(
@@ -477,7 +478,7 @@ function App() {
       0
     );
     const withMeta = { ...rows, cashFlows: cashFlows || {}, ...(asOfDate ? { asOfDate } : {}) };
-    saveMonthlySnapshot(breakdown ? total : analysis.summaryMetrics.overallTotalValueILS, withMeta);
+    saveMonthlySnapshot(breakdown ? total : analysis.summaryMetrics.overallTotalValueILS, withMeta, month || undefined);
   };
 
 

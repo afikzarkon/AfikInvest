@@ -8,14 +8,22 @@ import {
 } from './snapshotAsOf';
 
 describe('as-of range', () => {
-  test('inside the month and never in the future', () => {
-    expect(asOfRange('2026-08', '2026-10-12')).toEqual({ min: '2026-08-01', max: '2026-08-31' });
+  test('from the month\'s first day to 10 days into the next month, never in the future', () => {
+    expect(asOfRange('2026-08', '2026-10-12')).toEqual({ min: '2026-08-01', max: '2026-09-10' });
     expect(asOfRange('2026-10', '2026-10-12')).toEqual({ min: '2026-10-01', max: '2026-10-12' });
+    expect(asOfRange('2026-10', '2026-11-07')).toEqual({ min: '2026-10-01', max: '2026-11-07' });
     expect(asOfRange('2026-11', '2026-10-12')).toBeNull();
-    expect(defaultAsOfDate('2026-08', '2026-10-12')).toBe('2026-08-31');
     expect(isValidAsOfDate('2026-08', '2026-08-06', '2026-10-12')).toBe(true);
-    expect(isValidAsOfDate('2026-08', '2026-09-01', '2026-10-12')).toBe(false);
+    // October's report taken on November 7th.
+    expect(isValidAsOfDate('2026-10', '2026-11-07', '2026-11-12')).toBe(true);
+    expect(isValidAsOfDate('2026-10', '2026-11-11', '2026-11-12')).toBe(false);
     expect(isValidAsOfDate('2026-10', '2026-10-13', '2026-10-12')).toBe(false);
+  });
+
+  test('defaults to today when today is allowed, else the month\'s last day', () => {
+    expect(defaultAsOfDate('2026-10', '2026-11-07')).toBe('2026-11-07');
+    expect(defaultAsOfDate('2026-11', '2026-11-07')).toBe('2026-11-07');
+    expect(defaultAsOfDate('2026-08', '2026-10-12')).toBe('2026-08-31');
   });
 });
 
