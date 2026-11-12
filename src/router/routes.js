@@ -98,6 +98,41 @@ export const ROUTES = [
     hint: 'ציון חודשי וביקורת',
     icon: 'review'
   },
+  {
+    key: 'news',
+    path: '/news',
+    label: 'חדשות',
+    hint: 'כותרות ודיווחי 8-K על האחזקות',
+    icon: 'news'
+  },
+  {
+    key: 'earnings',
+    path: '/earnings',
+    label: 'ניתוח דוחות',
+    hint: 'הכנסות, שולי רווח ו-EPS מה-SEC',
+    icon: 'report'
+  },
+  {
+    key: 'scanner',
+    path: '/scanner',
+    label: 'סורק מניות',
+    hint: 'פריצות, דגלים ומכירת יתר',
+    icon: 'radar'
+  },
+  {
+    key: 'trade-sim',
+    path: '/trade-sim',
+    label: 'סימולטור עסקה',
+    hint: 'סטופ, יעד, גודל וסיכויים',
+    icon: 'dice'
+  },
+  {
+    key: 'congress',
+    path: '/congress',
+    label: 'עסקאות הקונגרס',
+    hint: 'דיווחי מסחר של חברי קונגרס',
+    icon: 'capitol'
+  },
   // Reachable from the "+ הוספת מידע" action rather than the sidebar, but a
   // real route all the same so the form survives a refresh and the browser's
   // back button leaves it the way it leaves any other page.
@@ -121,7 +156,9 @@ export const NAV_GROUPS = [
     label: 'נכסים',
     keys: ['israeli-stocks', 'us-stocks', 'provident-funds', 'cash-and-checking', 'bank-savings']
   },
-  { label: 'כלים', keys: ['recommendations', 'valuation', 'transactions', 'tax-offset'] }
+  { label: 'כלים', keys: ['recommendations', 'valuation', 'transactions', 'tax-offset'] },
+  // Market research, ported from the day-trader skill pack.
+  { label: 'שוק', keys: ['news', 'earnings', 'scanner', 'trade-sim', 'congress'] }
 ];
 
 const BY_KEY = ROUTES.reduce((acc, route) => ({ ...acc, [route.key]: route }), {});

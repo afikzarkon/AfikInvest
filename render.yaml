@@ -23,6 +23,10 @@ services:
         sync: false
       - key: FMP_API_KEY
         sync: false
+      # SEC EDGAR contact ("Name email"), needed by the news (8-K) and
+      # earnings-analysis pages. See .env.example.
+      - key: SEC_USER_AGENT
+        sync: false
 
 # Optional: run background jobs (alert scans, event calendar) in a separate
 # process so they never compete with the API for memory. Render background
