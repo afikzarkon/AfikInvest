@@ -14,6 +14,8 @@ const SCHEDULABLE = {
   'calendar.refresh': { dailyKey: true },
   // Account deletion after the grace period, reminders, cleanup.
   'accounts.maintenance': { dailyKey: true },
+  // Material 8-K filings on held US stocks (newsJobs.js).
+  'news.scan': { dailyKey: true },
   // Only drains the queue (anything already due, e.g. a retry after a failure).
   drain: { enqueue: false }
 };
