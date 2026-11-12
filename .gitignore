@@ -28,3 +28,4 @@ yarn-error.log*
 
 # day-trader skills: personal trading state, keys and config
 /trader/
+/tradingagents-results/
