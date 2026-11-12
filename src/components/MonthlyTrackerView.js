@@ -19,6 +19,8 @@ import {
   composeAsOfBreakdown,
   defaultAsOfDate,
   isValidAsOfDate,
+  reportingMonthFor,
+  savableMonths,
   pensionStatementsAtDate,
   STATEMENT_TOLERANCE_DAYS
 } from '../utils/snapshotAsOf';
@@ -201,7 +203,34 @@ function MonthlyTrackerView({
   };
   // Israel's month, as the server files it (see utils/portfolioDates.js).
   const currentMonthKey = todayDate.slice(0, 7);
-  const currentMonthAlreadySaved = monthlySnapshots.some((s) => s.month === currentMonthKey);
+
+  // THE MONTH THE SAVE BUTTON SAVES. A month's report is usually taken once
+  // the next month has begun - provident funds only publish their month-end
+  // figures then - so during the first days of a month the save is for the
+  // month that just ended by default, dated the day it is taken; the month
+  // in progress can still be chosen instead (shared/reportingMonth.js).
+  const saveMonthOptions = useMemo(() => savableMonths(todayDate), [todayDate]);
+  const [saveMonth, setSaveMonth] = useState(() => reportingMonthFor(todayDate));
+  const saveMonthAlreadySaved = monthlySnapshots.some((s) => s.month === saveMonth);
+
+  // Checkpoints are compared from one date to the next, so a month's date
+  // has to fall after the month before it's and before the month after
+  // it's - "October" dated after "November" would make a period run
+  // backwards. Returns the problem in words, or ''.
+  const asOfOrderProblem = (month, date) => {
+    const others = monthlySnapshots.filter((snap) => snap.month !== month);
+    const before = others.filter((snap) => snap.month < month).pop();
+    const after = others.find((snap) => snap.month > month);
+    const beforeDate = before ? snapshotAsOfDate(before) : null;
+    const afterDate = after ? snapshotAsOfDate(after) : null;
+    if (beforeDate && date <= beforeDate) {
+      return `התאריך חייב להיות אחרי ${formatDay(beforeDate)} - התאריך של ${formatMonthLabel(before.month)}.`;
+    }
+    if (afterDate && date >= afterDate) {
+      return `התאריך חייב להיות לפני ${formatDay(afterDate)} - התאריך של ${formatMonthLabel(after.month)}.`;
+    }
+    return '';
+  };
 
   // "פתח פירוט מלא" / "קבץ לפי קטגוריות" - shared by the comparison table
   // and the history list below it, so toggling it once shows/hides
@@ -403,6 +432,17 @@ function MonthlyTrackerView({
 
   const handleSaveEditedMonth = async () => {
     if (!editingMonth || !editDraftBreakdown || !onUpdateMonthlySnapshot) return;
+    if (editDraftAsOfDate) {
+      if (!isValidAsOfDate(editingMonth, editDraftAsOfDate, todayDate)) {
+        setAutoFillMessage('התאריך מחוץ לטווח המותר לחודש הזה.');
+        return;
+      }
+      const orderProblem = asOfOrderProblem(editingMonth, editDraftAsOfDate);
+      if (orderProblem) {
+        setAutoFillMessage(orderProblem);
+        return;
+      }
+    }
     // Draft rows become stored items here, once - not on every keystroke.
     // A row left completely blank is dropped rather than saved as a
     // nameless zero.
@@ -539,6 +579,11 @@ function MonthlyTrackerView({
   const handleSubmitManualAdd = async () => {
     if (!onAddManualMonthlySnapshot || !manualAddMonth || manualAddMonthAlreadySaved) return;
     if (!isValidAsOfDate(manualAddMonth, manualAddAsOfDate, todayDate)) return;
+    const orderProblem = asOfOrderProblem(manualAddMonth, manualAddAsOfDate);
+    if (orderProblem) {
+      setAutoFillMessage(orderProblem);
+      return;
+    }
     const breakdown = {};
     // Derived categories go in exactly as computed.
     AUTO_DERIVED_CATEGORIES.forEach((key) => {
@@ -566,10 +611,15 @@ function MonthlyTrackerView({
     // Re-saving this month REPLACES its stored row, so any flow it was
     // saved with by hand would be lost with it - the same silent drop the
     // edit flow guards against. Carried through here too.
-    const existing = monthlySnapshots.find((snap) => snap.month === currentMonthKey);
+    const existing = monthlySnapshots.find((snap) => snap.month === saveMonth);
     const legacy = savedCashFlows(existing?.breakdown?.cashFlows);
-    if (!isValidAsOfDate(currentMonthKey, saveAsOfDate, todayDate)) {
-      setSaveAsOfMessage('תאריך "נכון ל" חייב להיות בתוך החודש הנוכחי ולא בעתיד.');
+    if (!isValidAsOfDate(saveMonth, saveAsOfDate, todayDate)) {
+      setSaveAsOfMessage(`תאריך "נכון ל" חייב להיות בטווח המותר ל${formatMonthLabel(saveMonth)} ולא בעתיד.`);
+      return;
+    }
+    const orderProblem = asOfOrderProblem(saveMonth, saveAsOfDate);
+    if (orderProblem) {
+      setSaveAsOfMessage(orderProblem);
       return;
     }
     // The figures for the chosen day: today's live ones, or the day's
@@ -580,7 +630,7 @@ function MonthlyTrackerView({
       return;
     }
     setSaveAsOfMessage('');
-    onSaveMonthlySnapshot(legacy, { asOfDate: saveAsOfDate, breakdown });
+    onSaveMonthlySnapshot(legacy, { asOfDate: saveAsOfDate, breakdown, month: saveMonth });
   };
 
   // "נכון ל-12/10/2026" - the date a checkpoint's figures are valid for.
@@ -876,26 +926,46 @@ function MonthlyTrackerView({
 
             {/* THIS MONTH: the one thing the page asks the user to do,
                 with the state of it said first. */}
-            <div className={`mt-now ${currentMonthAlreadySaved ? 'is-saved' : 'is-pending'}`}>
+            <div className={`mt-now ${saveMonthAlreadySaved ? 'is-saved' : 'is-pending'}`}>
               <div className="mt-now-status">
                 <span className="mt-now-icon" aria-hidden="true">
-                  {currentMonthAlreadySaved ? '✓' : '○'}
+                  {saveMonthAlreadySaved ? '✓' : '○'}
                 </span>
                 <div>
                   <p className="monthly-status-text mt-now-title">
-                    {currentMonthAlreadySaved
-                      ? `החודש (${formatMonthLabel(currentMonthKey)}) נשמר`
-                      : `החודש (${formatMonthLabel(currentMonthKey)}) עדיין לא נשמר`}
+                    {saveMonthAlreadySaved
+                      ? `${formatMonthLabel(saveMonth)} נשמר`
+                      : `${formatMonthLabel(saveMonth)} עדיין לא נשמר`}
                   </p>
                   <p className="mt-now-sub">
-                    {currentMonthAlreadySaved
+                    {saveMonthAlreadySaved
                       ? 'אפשר לעדכן את השמירה בכל רגע - היא תחליף את הקודמת'
                       : 'שמירה אחת בחודש מספיקה כדי לראות כאן איך התיק משתנה'}
                   </p>
                 </div>
               </div>
               <div className="mt-now-actions">
-                {renderAsOfInput('save', currentMonthKey, saveAsOfDate, (v) => {
+                {saveMonthOptions.length > 1 && (
+                  <div className="rebalance-input-item" style={{ maxWidth: 220 }}>
+                    <label htmlFor="save-month">השמירה עבור</label>
+                    <select
+                      id="save-month"
+                      className="monthly-select"
+                      value={saveMonth}
+                      onChange={(e) => {
+                        setSaveMonth(e.target.value);
+                        setSaveAsOfMessage('');
+                      }}
+                    >
+                      {saveMonthOptions.map((m) => (
+                        <option key={m} value={m}>
+                          {formatMonthLabel(m)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {renderAsOfInput('save', saveMonth, saveAsOfDate, (v) => {
                   setSaveAsOfDate(v);
                   setSaveAsOfMessage('');
                 })}
@@ -905,7 +975,7 @@ function MonthlyTrackerView({
                   onClick={handleSaveMonthlySnapshotClick}
                   disabled={savingMonthly}
                 >
-                  {savingMonthly ? 'שומר…' : currentMonthAlreadySaved ? 'עדכן שמירה חודשית' : 'שמור שמירה חודשית'}
+                  {savingMonthly ? 'שומר…' : saveMonthAlreadySaved ? 'עדכן שמירה חודשית' : 'שמור שמירה חודשית'}
                 </button>
                 {onAddManualMonthlySnapshot && (
                   <button

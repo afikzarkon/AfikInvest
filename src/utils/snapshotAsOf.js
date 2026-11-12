@@ -28,34 +28,14 @@ export const STATEMENT_TOLERANCE_DAYS = 10;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const DAY_MS = 86400000;
 
-const lastDayOfMonth = (month) => {
-  const [y, m] = month.split('-').map(Number);
-  return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
-};
-
 const daysBetween = (from, to) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY_MS);
 
-// The dates a month's checkpoint may be valid for: inside the month, and
-// never in the future.
-export function asOfRange(month, today) {
-  if (!/^\d{4}-\d{2}$/.test(String(month || ''))) return null;
-  const end = lastDayOfMonth(month);
-  const max = end > today ? today : end;
-  const min = `${month}-01`;
-  return min > max ? null : { min, max };
-}
-
-// The default as-of date: the month's last day, or today for the month in
-// progress.
-export function defaultAsOfDate(month, today) {
-  const range = asOfRange(month, today);
-  return range ? range.max : null;
-}
-
-export function isValidAsOfDate(month, date, today) {
-  const range = asOfRange(month, today);
-  return Boolean(range && DATE_RE.test(String(date || '')) && date >= range.min && date <= range.max);
-}
+// The dates a month's checkpoint may be valid for, its default date, and
+// whether a date is one of them: from the month's first day to a few days
+// into the next month (a month's report is usually taken once the next
+// month has begun), never in the future. One rule, shared with the server -
+// see shared/reportingMonth.js.
+export { asOfRange, defaultAsOfDate, isValidAsOfDate, reportingMonthFor, savableMonths } from '../shared/reportingMonth';
 
 // The liquid accounts' itemized balances on `date`, from their ledgers.
 // Keyed exactly as monthlySnapshotBreakdown.js keys them, so a checkpoint

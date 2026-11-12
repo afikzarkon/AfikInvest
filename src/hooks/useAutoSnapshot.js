@@ -14,20 +14,23 @@
 // happened to save first - which is why it waits for both lists to have
 // actually loaded. A daily snapshot is skipped if today's date is
 // already present; a monthly snapshot is only ever taken once per
-// calendar month (the first time the app is opened that month), so
-// month-over-month comparison keeps meaning "value as of whichever day
-// the app was first opened that month" instead of being overwritten
-// every single day.
+// month, never overwritten every single day. During the first days of a
+// month it is the report of the month that just ended (if that month has
+// none yet), dated the day it was taken - see shared/reportingMonth.js.
 import { useEffect, useRef } from 'react';
 import { todayISO } from '../utils/portfolioDates';
+import { reportingMonthFor } from '../shared/reportingMonth';
 
 // Israel's calendar, same as the server's (see utils/portfolioDates.js).
 function todayDateString() {
   return todayISO();
 }
 
-function currentMonthString() {
-  return todayISO().slice(0, 7);
+// The month a save made today is for: during the first days of a month,
+// the month that just ended - its report is taken once its figures are in
+// (shared/reportingMonth.js) - otherwise this month.
+function reportingMonthString() {
+  return reportingMonthFor(todayISO());
 }
 
 export function useAutoSnapshot({
@@ -62,10 +65,10 @@ export function useAutoSnapshot({
     // first save failed (or was taken by a device whose daily save
     // succeeded and monthly one didn't) used to stay missing for the rest of
     // the month, because "today already saved" skipped this check too.
-    const currentMonth = currentMonthString();
-    const hasCurrentMonth = Array.isArray(monthlySnapshots) && monthlySnapshots.some((m) => m.month === currentMonth);
-    if (!hasCurrentMonth) {
-      saveMonthlySnapshot(totalValueILS, breakdown);
+    const reportingMonth = reportingMonthString();
+    const hasReportingMonth = Array.isArray(monthlySnapshots) && monthlySnapshots.some((m) => m.month === reportingMonth);
+    if (!hasReportingMonth) {
+      saveMonthlySnapshot(totalValueILS, breakdown, reportingMonth);
     }
   }, [
     firstCycleComplete,

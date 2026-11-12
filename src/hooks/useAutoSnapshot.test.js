@@ -1,6 +1,11 @@
 import { renderHook } from '@testing-library/react';
 import { useAutoSnapshot } from './useAutoSnapshot';
 import { todayISO } from '../utils/portfolioDates';
+import { reportingMonthFor } from '../shared/reportingMonth';
+
+// The month an automatic save made today is for (the month that just ended,
+// during the first days of a month).
+const reportingMonth = () => reportingMonthFor(todayISO());
 
 describe('useAutoSnapshot', () => {
   const baseProps = () => ({
@@ -33,7 +38,7 @@ describe('useAutoSnapshot', () => {
     const props = baseProps();
     renderHook(() => useAutoSnapshot(props));
     expect(props.saveSnapshotNow).toHaveBeenCalledWith(100000, { israeli: [] });
-    expect(props.saveMonthlySnapshot).toHaveBeenCalledWith(100000, { israeli: [] });
+    expect(props.saveMonthlySnapshot).toHaveBeenCalledWith(100000, { israeli: [] }, reportingMonth());
   });
 
   test('skips the daily save when a snapshot for today already exists (from another device/session)', () => {
@@ -41,7 +46,7 @@ describe('useAutoSnapshot', () => {
     const props = {
       ...baseProps(),
       snapshots: [{ date: today, totalValueILS: 99000 }],
-      monthlySnapshots: [{ month: today.slice(0, 7), totalValueILS: 99000 }]
+      monthlySnapshots: [{ month: reportingMonth(), totalValueILS: 99000 }]
     };
     renderHook(() => useAutoSnapshot(props));
     expect(props.saveSnapshotNow).not.toHaveBeenCalled();
@@ -54,7 +59,7 @@ describe('useAutoSnapshot', () => {
     const props = { ...baseProps(), snapshots: [{ date: todayISO(), totalValueILS: 99000 }] };
     renderHook(() => useAutoSnapshot(props));
     expect(props.saveSnapshotNow).not.toHaveBeenCalled();
-    expect(props.saveMonthlySnapshot).toHaveBeenCalledWith(100000, { israeli: [] });
+    expect(props.saveMonthlySnapshot).toHaveBeenCalledWith(100000, { israeli: [] }, reportingMonth());
   });
 
   // An empty list that hasn't come back from the server yet is "unknown",
@@ -66,7 +71,7 @@ describe('useAutoSnapshot', () => {
     expect(props.saveSnapshotNow).not.toHaveBeenCalled();
     expect(props.saveMonthlySnapshot).not.toHaveBeenCalled();
 
-    const currentMonth = todayISO().slice(0, 7);
+    const currentMonth = reportingMonth();
     rerender({
       ...props,
       monthlySnapshotsLoaded: true,
@@ -77,7 +82,7 @@ describe('useAutoSnapshot', () => {
   });
 
   test('saves the daily snapshot but skips the monthly one when this month is already saved', () => {
-    const currentMonth = todayISO().slice(0, 7);
+    const currentMonth = reportingMonth();
     const props = { ...baseProps(), monthlySnapshots: [{ month: currentMonth, totalValueILS: 95000 }] };
     renderHook(() => useAutoSnapshot(props));
     expect(props.saveSnapshotNow).toHaveBeenCalled();
@@ -93,5 +98,13 @@ describe('useAutoSnapshot', () => {
     // simulating another price-refresh tick updating the displayed total.
     rerender({ ...props, totalValueILS: 100500 });
     expect(props.saveSnapshotNow).toHaveBeenCalledTimes(1);
+  });
+
+  test('during the first days of a month it saves the month that just ended - its report - not the new one', () => {
+    // Pure rule (the hook reads the real clock): Nov 1-10 is October's report.
+    expect(reportingMonthFor('2026-11-01')).toBe('2026-10');
+    expect(reportingMonthFor('2026-11-10')).toBe('2026-10');
+    expect(reportingMonthFor('2026-11-11')).toBe('2026-11');
+    expect(reportingMonthFor('2026-01-07')).toBe('2025-12');
   });
 });
