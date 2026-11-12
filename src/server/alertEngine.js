@@ -237,7 +237,14 @@ function createMarketData() {
   };
 }
 
+// User price alerts live in priceAlerts.js; re-exported here so every Smart
+// Alerts job is reachable from one module.
+const { runPriceAlertCheck, createPriceAlertJobHandlers, createPriceQuotes } = require('./priceAlerts');
+
 module.exports = {
+  runPriceAlertCheck,
+  createPriceAlertJobHandlers,
+  createPriceQuotes,
   DEFAULT_ALERT_SETTINGS,
   normalizeAlertSettings,
   runAnomalyScan,

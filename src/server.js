@@ -81,7 +81,7 @@ mountHistoricalPricesRoutes(app);
 // answers 404. Starts on the defaults and reads the database once it is up.
 const flagGate = createFlagGate();
 app.use('/api/valuation', flagGate.require('valuation'));
-app.use(['/api/alerts', '/api/alert-settings', '/api/calendar'], flagGate.require('alerts'));
+app.use(['/api/alerts', '/api/alert-settings', '/api/calendar', '/api/price-alerts'], flagGate.require('alerts'));
 // The market-research pages (ported from the day-trader skill pack).
 app.use('/api/news', flagGate.require('news'));
 app.use('/api/earnings', flagGate.require('earnings'));

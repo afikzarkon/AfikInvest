@@ -18,6 +18,8 @@ const SCHEDULABLE = {
   'news.scan': { dailyKey: true },
   // The daily setup scan over the US market (scannerJobs.js), after the close.
   'scanner.daily': { dailyKey: true },
+  // User price rules, several times a day: no daily key.
+  'price-alerts.check': {},
   // Only drains the queue (anything already due, e.g. a retry after a failure).
   drain: { enqueue: false }
 };

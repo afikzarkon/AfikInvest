@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import PageToolbar, { ToolbarPrimaryButton } from './PageToolbar';
 import { EVENT_LABELS_HE } from '../shared/eventCalendar';
+import PriceAlertsPanel from './PriceAlertsPanel';
+import { usePriceAlerts } from '../hooks/useAlerts';
 
 // /alerts - Smart Alerts: unusual price/volume moves in the user's holdings,
 // upcoming earnings and dividend dates, and the thresholds that decide what
@@ -9,6 +11,10 @@ import { EVENT_LABELS_HE } from '../shared/eventCalendar';
 // Alerts are produced on the server (server/alertEngine.js) by the scheduled
 // scan after each market's close; this page reads them, and can ask for an
 // immediate scan of the user's own holdings.
+//
+// The "התראות מחיר" tab holds the user's own price rules (PriceAlertsPanel);
+// it loads them itself through usePriceAlerts, so App.js passes nothing new
+// (a `priceAlerts` prop with the same shape overrides that, for tests).
 
 export const SEVERITY_LABELS = { critical: 'קריטי', warning: 'אזהרה', info: 'מידע' };
 
@@ -160,6 +166,7 @@ function SettingsForm({ settings, onSave }) {
 
 const TABS = [
   { key: 'alerts', label: 'התראות' },
+  { key: 'prices', label: 'התראות מחיר' },
   { key: 'calendar', label: 'לוח אירועים' },
   { key: 'settings', label: 'הגדרות' }
 ];
@@ -174,9 +181,12 @@ function AlertsView({
   loadSettings,
   saveSettings,
   refreshNow,
-  formatPriceWithSign = (v) => String(v)
+  formatPriceWithSign = (v) => String(v),
+  priceAlerts: priceAlertsProp = null
 }) {
   const [tab, setTab] = useState('alerts');
+  const ownPriceAlerts = usePriceAlerts(tab === 'prices' && !priceAlertsProp);
+  const priceAlerts = priceAlertsProp || ownPriceAlerts;
   const [filter, setFilter] = useState('all');
   const [events, setEvents] = useState(null);
   const [settings, setSettings] = useState(null);
@@ -278,6 +288,18 @@ function AlertsView({
               )}
               <p className="section-subtitle">ההתראות מבוססות כללים ואינן ייעוץ השקעות.</p>
             </div>
+          )}
+
+          {tab === 'prices' && (
+            <PriceAlertsPanel
+              rules={priceAlerts.rules}
+              max={priceAlerts.max}
+              loading={priceAlerts.loading}
+              error={priceAlerts.error}
+              create={priceAlerts.create}
+              rearm={priceAlerts.rearm}
+              remove={priceAlerts.remove}
+            />
           )}
 
           {tab === 'calendar' && (
