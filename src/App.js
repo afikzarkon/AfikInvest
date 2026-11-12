@@ -78,6 +78,7 @@ const ValuationView = lazy(() => import('./components/ValuationView'));
 // The market-research pages (ported from the day-trader skill pack).
 const NewsView = lazy(() => import('./components/NewsView'));
 const EarningsView = lazy(() => import('./components/EarningsView'));
+const ScannerView = lazy(() => import('./components/ScannerView'));
 const SettingsView = lazy(() => import('./components/settings/SettingsView'));
 const AdminView = lazy(() => import('./components/admin/AdminView'));
 
@@ -1207,6 +1208,9 @@ function App() {
 
       case 'earnings':
         return <EarningsView authHeader={authHeader} americanStocks={americanStocks} theme={theme} />;
+
+      case 'scanner':
+        return <ScannerView user={user} authHeader={authHeader} />;
 
       case 'recommendations':
         return (

@@ -39,6 +39,7 @@ const { createDcfSnapshotService, createReferenceMemory } = require('./server/dc
 const { marketMemory } = require('./server/marketMemory');
 const { mountNewsRoutes } = require('./server/newsRoutes');
 const { mountEarningsRoutes } = require('./server/earningsRoutes');
+const { mountScannerRoutes } = require('./server/scannerRoutes');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -84,6 +85,7 @@ app.use(['/api/alerts', '/api/alert-settings', '/api/calendar'], flagGate.requir
 // The market-research pages (ported from the day-trader skill pack).
 app.use('/api/news', flagGate.require('news'));
 app.use('/api/earnings', flagGate.require('earnings'));
+app.use('/api/scanner', flagGate.require('scanner'));
 mountEarningsRoutes(app);
 // The last 10-year yield, kept for when its source is down; persisted once
 // the database is up (attached after bootstrap below).
@@ -93,7 +95,7 @@ mountValuationRoutes(app, { valuation: createValuationService({ sources: createD
 const PORT = Number(process.env.PORT) || 5000;
 
 bootstrapServices()
-  .then(async ({ store, features, accounts, admin, marketData, runner, newsService }) => {
+  .then(async ({ store, features, accounts, admin, marketData, runner, newsService, scanner }) => {
     sessionGuard.setStore(store, accounts);
     flagGate.attach(admin);
     systemGate.attach(admin);
@@ -131,6 +133,7 @@ bootstrapServices()
     mountTransactionRoutes(app, store);
     mountAlertRoutes(app, { store, features, marketData });
     mountNewsRoutes(app, { store, newsService });
+    mountScannerRoutes(app, { store, scanner });
     mountInternalJobRoutes(app, { features, runner });
     mountPreferenceRoutes(app, { features });
     mountAdminRoutes(app, { admin, store, accounts, auth, features });

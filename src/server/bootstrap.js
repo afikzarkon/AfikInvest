@@ -11,12 +11,15 @@ const { createJobHandlers } = require('./jobs');
 const { runAccountMaintenance } = require('./accountJobs');
 const { createEmailService } = require('./emailService');
 const { createNewsService } = require('./newsService');
+const { initScannerStore } = require('./scannerStore');
 
 async function bootstrapServices() {
   const store = await initDataStore();
   const features = await initFeatureStore(store);
   const accounts = await initAccountStore(store);
   const admin = await initAdminStore(store);
+  // The daily market scanner's stored runs (scannerJobs.js / scannerRoutes.js).
+  const scanner = await initScannerStore(store);
   const marketData = createMarketData();
   // One news cache shared by the news page and the scheduled 8-K scan.
   const newsService = createNewsService();
@@ -27,10 +30,11 @@ async function bootstrapServices() {
       features,
       marketData,
       newsService,
+      scanner,
       extra: { 'accounts.maintenance': () => runAccountMaintenance({ accounts, mailer: createEmailService() }) }
     })
   });
-  return { store, features, accounts, admin, marketData, runner, newsService };
+  return { store, features, accounts, admin, marketData, runner, newsService, scanner };
 }
 
 module.exports = { bootstrapServices };
