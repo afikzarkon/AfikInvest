@@ -2,8 +2,9 @@
 const { runAnomalyScan, runCalendarRefresh, createPriceAlertJobHandlers } = require('./alertEngine');
 const { createNewsJobHandlers } = require('./newsJobs');
 const { createScannerJobHandlers } = require('./scannerJobs');
+const { createCongressJobHandlers } = require('./congressService');
 
-function createJobHandlers({ store, features, marketData, newsService, scanner, extra = {} }) {
+function createJobHandlers({ store, features, marketData, newsService, scanner, congress, extra = {} }) {
   return Object.assign(
     {},
     // Material 8-K filings on held US stocks -> one alert per holder.
@@ -13,6 +14,8 @@ function createJobHandlers({ store, features, marketData, newsService, scanner, 
     createPriceAlertJobHandlers({ store, features }),
     // The daily setup scan over every US-listed stock (needs its store).
     scanner ? createScannerJobHandlers({ store, scanner }) : {},
+    // New House PTR filings: store, read the PDFs, alert holders of the tickers.
+    congress ? createCongressJobHandlers({ store, features, congress }) : {},
     {
       'anomaly.scan': (payload) =>
         runAnomalyScan({ store, features, marketData, userIds: Array.isArray(payload.userIds) ? payload.userIds : null }),

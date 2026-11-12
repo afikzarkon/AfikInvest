@@ -40,6 +40,7 @@ const { marketMemory } = require('./server/marketMemory');
 const { mountNewsRoutes } = require('./server/newsRoutes');
 const { mountEarningsRoutes } = require('./server/earningsRoutes');
 const { mountScannerRoutes } = require('./server/scannerRoutes');
+const { mountCongressRoutes } = require('./server/congressRoutes');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -86,6 +87,7 @@ app.use(['/api/alerts', '/api/alert-settings', '/api/calendar', '/api/price-aler
 app.use('/api/news', flagGate.require('news'));
 app.use('/api/earnings', flagGate.require('earnings'));
 app.use('/api/scanner', flagGate.require('scanner'));
+app.use('/api/congress', flagGate.require('congress'));
 mountEarningsRoutes(app);
 // The last 10-year yield, kept for when its source is down; persisted once
 // the database is up (attached after bootstrap below).
@@ -95,7 +97,7 @@ mountValuationRoutes(app, { valuation: createValuationService({ sources: createD
 const PORT = Number(process.env.PORT) || 5000;
 
 bootstrapServices()
-  .then(async ({ store, features, accounts, admin, marketData, runner, newsService, scanner }) => {
+  .then(async ({ store, features, accounts, admin, marketData, runner, newsService, scanner, congress }) => {
     sessionGuard.setStore(store, accounts);
     flagGate.attach(admin);
     systemGate.attach(admin);
@@ -134,6 +136,7 @@ bootstrapServices()
     mountAlertRoutes(app, { store, features, marketData });
     mountNewsRoutes(app, { store, newsService });
     mountScannerRoutes(app, { store, scanner });
+    mountCongressRoutes(app, { store, features, congress });
     mountInternalJobRoutes(app, { features, runner });
     mountPreferenceRoutes(app, { features });
     mountAdminRoutes(app, { admin, store, accounts, auth, features });

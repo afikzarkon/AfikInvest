@@ -12,6 +12,7 @@ const { runAccountMaintenance } = require('./accountJobs');
 const { createEmailService } = require('./emailService');
 const { createNewsService } = require('./newsService');
 const { initScannerStore } = require('./scannerStore');
+const { initCongressStore } = require('./congressStore');
 
 async function bootstrapServices() {
   const store = await initDataStore();
@@ -20,6 +21,8 @@ async function bootstrapServices() {
   const admin = await initAdminStore(store);
   // The daily market scanner's stored runs (scannerJobs.js / scannerRoutes.js).
   const scanner = await initScannerStore(store);
+  // Congress members' stock-trade disclosures (congressService.js).
+  const congress = await initCongressStore(store);
   const marketData = createMarketData();
   // One news cache shared by the news page and the scheduled 8-K scan.
   const newsService = createNewsService();
@@ -31,10 +34,11 @@ async function bootstrapServices() {
       marketData,
       newsService,
       scanner,
+      congress,
       extra: { 'accounts.maintenance': () => runAccountMaintenance({ accounts, mailer: createEmailService() }) }
     })
   });
-  return { store, features, accounts, admin, marketData, runner, newsService, scanner };
+  return { store, features, accounts, admin, marketData, runner, newsService, scanner, congress };
 }
 
 module.exports = { bootstrapServices };

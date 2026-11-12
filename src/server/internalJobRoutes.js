@@ -20,6 +20,8 @@ const SCHEDULABLE = {
   'scanner.daily': { dailyKey: true },
   // User price rules, several times a day: no daily key.
   'price-alerts.check': {},
+  // New House PTR filings, a few times each weekday: no daily key.
+  'congress.scan': {},
   // Only drains the queue (anything already due, e.g. a retry after a failure).
   drain: { enqueue: false }
 };
