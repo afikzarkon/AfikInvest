@@ -19,6 +19,13 @@
 //        reclaim_ma20     closed under the 20-day average, then closed above it
 //        oversold         RSI 14 (Wilder) under 30
 //        oversold_bounce  RSI 14 was under 30 yesterday and today closed up
+//      Long-term setups (AfikInvest's own, for long-term investors; they need
+//      a year of closes, so the spark request asks for 1y):
+//        drawdown_30      the last close is 30%+ below the highest close of the
+//                         last 52 weeks
+//        pullback_ma200   the last close is under the 200-day average while
+//                         that average is higher than 20 sessions ago - a dip
+//                         in a long-term uptrend, not a stock in a downtrend
 //      Liquidity from the spark meta: price >= minPrice ($5) and the last
 //      session's volume >= minVolume (1,000,000). At least 30 daily closes.
 //      Today's daily bar is dropped until the session's close.
@@ -43,7 +50,12 @@ const DEFAULT_TIME_BUDGET_MS = 8 * 60 * 1000;
 const HTTP_TIMEOUT_MS = 20000;
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
-const SETUP_KEYS = ['breakout_20d', 'bull_flag', 'reclaim_ma20', 'oversold', 'oversold_bounce'];
+const SETUP_KEYS = ['breakout_20d', 'bull_flag', 'reclaim_ma20', 'oversold', 'oversold_bounce', 'drawdown_30', 'pullback_ma200'];
+// The setups a long-term investor looks at (the scanner page shows them first).
+const LONG_TERM_SETUPS = ['drawdown_30', 'pullback_ma200'];
+const YEAR_BARS = 252;
+const MA200_BARS = 200;
+const SPARK_RANGE = '1y';
 
 class ScanError extends Error {}
 
@@ -321,7 +333,31 @@ function findSetups(c) {
   if (c[n - 2] < ma20Prev && last > ma20) setups.push('reclaim_ma20');
   if (r !== null && r < 30) setups.push('oversold');
   if (rPrev !== null && rPrev < 30 && last > c[n - 2]) setups.push('oversold_bounce');
-  return { setups, numbers: { rsi: r, rsiPrev: rPrev, high20, ma20, runPct: run * 100, range5Pct: range5 * 100 } };
+  const longTerm = longTermNumbers(c);
+  if (longTerm.drawdownPct !== null && longTerm.drawdownPct <= -30) setups.push('drawdown_30');
+  if (longTerm.ma200 !== null && longTerm.ma200Prev !== null && last < longTerm.ma200 && longTerm.ma200 > longTerm.ma200Prev) {
+    setups.push('pullback_ma200');
+  }
+  return {
+    setups,
+    numbers: Object.assign({ rsi: r, rsiPrev: rPrev, high20, ma20, runPct: run * 100, range5Pct: range5 * 100 }, longTerm)
+  };
+}
+
+// The 52-week high and drawdown (from at least ~200 sessions of closes) and
+// the 200-day average now and 20 sessions ago; nulls when the history is
+// shorter (a recent listing, or a 3-month series).
+function longTermNumbers(c) {
+  const n = c.length;
+  const last = c[n - 1];
+  const out = { high52: null, drawdownPct: null, ma200: null, ma200Prev: null };
+  if (n >= MA200_BARS) {
+    out.high52 = Math.max(...c.slice(Math.max(0, n - YEAR_BARS)));
+    out.drawdownPct = (last / out.high52 - 1) * 100;
+    out.ma200 = sumOf(c.slice(n - MA200_BARS)) / MA200_BARS;
+  }
+  if (n >= MA200_BARS + 20) out.ma200Prev = sumOf(c.slice(n - MA200_BARS - 20, n - 20)) / MA200_BARS;
+  return out;
 }
 
 const round = (x, d) => (x === null || x === undefined || !Number.isFinite(x) ? null : Math.round(x * 10 ** d) / 10 ** d);
@@ -366,7 +402,11 @@ function evaluateSymbol(series, nowMs, { minPrice = DEFAULT_MIN_PRICE, minVolume
       rsi: round(numbers.rsi, 1),
       rsiPrev: round(numbers.rsiPrev, 1),
       runPct: round(numbers.runPct, 1),
-      range5Pct: round(numbers.range5Pct, 1)
+      range5Pct: round(numbers.range5Pct, 1),
+      high52: round(numbers.high52, 2),
+      drawdownPct: round(numbers.drawdownPct, 1),
+      ma200: round(numbers.ma200, 2),
+      distMa200Pct: numbers.ma200 ? round((last / numbers.ma200 - 1) * 100, 2) : null
     }
   };
 }
@@ -482,7 +522,7 @@ async function fetchSparkBatch(symbols, opts = {}) {
   const failed = {};
   const data = {};
   try {
-    const got = parseSpark(await yahooGet(sparkPath(symbols, '3mo', '1d'), opts), wanted);
+    const got = parseSpark(await yahooGet(sparkPath(symbols, SPARK_RANGE, '1d'), opts), wanted);
     symbols.forEach((s) => {
       if (got[s]) data[s] = got[s];
       else failed[s] = 'no data from Yahoo';
@@ -581,6 +621,8 @@ async function runDailyScan({
 module.exports = {
   NASDAQ_FILES,
   SETUP_KEYS,
+  LONG_TERM_SETUPS,
+  longTermNumbers,
   SPARK_MAX,
   PAUSE_MS,
   BACKOFF_MS,

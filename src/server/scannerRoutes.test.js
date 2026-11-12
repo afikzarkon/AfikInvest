@@ -58,7 +58,7 @@ describe.each(STORE_FACTORIES)('GET /api/scanner (%s)', (_name, makeStore) => {
     expect(res.body.total).toBe(4);
     const held = Object.fromEntries(res.body.results.map((h) => [h.symbol, h.held]));
     expect(held).toEqual({ KO: true, 'BRK.B': true, PLUG: false, CCL: false });
-    expect(res.body.counts).toEqual({ breakout_20d: 1, bull_flag: 1, reclaim_ma20: 1, oversold: 1, oversold_bounce: 1 });
+    expect(res.body.counts).toEqual({ breakout_20d: 1, bull_flag: 1, reclaim_ma20: 1, oversold: 1, oversold_bounce: 1, drawdown_30: 0, pullback_ma200: 0 });
 
     res = await request(baseUrl, 'GET', '/api/scanner?setup=oversold', { token });
     expect(res.body.results.map((h) => h.symbol)).toEqual(['PLUG']);

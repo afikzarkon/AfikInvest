@@ -102,3 +102,40 @@ describe.each(STORE_FACTORIES)('scanner.daily job (%s)', (_name, makeStore) => {
     expect(await scanner.getLatestRun()).toBeNull();
   });
 });
+
+describe('SEC fundamentals for long-term hits', () => {
+  const { fundamentalsFromEarnings, enrichLongTermHits } = require('./scannerJobs');
+  const row = (revenueYoy, operatingMarginYoyPt) => ({ rows: [{ fiscal: 'Q3 2026', end: '2026-09-30', revenueYoy, operatingMarginYoyPt, epsYoy: 5 }] });
+  test('trend from the latest quarter', () => {
+    expect(fundamentalsFromEarnings(row(12, 0.5)).trend).toBe('growing');
+    expect(fundamentalsFromEarnings(row(-8, -2)).trend).toBe('weakening');
+    expect(fundamentalsFromEarnings(row(4, -3)).trend).toBe('mixed');
+    expect(fundamentalsFromEarnings({ rows: [] })).toBeNull();
+  });
+  test('only long-term hits, capped, and failures are skipped', async () => {
+    const hits = [
+      { symbol: 'AAA', setups: ['drawdown_30'] },
+      { symbol: 'BBB', setups: ['breakout_20d'] },
+      { symbol: 'CCC', setups: ['pullback_ma200'] },
+      { symbol: 'DDD', setups: ['drawdown_30'] }
+    ];
+    const asked = [];
+    const earnings = {
+      configured: true,
+      async getEarnings(sym) {
+        asked.push(sym);
+        if (sym === 'CCC') throw Object.assign(new Error('no facts'), { code: 'NOT_FOUND' });
+        return row(10, 1);
+      }
+    };
+    const summary = await enrichLongTermHits(hits, { earnings, max: 3, logger: null });
+    expect(asked).toEqual(['AAA', 'CCC', 'DDD']);
+    expect(summary).toEqual({ attempted: 3, enriched: 2, skipped: null });
+    expect(hits[0].fundamentals.revenueYoy).toBe(10);
+    expect(hits[1].fundamentals).toBeUndefined();
+  });
+  test('without SEC configured nothing is fetched', async () => {
+    const summary = await enrichLongTermHits([{ symbol: 'AAA', setups: ['drawdown_30'] }], { earnings: { configured: false } });
+    expect(summary.skipped).toBe('SEC_USER_AGENT not set');
+  });
+});

@@ -133,3 +133,35 @@
   color: var(--sw-text-muted);
   font-size: 12px;
 }
+
+/* Long-term vs short-term horizon switch, above the setup chips. */
+.scanner-horizon {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--sw-border);
+}
+
+.scanner-horizon .scanner-chip {
+  font-size: 14px;
+  font-weight: 600;
+  padding: 6px 14px;
+}
+
+.scanner-fundamentals {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.scanner-trend {
+  font-weight: 600;
+}
+
+.scanner-earnings-link {
+  font-size: 12px;
+  white-space: nowrap;
+}

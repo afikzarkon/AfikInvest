@@ -21,8 +21,65 @@ const {
   DEFAULT_MIN_PRICE,
   DEFAULT_MIN_VOLUME,
   DEFAULT_TIME_BUDGET_MS,
-  PAUSE_MS
+  PAUSE_MS,
+  LONG_TERM_SETUPS
 } = require('./scannerService');
+
+// Long-term hits get their latest quarter from SEC (earningsService.js), so
+// the page can tell a good company at a lower price from one whose business
+// is shrinking. Capped: each company is one SEC companyfacts download.
+const ENRICH_MAX = 40;
+const ENRICH_BUDGET_MS = 3 * 60 * 1000;
+
+// The latest reported quarter -> { quarter, end, revenueYoy, epsYoy,
+// operatingMarginYoyPt, trend: 'growing' | 'mixed' | 'weakening' } or null.
+function fundamentalsFromEarnings(result) {
+  const q = result && Array.isArray(result.rows) ? result.rows[0] : null;
+  if (!q || q.revenueYoy === null || q.revenueYoy === undefined) return null;
+  const rev = q.revenueYoy;
+  const opm = q.operatingMarginYoyPt;
+  let trend = 'mixed';
+  if (rev > 0 && (opm === null || opm === undefined || opm >= -1)) trend = 'growing';
+  else if (rev < 0 && (opm === null || opm === undefined || opm < 0)) trend = 'weakening';
+  return {
+    quarter: String(q.fiscal || '').trim() || null,
+    end: q.end || null,
+    revenueYoy: rev,
+    epsYoy: q.epsYoy === undefined ? null : q.epsYoy,
+    operatingMarginYoyPt: opm === undefined ? null : opm,
+    trend
+  };
+}
+
+// Adds `fundamentals` to the most-traded long-term hits, one SEC read at a
+// time, within a time budget. Never throws: a company SEC has no facts for
+// (an ADR, a fund) simply stays without.
+async function enrichLongTermHits(hits, { earnings, clock = Date.now, max = ENRICH_MAX, budgetMs = ENRICH_BUDGET_MS, logger = console }) {
+  const summary = { attempted: 0, enriched: 0, skipped: null };
+  if (!earnings || !earnings.configured) {
+    summary.skipped = 'SEC_USER_AGENT not set';
+    return summary;
+  }
+  const started = clock();
+  const wanted = hits.filter((h) => (h.setups || []).some((k) => LONG_TERM_SETUPS.includes(k))).slice(0, max);
+  for (const hit of wanted) {
+    if (clock() - started > budgetMs) {
+      summary.skipped = 'time budget';
+      break;
+    }
+    summary.attempted += 1;
+    try {
+      const f = fundamentalsFromEarnings(await earnings.getEarnings(hit.symbol));
+      if (f) {
+        hit.fundamentals = f;
+        summary.enriched += 1;
+      }
+    } catch (err) {
+      if (err && err.code === 'UPSTREAM' && logger && logger.warn) logger.warn(`[scanner] SEC read failed for ${hit.symbol}: ${err.message}`);
+    }
+  }
+  return summary;
+}
 
 const num = (v, fallback) => {
   const n = Number(v);
@@ -38,9 +95,16 @@ function createScannerJobHandlers({
   sleep,
   pauseMs = PAUSE_MS,
   timeBudgetMs = DEFAULT_TIME_BUDGET_MS,
-  logger = console
+  logger = console,
+  // SEC earnings for the long-term hits; null turns the enrichment off.
+  earnings
 }) {
   const f = fetchers || createDefaultFetchers(sleep ? { sleep } : {});
+  let earningsService = earnings;
+  const getEarningsService = () => {
+    if (earningsService === undefined) earningsService = require('./earningsService').createEarningsService();
+    return earningsService;
+  };
 
   async function runDaily(payload = {}) {
     const p = payload || {};
@@ -88,6 +152,7 @@ function createScannerJobHandlers({
       // rather than storing an empty "no setups" run.
       throw new ScanError(`Yahoo returned no charts for ${universe.length} symbols`);
     }
+    const enrichment = p.enrich === false ? { skipped: 'off' } : await enrichLongTermHits(result.hits, { earnings: getEarningsService(), clock, logger });
     const finishedAt = new Date(clock()).toISOString();
     const runId = await scanner.insertRun({
       runDate,
@@ -98,7 +163,7 @@ function createScannerJobHandlers({
       fetched: result.counts.fetched,
       scanned: result.counts.scanned,
       partial: result.partial,
-      counts: Object.assign({}, result.counts, { bySetup: result.bySetup, elapsedMs: result.elapsedMs }),
+      counts: Object.assign({}, result.counts, { bySetup: result.bySetup, elapsedMs: result.elapsedMs, enrichment }),
       filters: result.filters,
       results: result.hits
     });
@@ -116,11 +181,12 @@ function createScannerJobHandlers({
       hits: result.hits.length,
       bySetup: result.bySetup,
       partial: result.partial,
-      elapsedMs: result.elapsedMs
+      elapsedMs: result.elapsedMs,
+      enrichment
     };
   }
 
   return { 'scanner.daily': runDaily };
 }
 
-module.exports = { createScannerJobHandlers };
+module.exports = { createScannerJobHandlers, fundamentalsFromEarnings, enrichLongTermHits };

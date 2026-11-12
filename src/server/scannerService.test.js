@@ -152,7 +152,7 @@ describe('daily setups (closes through Fri Oct 16 2026)', () => {
     const pnc = hits.find((h) => h.symbol === 'PNC');
     expect([pnc.rsiPrev, pnc.rsi]).toEqual([27.1, 34]);
     expect(pnc.changePct).toBeCloseTo((217.39 / 214.94 - 1) * 100, 1);
-    expect(svc.countBySetup(hits)).toEqual({ breakout_20d: 5, bull_flag: 2, reclaim_ma20: 3, oversold: 4, oversold_bounce: 1 });
+    expect(svc.countBySetup(hits)).toEqual({ breakout_20d: 5, bull_flag: 2, reclaim_ma20: 3, oversold: 4, oversold_bounce: 1, drawdown_30: 0, pullback_ma200: 0 });
     // most dollars traded first
     for (let i = 1; i < hits.length; i += 1) {
       expect(hits[i - 1].close * (hits[i - 1].volume || 0)).toBeGreaterThanOrEqual(hits[i].close * (hits[i].volume || 0));
@@ -336,5 +336,32 @@ describe('streaming scan', () => {
     });
     expect(r.counts.failed).toBe(20);
     expect(r.counts.fetched).toBe(0);
+  });
+});
+
+describe('long-term setups (AfikInvest additions)', () => {
+  const series = (n, f) => Array.from({ length: n }, (_, i) => f(i));
+  test('drawdown_30: 30%+ under the 52-week closing high', () => {
+    // 200 sessions at 100, then a slide to 65.
+    const c = series(230, (i) => (i < 200 ? 100 : 100 - (i - 199) * (35 / 30)));
+    const { setups, numbers } = svc.findSetups(c);
+    expect(setups).toContain('drawdown_30');
+    expect(numbers.high52).toBe(100);
+    expect(numbers.drawdownPct).toBeLessThanOrEqual(-30);
+  });
+  test('pullback_ma200: under a still-rising 200-day average', () => {
+    // A steady climb for 240 sessions (to ~110), then five closes at 80.
+    const c = series(245, (i) => (i < 240 ? 50 + i * 0.25 : 80));
+    const { setups, numbers } = svc.findSetups(c);
+    expect(setups).toContain('pullback_ma200');
+    expect(numbers.ma200).toBeGreaterThan(numbers.ma200Prev);
+  });
+  test('no pullback when the 200-day average is falling (a downtrend)', () => {
+    const c = series(245, (i) => 150 - i * 0.3);
+    expect(svc.findSetups(c).setups).not.toContain('pullback_ma200');
+  });
+  test('three months of closes leave the long-term numbers empty', () => {
+    const n = svc.longTermNumbers(series(63, () => 10));
+    expect(n).toEqual({ high52: null, drawdownPct: null, ma200: null, ma200Prev: null });
   });
 });
