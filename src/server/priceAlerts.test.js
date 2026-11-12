@@ -178,3 +178,18 @@ describe.each(STORE_FACTORIES)('price alerts store + job (%s)', (_name, makeStor
     expect(await handlers['price-alerts.check']({})).toMatchObject({ triggered: 1 });
   });
 });
+
+describe('unknownSymbolError', () => {
+  const { unknownSymbolError } = require('./priceAlerts');
+  const chainError = (failures) => Object.assign(new Error('quote: every source failed'), { failures });
+  test('every source saying 404 / no data means the symbol does not exist', () => {
+    expect(unknownSymbolError(chainError(['yahoo-chart: HTTP 404']))).toBe(true);
+    expect(unknownSymbolError(chainError(['finnhub: no usable data', 'yahoo-chart: HTTP 404']))).toBe(true);
+  });
+  test('an outage is not an unknown symbol', () => {
+    expect(unknownSymbolError(chainError(['yahoo-chart: HTTP 429']))).toBe(false);
+    expect(unknownSymbolError(chainError(['finnhub: no usable data', 'yahoo-chart: HTTP 503']))).toBe(false);
+    expect(unknownSymbolError(new Error('timeout'))).toBe(false);
+    expect(unknownSymbolError(chainError([]))).toBe(false);
+  });
+});

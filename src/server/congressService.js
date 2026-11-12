@@ -380,7 +380,12 @@ const median = (values) => {
 function layoutFromItems(pages) {
   const outLines = [];
   (pages || []).forEach((items, pageIndex) => {
-    const live = (items || []).filter((it) => it && typeof it.str === 'string' && it.str.trim() && Number.isFinite(it.x) && Number.isFinite(it.y));
+    // Small-caps label letters ("FILING STATUS") can come out of pdfjs as NUL
+    // characters; as spaces they read like pdftotext's "F      S      :".
+    const live = (items || [])
+      .filter((it) => it && typeof it.str === 'string')
+      .map((it) => (it.str.includes('\u0000') ? Object.assign({}, it, { str: it.str.split('\u0000').join(' ') }) : it))
+      .filter((it) => it.str.trim() && Number.isFinite(it.x) && Number.isFinite(it.y));
     if (!live.length) return;
     if (pageIndex > 0 && outLines.length) outLines.push('');
     const widths = live.filter((it) => it.str.length >= 3 && it.width > 0).map((it) => it.width / it.str.length);

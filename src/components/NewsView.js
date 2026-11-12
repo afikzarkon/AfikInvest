@@ -116,6 +116,7 @@ function NewsView({ user, authHeader = () => ({}), americanStocks = [], israeliS
   const [hours, setHours] = useState(72);
   const [ticker, setTicker] = useState('all');
   const [tag, setTag] = useState('all');
+  const [showGeneral, setShowGeneral] = useState(false);
 
   const usSymbols = useMemo(
     () => [...new Set((americanStocks || []).map((l) => String(l.stockName || '').trim().toUpperCase()).filter(Boolean))].sort(),
@@ -133,13 +134,17 @@ function NewsView({ user, authHeader = () => ({}), americanStocks = [], israeliS
     return Object.keys(NEWS_TAG_LABELS_HE).filter((t) => set.has(t));
   }, [items]);
 
-  const visible = useMemo(
+  const filtered = useMemo(
     () =>
       items.filter(
         (it) => (ticker === 'all' || it.ticker === ticker || (it.touches || []).includes(ticker)) && (tag === 'all' || (it.tags || []).includes(tag))
       ),
     [items, ticker, tag]
   );
+  // Yahoo's per-ticker feed also carries market stories that name none of the
+  // holdings (mentioned: false); hidden unless asked for.
+  const generalCount = useMemo(() => filtered.filter((it) => it.mentioned === false).length, [filtered]);
+  const visible = useMemo(() => (showGeneral ? filtered : filtered.filter((it) => it.mentioned !== false)), [filtered, showGeneral]);
   const groups = useMemo(() => groupByDay(visible), [visible]);
 
   const unsupportedCount = news.loaded ? (news.unsupported || []).length : hasTase ? 1 : 0;
@@ -252,6 +257,13 @@ function NewsView({ user, authHeader = () => ({}), americanStocks = [], israeliS
                       {NEWS_TAG_LABELS_HE[t]}
                     </Chip>
                   ))}
+                </div>
+              )}
+              {(generalCount > 0 || showGeneral) && (
+                <div className="news-chip-row" role="group" aria-label="כתבות כלליות">
+                  <Chip active={showGeneral} onClick={() => setShowGeneral(!showGeneral)}>
+                    {showGeneral ? 'הסתרת כתבות שוק כלליות' : `הצגת כתבות שוק כלליות (${generalCount})`}
+                  </Chip>
                 </div>
               )}
             </div>

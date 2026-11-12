@@ -200,3 +200,24 @@ test('default fetchers send a User-Agent, a timeout and If-Modified-Since', asyn
   expect(calls[0].opts.headers['User-Agent']).toMatch(/AfikInvest/);
   expect((await f.fetchIndexZip(2026, { ifModifiedSince: first.lastModified })).notModified).toBe(true);
 });
+
+// Real House PTRs read with pdfjs can carry the small-caps label letters as
+// NUL characters ("F\u0000\u0000\u0000\u0000\u0000 S\u0000...:"); they must
+// read as labels, not as part of the asset name.
+describe('pdfjs NUL label letters (seen on a real 2026 PTR)', () => {
+  test('a NUL-lettered label line still ends the asset name', () => {
+    const it = (str, x, y) => ({ str, x, y, width: str.length * 5, fontSize: 9 });
+    const NUL = '\u0000';
+    const page = [
+      it('ID', 20, 700), it('Owner', 60, 700), it('Asset', 110, 700), it('Transaction', 330, 700), it('Date', 400, 700), it('Notification', 450, 700), it('Amount', 520, 700),
+      it('SP', 60, 680), it('NVIDIA Corporation - Common Stock', 110, 680), it('P', 330, 680), it('10/20/2026', 360, 680), it('10/27/2026', 430, 680), it('$1,001 - $15,000', 500, 680),
+      it(`F${NUL.repeat(5)} S${NUL.repeat(5)}: New`, 110, 668),
+      it(`S${NUL.repeat(9)} O${NUL}: 150 Main Street Trust`, 110, 656)
+    ];
+    const layout = c.layoutFromItems([page]);
+    expect(layout).not.toContain(NUL);
+    const rep = c.parsePtrText(layout);
+    expect(rep.rows).toHaveLength(1);
+    expect(rep.rows[0].asset).toBe('NVIDIA Corporation - Common Stock');
+  });
+});

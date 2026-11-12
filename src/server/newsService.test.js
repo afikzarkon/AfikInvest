@@ -223,3 +223,31 @@ describe('createNewsService', () => {
     expect(r.items.length).toBeGreaterThan(0);
   });
 });
+
+describe('mentioned: stories that name a holding vs general market stories', () => {
+  const item = (title, ticker = 'NVDA') => ({ id: title, kind: 'headline', source: 'yahoo', ticker, title, summary: '' });
+  test('the company name in any case, the bare ticker, or a filing count as mentioned', () => {
+    const items = news.tagItems(
+      [
+        item('5-star analyst revamps Nvidia stock target'),
+        item('NVDA slips after the bell'),
+        item('EyePoint Pharmaceuticals Q3 2026 Earnings Call Summary'),
+        Object.assign(item('NVIDIA הגישה דיווח 8-K'), { kind: 'filing', source: 'sec' })
+      ],
+      { NVDA: 'NVIDIA CORP' }
+    );
+    expect(items.map((i) => i.mentioned)).toEqual([true, true, false, true]);
+    // The feed's own ticker still shows on every item.
+    expect(items[2].touches).toEqual(['NVDA']);
+  });
+  test('a two-letter ticker is not matched as a bare word', () => {
+    const [it] = news.tagItems([item('KO means knockout here', 'KO')], { KO: null });
+    expect(it.mentioned).toBe(false);
+  });
+  test('parseCompanyDirectory keeps SEC titles beside the CIKs', () => {
+    const dir = news.parseCompanyDirectory(raw('company_tickers.json'));
+    expect(Object.keys(dir.ciks).length).toBeGreaterThan(0);
+    const t = Object.keys(dir.ciks)[0];
+    expect(typeof dir.names[t]).toBe('string');
+  });
+});

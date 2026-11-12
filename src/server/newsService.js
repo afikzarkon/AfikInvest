@@ -193,14 +193,23 @@ function parseSecAtom(data, ticker) {
 
 // SEC company_tickers.json -> { 'BRK.B': '0001067983', ... } (first listing wins).
 function parseCompanyTickers(data) {
+  return parseCompanyDirectory(data).ciks;
+}
+
+// { ciks: { TICKER: cik }, names: { TICKER: SEC company title } }
+function parseCompanyDirectory(data) {
   const doc = typeof data === 'string' || Buffer.isBuffer(data) ? JSON.parse(asText(data)) : data;
-  const out = {};
+  const ciks = {};
+  const names = {};
   Object.values(doc || {}).forEach((v) => {
     if (!v || !v.ticker || v.cik_str === undefined) return;
     const key = dottedSymbol(v.ticker);
-    if (!out[key]) out[key] = String(v.cik_str).padStart(10, '0');
+    if (!ciks[key]) {
+      ciks[key] = String(v.cik_str).padStart(10, '0');
+      if (v.title) names[key] = String(v.title);
+    }
   });
-  return out;
+  return { ciks, names };
 }
 
 // ---------------------------------------------------------------- tagging
@@ -220,9 +229,13 @@ function mentionPatterns(watch) {
   Object.entries(watch || {}).forEach(([t, name]) => {
     const e = escapeRe(t);
     const alts = [`\\(${e}\\)`, `\\$${e}\\b`, `\\b(?:NYSE|NASDAQ|Nasdaq)\\s*:\\s*${e}\\b`];
+    // The bare ticker only from three letters up ("KO" or "A" are words).
+    if (t.length >= 3) alts.push(`(?<![\\w$])${e}(?![\\w])`);
+    const tickerRx = new RegExp(alts.join('|'));
     const short = shortCompanyName(name);
-    if (short && short.length >= 4) alts.push(`\\b${escapeRe(short).replace(/ /g, '[\\s-]')}\\b`);
-    pats[t] = new RegExp(alts.join('|'));
+    // SEC titles are upper case ("NVIDIA CORP"), headlines are not: the name matches in any case.
+    const nameRx = short && short.length >= 4 ? new RegExp(`\\b${escapeRe(short).replace(/ /g, '[\\s-]')}\\b`, 'i') : null;
+    pats[t] = { test: (hay) => tickerRx.test(hay) || Boolean(nameRx && nameRx.test(hay)) };
   });
   return pats;
 }
@@ -234,10 +247,17 @@ function tagItems(items, watch) {
   items.forEach((it) => {
     const hay = `${it.title} ${it.summary || ''}`;
     const touches = new Set(watch && Object.prototype.hasOwnProperty.call(watch, it.ticker) ? [it.ticker] : []);
+    let mentioned = it.kind === 'filing';
     Object.entries(pats).forEach(([t, rx]) => {
-      if (rx.test(hay)) touches.add(t);
+      if (rx.test(hay)) {
+        touches.add(t);
+        mentioned = true;
+      }
     });
     it.touches = [...touches].sort();
+    // Yahoo's per-ticker feed also carries general market stories that name
+    // none of the watched companies; the page hides those by default.
+    it.mentioned = mentioned;
     // A filing's title is generated in Hebrew; tag on its English form name and items only.
     const tagHay = it.kind === 'filing' ? it.summary || '' : hay;
     const tags = KEYWORDS.filter(([, rx]) => rx.test(tagHay)).map(([label]) => label);
@@ -399,7 +419,13 @@ function createNewsService({
   async function cikMap() {
     const ua = userAgent();
     if (!ua) throw new NewsError('SEC_USER_AGENT not set');
-    return cached('sec:tickers', cikTtlMs, async () => parseCompanyTickers(await secCall(() => f.companyTickers({ userAgent: ua }))));
+    return (await companyDirectory()).ciks;
+  }
+
+  async function companyDirectory() {
+    const ua = userAgent();
+    if (!ua) throw new NewsError('SEC_USER_AGENT not set');
+    return cached('sec:tickers', cikTtlMs, async () => parseCompanyDirectory(await secCall(() => f.companyTickers({ userAgent: ua }))));
   }
 
   function headlines(symbol) {
@@ -455,9 +481,18 @@ function createNewsService({
       }
     }
 
+    // Company names for mention matching: the holding's own, else SEC's title.
+    let secNames = {};
+    if (secReady) {
+      try {
+        secNames = (await companyDirectory()).names;
+      } catch {
+        secNames = {};
+      }
+    }
     const watch = {};
     list.forEach((s) => {
-      watch[s] = names[s] || null;
+      watch[s] = names[s] || secNames[s] || null;
     });
     // Copies: the cached arrays are shared between users with different watches.
     const tagged = tagItems(items.map((it) => Object.assign({}, it)), watch);
@@ -486,6 +521,7 @@ module.exports = {
   parseRss,
   parseSecAtom,
   parseCompanyTickers,
+  parseCompanyDirectory,
   shortCompanyName,
   tagItems,
   dedupe,

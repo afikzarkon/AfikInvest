@@ -183,13 +183,27 @@ function prevCloseFrom(price, changePercent) {
 // getYahooPayload is stale-while-revalidate: an old copy comes back at once
 // while a refresh runs. A price alert wants the fresh one, so an old copy is
 // waited on (briefly) for the refresh to land.
+// runFallbackChain's error when every source said the symbol is unknown.
+function unknownSymbolError(err) {
+  const failures = err && Array.isArray(err.failures) ? err.failures : [];
+  return failures.length > 0 && failures.every((f) => /HTTP 404|no usable data|not found/i.test(String(f)));
+}
+
 function createPriceQuotes({ maxAgeMs = 3 * 60 * 1000, waitMs = 1500, waitTries = 4 } = {}) {
   const { getYahooPayload } = require('./yahooQuotes');
   const { fetchTaseQuoteFromApi } = require('./taseQuoteApi');
   const isFresh = (q) => q && q.fetchedAt && Date.now() - Date.parse(q.fetchedAt) <= maxAgeMs && !q.stale;
 
   async function usQuote(symbol) {
-    let q = await getYahooPayload(symbol);
+    let q;
+    try {
+      q = await getYahooPayload(symbol);
+    } catch (err) {
+      // Every source answering "no such symbol" (404 / no usable data) means
+      // the security does not exist, not that the sources are down.
+      if (unknownSymbolError(err)) return { price: null };
+      throw err;
+    }
     for (let i = 0; i < waitTries && !isFresh(q); i += 1) {
       await sleep(waitMs);
       q = await getYahooPayload(symbol);
@@ -236,6 +250,7 @@ module.exports = {
   createPriceQuotes,
   createPriceAlertJobHandlers,
   prevCloseFrom,
+  unknownSymbolError,
   NYSE_HOLIDAYS,
   NYSE_EARLY_CLOSE
 };
