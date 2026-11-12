@@ -28,7 +28,14 @@ const FLAG_DEFINITIONS = [
   { key: 'analytics', route: 'analytics', defaultState: 'all', description: 'דף ניתוח התיק' },
   // Admins first: the review words judgements about the user's own
   // investing, so it is tried on the live site before it is released.
-  { key: 'portfolio-review', route: 'portfolio-review', defaultState: 'admin', description: 'דף ביקורת התיק - ציון חודשי, ביקורת ופרופיל משקיע' }
+  { key: 'portfolio-review', route: 'portfolio-review', defaultState: 'admin', description: 'דף ביקורת התיק - ציון חודשי, ביקורת ופרופיל משקיע' },
+  // The market-research pages (ported from the day-trader skill pack): admins
+  // first, released from the admin panel once checked on the live site.
+  { key: 'news', route: 'news', defaultState: 'admin', description: 'דף החדשות - כותרות ודיווחי 8-K על האחזקות (כולל ה-API שלו)' },
+  { key: 'earnings', route: 'earnings', defaultState: 'admin', description: 'דף ניתוח הדוחות מה-SEC (כולל ה-API שלו)' },
+  { key: 'scanner', route: 'scanner', defaultState: 'admin', description: 'סורק המניות היומי (כולל ה-API שלו)' },
+  { key: 'trade-sim', route: 'trade-sim', defaultState: 'admin', description: 'סימולטור העסקה - תוכנית יציאה, גודל פוזיציה וסיכויים (כולל ה-API שלו)' },
+  { key: 'congress', route: 'congress', defaultState: 'admin', description: 'עסקאות חברי הקונגרס (כולל ה-API שלו)' }
 ];
 
 function isFlagState(value) {

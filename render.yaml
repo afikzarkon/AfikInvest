@@ -14,6 +14,10 @@ services:
     envVars:
       - key: PUPPETEER_CACHE_DIR
         value: /opt/render/.cache/puppeteer
+      # pdfjs-dist (Congress PTR PDFs) needs Node >= 22.13; "22" picks the
+      # latest 22.x on Render.
+      - key: NODE_VERSION
+        value: '22'
       # Live US quotes from Finnhub (free key: finnhub.io/register). Set the
       # value in the Render dashboard; without it, quotes come from Yahoo.
       - key: FINNHUB_API_KEY
@@ -22,6 +26,10 @@ services:
       - key: TIINGO_API_KEY
         sync: false
       - key: FMP_API_KEY
+        sync: false
+      # SEC EDGAR contact ("Name email"), needed by the news (8-K) and
+      # earnings-analysis pages. See .env.example.
+      - key: SEC_USER_AGENT
         sync: false
 
 # Optional: run background jobs (alert scans, event calendar) in a separate

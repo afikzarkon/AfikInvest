@@ -90,6 +90,40 @@ const ICONS = {
       <circle cx="19" cy="12" r="1.6" />
     </>
   ),
+  news: (
+    <>
+      <rect x="3" y="5" width="15" height="15" rx="2" />
+      <path d="M18 9h2a1 1 0 0 1 1 1v8a2 2 0 0 1-2 2H6" />
+      <path d="M7 9h7M7 13h7M7 17h4" />
+    </>
+  ),
+  report: (
+    <>
+      <path d="M6 3h9l4 4v14H6V3Z" />
+      <path d="M15 3v4h4" />
+      <path d="M9 17v-3m3 3v-6m3 6v-4" />
+    </>
+  ),
+  radar: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="12" r="4.5" />
+      <path d="M12 12 18.5 5.5" />
+    </>
+  ),
+  dice: (
+    <>
+      <rect x="4" y="4" width="16" height="16" rx="3" />
+      <path d="M9 9h.01M15 9h.01M12 12h.01M9 15h.01M15 15h.01" />
+    </>
+  ),
+  capitol: (
+    <>
+      <path d="M4 20h16M6 20v-7m4 7v-7m4 7v-7m4 7v-7M5 13h14" />
+      <path d="M7 13a5 5 0 0 1 10 0" />
+      <path d="M12 8V4" />
+    </>
+  ),
   ledger: (
     <>
       <path d="M7 4h11a1 1 0 0 1 1 1v15H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" />

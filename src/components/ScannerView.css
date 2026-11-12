@@ -1,0 +1,135 @@
+/* Market scanner (ScannerView.js). Reuses the analysis-* / stocks-table-*
+   layout from App.css; only the scanner's own pieces live here. */
+
+.scanner-disclaimer {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: var(--sw-radius-sm);
+  background: var(--sw-amber-soft);
+  color: var(--sw-text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.scanner-coverage {
+  margin: 0 0 12px;
+  color: var(--sw-text-secondary);
+  font-size: 14px;
+}
+
+.scanner-coverage p {
+  margin: 0 0 4px;
+}
+
+.scanner-partial {
+  color: var(--sw-amber);
+  font-weight: 600;
+}
+
+.scanner-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.scanner-filters .inline-input {
+  width: 120px;
+}
+
+.scanner-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.scanner-chip {
+  border: 1px solid var(--sw-border);
+  background: var(--sw-surface);
+  color: var(--sw-text);
+  border-radius: var(--sw-radius-pill);
+  padding: 4px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background var(--sw-transition), border-color var(--sw-transition);
+}
+
+.scanner-chip:hover {
+  border-color: var(--sw-border-hover);
+}
+
+.scanner-chip.is-active {
+  background: var(--sw-accent-soft);
+  border-color: var(--sw-accent);
+  color: var(--sw-accent);
+  font-weight: 600;
+}
+
+.scanner-chip-count {
+  display: inline-block;
+  min-width: 18px;
+  margin-inline-start: 4px;
+  padding: 0 6px;
+  border-radius: var(--sw-radius-pill);
+  background: var(--sw-surface-2, var(--sw-surface));
+  color: var(--sw-text-secondary);
+  font-size: 12px;
+  text-align: center;
+}
+
+.scanner-explain,
+.scanner-explain-all {
+  margin: 4px 0 0;
+  color: var(--sw-text-secondary);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.scanner-explain-all summary {
+  cursor: pointer;
+  color: var(--sw-accent);
+}
+
+.scanner-explain-all ul {
+  margin: 6px 0 0;
+  padding-inline-start: 18px;
+}
+
+.scanner-sort-button {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.scanner-symbol {
+  font-weight: 600;
+}
+
+.scanner-held-badge {
+  display: inline-block;
+  margin-inline-start: 6px;
+  padding: 1px 7px;
+  border-radius: var(--sw-radius-pill);
+  background: var(--sw-green-soft);
+  color: var(--sw-green);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.scanner-name {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scanner-subnote {
+  color: var(--sw-text-muted);
+  font-size: 12px;
+}

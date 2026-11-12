@@ -37,6 +37,11 @@ const { installErrorCapture } = require('./server/errorLog');
 const { createValuationService, createDefaultSources } = require('./server/valuationService');
 const { createDcfSnapshotService, createReferenceMemory } = require('./server/dcfSnapshot');
 const { marketMemory } = require('./server/marketMemory');
+const { mountNewsRoutes } = require('./server/newsRoutes');
+const { mountEarningsRoutes } = require('./server/earningsRoutes');
+const { mountScannerRoutes } = require('./server/scannerRoutes');
+const { mountCongressRoutes } = require('./server/congressRoutes');
+const { mountTradeSimRoutes } = require('./server/tradeSimRoutes');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -78,7 +83,15 @@ mountHistoricalPricesRoutes(app);
 // answers 404. Starts on the defaults and reads the database once it is up.
 const flagGate = createFlagGate();
 app.use('/api/valuation', flagGate.require('valuation'));
-app.use(['/api/alerts', '/api/alert-settings', '/api/calendar'], flagGate.require('alerts'));
+app.use(['/api/alerts', '/api/alert-settings', '/api/calendar', '/api/price-alerts'], flagGate.require('alerts'));
+// The market-research pages (ported from the day-trader skill pack).
+app.use('/api/news', flagGate.require('news'));
+app.use('/api/earnings', flagGate.require('earnings'));
+app.use('/api/scanner', flagGate.require('scanner'));
+app.use('/api/congress', flagGate.require('congress'));
+app.use('/api/trade-sim', flagGate.require('trade-sim'));
+mountTradeSimRoutes(app);
+mountEarningsRoutes(app);
 // The last 10-year yield, kept for when its source is down; persisted once
 // the database is up (attached after bootstrap below).
 const referenceMemory = createReferenceMemory();
@@ -87,7 +100,7 @@ mountValuationRoutes(app, { valuation: createValuationService({ sources: createD
 const PORT = Number(process.env.PORT) || 5000;
 
 bootstrapServices()
-  .then(async ({ store, features, accounts, admin, marketData, runner }) => {
+  .then(async ({ store, features, accounts, admin, marketData, runner, newsService, scanner, congress }) => {
     sessionGuard.setStore(store, accounts);
     flagGate.attach(admin);
     systemGate.attach(admin);
@@ -124,6 +137,9 @@ bootstrapServices()
     mountRebalanceRoutes(app, store);
     mountTransactionRoutes(app, store);
     mountAlertRoutes(app, { store, features, marketData });
+    mountNewsRoutes(app, { store, newsService });
+    mountScannerRoutes(app, { store, scanner });
+    mountCongressRoutes(app, { store, features, congress });
     mountInternalJobRoutes(app, { features, runner });
     mountPreferenceRoutes(app, { features });
     mountAdminRoutes(app, { admin, store, accounts, auth, features });

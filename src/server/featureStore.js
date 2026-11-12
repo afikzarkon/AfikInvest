@@ -65,7 +65,31 @@ const SCHEMA = [
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   )`,
-  'CREATE INDEX IF NOT EXISTS jobs_ready_idx ON jobs (status, run_after)'
+  'CREATE INDEX IF NOT EXISTS jobs_ready_idx ON jobs (status, run_after)',
+  // User price alerts (shared/priceAlertRules.js). armed_at is when the rule
+  // was created or last re-armed - part of the triggered alert's dedup key.
+  `CREATE TABLE IF NOT EXISTS price_alerts (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    symbol TEXT NOT NULL,
+    market TEXT NOT NULL,
+    name TEXT,
+    currency TEXT,
+    rule_type TEXT NOT NULL,
+    value DOUBLE PRECISION NOT NULL,
+    note TEXT,
+    status TEXT NOT NULL,
+    armed_at TEXT NOT NULL,
+    triggered_at TEXT,
+    triggered_price DOUBLE PRECISION,
+    triggered_prev_close DOUBLE PRECISION,
+    last_price DOUBLE PRECISION,
+    last_checked_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+  'CREATE INDEX IF NOT EXISTS price_alerts_user_idx ON price_alerts (user_id, created_at)',
+  'CREATE INDEX IF NOT EXISTS price_alerts_status_idx ON price_alerts (status, market, symbol)'
 ];
 
 const parseJson = (text, fallback) => {
@@ -122,6 +146,31 @@ function rowToJob(row) {
     status: row.status,
     lastError: row.last_error || null,
     result: parseJson(row.result, null),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+const numOrNull = (v) => (v === null || v === undefined ? null : Number(v));
+
+function rowToPriceAlert(row) {
+  return {
+    id: row.id,
+    userId: Number(row.user_id),
+    symbol: row.symbol,
+    market: row.market,
+    name: row.name || '',
+    currency: row.currency || null,
+    ruleType: row.rule_type,
+    value: Number(row.value),
+    note: row.note || '',
+    status: row.status,
+    armedAt: row.armed_at,
+    triggeredAt: row.triggered_at || null,
+    triggeredPrice: numOrNull(row.triggered_price),
+    triggeredPrevClose: numOrNull(row.triggered_prev_close),
+    lastPrice: numOrNull(row.last_price),
+    lastCheckedAt: row.last_checked_at || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -269,6 +318,96 @@ async function initFeatureStore(store) {
          ON CONFLICT (user_id, namespace) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
         [userId, namespace, JSON.stringify(value), nowIso()]
       );
+    },
+
+    // ----- price alerts -----
+    async listPriceAlerts(userId) {
+      const rows = await sql.all('SELECT * FROM price_alerts WHERE user_id = ? ORDER BY created_at DESC, id ASC', [userId]);
+      return rows.map(rowToPriceAlert);
+    },
+    async countPriceAlerts(userId) {
+      const row = await sql.get('SELECT COUNT(*) AS n FROM price_alerts WHERE user_id = ?', [userId]);
+      return Number(row ? row.n : 0);
+    },
+    async getPriceAlert(userId, id) {
+      const row = await sql.get('SELECT * FROM price_alerts WHERE user_id = ? AND id = ?', [userId, id]);
+      return row ? rowToPriceAlert(row) : null;
+    },
+    // rule: { userId, symbol, market, name, currency, ruleType, value, note, lastPrice? }
+    async createPriceAlert(rule) {
+      const id = rule.id || crypto.randomUUID();
+      const ts = rule.createdAt || nowIso();
+      const lastPrice = Number.isFinite(rule.lastPrice) ? rule.lastPrice : null;
+      await sql.run(
+        `INSERT INTO price_alerts (id, user_id, symbol, market, name, currency, rule_type, value, note, status, armed_at,
+           last_price, last_checked_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)`,
+        [
+          id,
+          rule.userId,
+          rule.symbol,
+          rule.market,
+          rule.name || null,
+          rule.currency || null,
+          rule.ruleType,
+          rule.value,
+          rule.note || null,
+          ts,
+          lastPrice,
+          lastPrice === null ? null : ts,
+          ts,
+          ts
+        ]
+      );
+      return this.getPriceAlert(rule.userId, id);
+    },
+    // patch: any of { symbol, market, name, currency, ruleType, value, note },
+    // plus { rearm: true } to set a triggered rule active again. Returns the
+    // updated rule, or null when it is not this user's.
+    async updatePriceAlert(userId, id, patch) {
+      const existing = await this.getPriceAlert(userId, id);
+      if (!existing) return null;
+      const next = Object.assign({}, existing, patch || {});
+      const ts = patch && patch.updatedAt ? patch.updatedAt : nowIso();
+      const rearm = Boolean(patch && patch.rearm);
+      await sql.run(
+        `UPDATE price_alerts SET symbol = ?, market = ?, name = ?, currency = ?, rule_type = ?, value = ?, note = ?, updated_at = ?
+           ${rearm ? ", status = 'active', armed_at = ?, triggered_at = NULL, triggered_price = NULL, triggered_prev_close = NULL" : ''}
+         WHERE user_id = ? AND id = ?`,
+        [next.symbol, next.market, next.name || null, next.currency || null, next.ruleType, next.value, next.note || null, ts]
+          .concat(rearm ? [ts] : [])
+          .concat([userId, id])
+      );
+      return this.getPriceAlert(userId, id);
+    },
+    async deletePriceAlert(userId, id) {
+      const r = await sql.run('DELETE FROM price_alerts WHERE user_id = ? AND id = ?', [userId, id]);
+      return r.changes > 0;
+    },
+    // Every active rule, of every user - what the check job reads.
+    async listActivePriceAlertsAll() {
+      const rows = await sql.all("SELECT * FROM price_alerts WHERE status = 'active' ORDER BY market, symbol, created_at");
+      return rows.map(rowToPriceAlert);
+    },
+    // Ring once: only an active rule moves to triggered. Returns true when
+    // this call made the change (a concurrent run gets false).
+    async markPriceAlertTriggered(id, { price, prevClose = null, at = nowIso() }) {
+      const r = await sql.run(
+        `UPDATE price_alerts SET status = 'triggered', triggered_at = ?, triggered_price = ?, triggered_prev_close = ?,
+           last_price = ?, last_checked_at = ?, updated_at = ?
+         WHERE id = ? AND status = 'active'`,
+        [at, price, Number.isFinite(prevClose) ? prevClose : null, price, at, at, id]
+      );
+      return r.changes > 0;
+    },
+    // The latest price seen for a set of rules (shown next to each rule).
+    async recordPriceAlertChecks(ids, price, at = nowIso()) {
+      if (!ids.length) return 0;
+      const r = await sql.run(
+        `UPDATE price_alerts SET last_price = ?, last_checked_at = ? WHERE id IN (${ids.map(() => '?').join(', ')})`,
+        [price, at].concat(ids)
+      );
+      return r.changes;
     },
 
     // ----- job queue -----

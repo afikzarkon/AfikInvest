@@ -1,0 +1,43 @@
+/* Earnings page (EarningsView.js). Layout and tables reuse App.css classes;
+   only what is particular to this page lives here. */
+.earnings-summary {
+  margin: 0;
+  padding-inline-start: 1.25rem;
+  line-height: 1.7;
+  color: var(--sw-text);
+}
+
+.earnings-summary li + li {
+  margin-top: 0.25rem;
+}
+
+.earnings-filings {
+  margin: 0.75rem 0 0;
+  padding-inline-start: 1.25rem;
+  color: var(--sw-text-secondary);
+  font-size: 0.92rem;
+  line-height: 1.7;
+}
+
+.earnings-filings a {
+  color: var(--sw-accent);
+}
+
+.earnings-derived {
+  color: var(--sw-amber);
+  font-size: 0.8rem;
+}
+
+.earnings-chart {
+  width: 100%;
+  margin-bottom: 1rem;
+}
+
+.earnings-table td,
+.earnings-table th {
+  white-space: nowrap;
+}
+
+.earnings-footnote {
+  margin-top: 1.5rem;
+}

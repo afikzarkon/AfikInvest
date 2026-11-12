@@ -1,0 +1,95 @@
+/* /congress - Congress stock trades (CongressView.js). Reuses the shared
+   table, pill and section styles; only what is specific to this page. */
+
+.congress-filters {
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+}
+
+.congress-filters input[type='search'] {
+  min-width: 180px;
+}
+
+.congress-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.congress-ticker {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.congress-sub {
+  font-size: 0.8rem;
+  color: var(--sw-text-secondary);
+}
+
+.congress-row-held td {
+  background: var(--sw-accent-soft);
+}
+
+.congress-held-badge {
+  display: inline-block;
+  margin-inline-start: 6px;
+  padding: 1px 8px;
+  border-radius: var(--sw-radius-pill);
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: var(--sw-accent);
+  color: #fff;
+}
+
+.congress-held-list {
+  margin: 0;
+  padding-inline-start: 20px;
+  line-height: 1.8;
+}
+
+.congress-table td {
+  vertical-align: top;
+}
+
+/* Phones: each trade becomes a card, labels from data-label. */
+@media (max-width: 640px) {
+  .congress-table thead {
+    display: none;
+  }
+
+  .congress-table,
+  .congress-table tbody,
+  .congress-table tr,
+  .congress-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .congress-table tr {
+    margin-bottom: 12px;
+    border: 1px solid var(--sw-border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .congress-table td {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    text-align: start;
+  }
+
+  .congress-table td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: var(--sw-text-secondary);
+    flex-shrink: 0;
+  }
+
+  .congress-table td:empty {
+    display: none;
+  }
+}
