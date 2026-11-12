@@ -124,7 +124,10 @@ export const ROUTES = [
     path: '/trade-sim',
     label: 'סימולטור עסקה',
     hint: 'סטופ, יעד, גודל וסיכויים',
-    icon: 'dice'
+    icon: 'dice',
+    // A day-trading tool: kept reachable at /trade-sim but out of the menu of
+    // an app for long-term investors.
+    hidden: true
   },
   {
     key: 'congress',
@@ -158,7 +161,7 @@ export const NAV_GROUPS = [
   },
   { label: 'כלים', keys: ['recommendations', 'valuation', 'transactions', 'tax-offset'] },
   // Market research, ported from the day-trader skill pack.
-  { label: 'שוק', keys: ['news', 'earnings', 'scanner', 'trade-sim', 'congress'] }
+  { label: 'שוק', keys: ['news', 'earnings', 'scanner', 'congress'] }
 ];
 
 const BY_KEY = ROUTES.reduce((acc, route) => ({ ...acc, [route.key]: route }), {});

@@ -238,9 +238,16 @@ function EarningsResult({ data, theme }) {
   );
 }
 
+// /earnings/AAPL opens the page on that ticker (the scanner links here).
+function symbolFromPath() {
+  if (typeof window === 'undefined') return '';
+  const m = /^\/earnings\/([A-Za-z]{1,5}(?:[.-][A-Za-z]{1,2})?)\/?$/.exec(window.location.pathname || '');
+  return m ? m[1].toUpperCase() : '';
+}
+
 function EarningsView({ americanStocks, authHeader, theme = 'dark' }) {
   const held = useMemo(() => heldUsSymbols(americanStocks), [americanStocks]);
-  const [symbol, setSymbol] = useState(held[0] || '');
+  const [symbol, setSymbol] = useState(() => symbolFromPath() || held[0] || '');
   const [draft, setDraft] = useState('');
   const { data, loading, error } = useEarnings(symbol, authHeader);
 
