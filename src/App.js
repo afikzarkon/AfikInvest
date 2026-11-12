@@ -80,6 +80,7 @@ const NewsView = lazy(() => import('./components/NewsView'));
 const EarningsView = lazy(() => import('./components/EarningsView'));
 const ScannerView = lazy(() => import('./components/ScannerView'));
 const CongressView = lazy(() => import('./components/CongressView'));
+const TradeSimView = lazy(() => import('./components/TradeSimView'));
 const SettingsView = lazy(() => import('./components/settings/SettingsView'));
 const AdminView = lazy(() => import('./components/admin/AdminView'));
 
@@ -1215,6 +1216,9 @@ function App() {
 
       case 'congress':
         return <CongressView user={user} authHeader={authHeader} americanStocks={americanStocks} />;
+
+      case 'trade-sim':
+        return <TradeSimView user={user} authHeader={authHeader} americanStocks={americanStocks} />;
 
       case 'recommendations':
         return (

@@ -41,6 +41,7 @@ const { mountNewsRoutes } = require('./server/newsRoutes');
 const { mountEarningsRoutes } = require('./server/earningsRoutes');
 const { mountScannerRoutes } = require('./server/scannerRoutes');
 const { mountCongressRoutes } = require('./server/congressRoutes');
+const { mountTradeSimRoutes } = require('./server/tradeSimRoutes');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -88,6 +89,8 @@ app.use('/api/news', flagGate.require('news'));
 app.use('/api/earnings', flagGate.require('earnings'));
 app.use('/api/scanner', flagGate.require('scanner'));
 app.use('/api/congress', flagGate.require('congress'));
+app.use('/api/trade-sim', flagGate.require('trade-sim'));
+mountTradeSimRoutes(app);
 mountEarningsRoutes(app);
 // The last 10-year yield, kept for when its source is down; persisted once
 // the database is up (attached after bootstrap below).
